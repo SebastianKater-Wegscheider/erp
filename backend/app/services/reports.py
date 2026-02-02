@@ -206,6 +206,85 @@ async def monthly_close_zip(
         )
         zf.writestr("csv/vat_summary.csv", vat_csv.getvalue())
 
+        # Sales lines (incl. margin fields) - best-effort
+        sales_lines_rows = (
+            await session.execute(
+                select(
+                    SalesOrder.order_date,
+                    SalesOrder.invoice_number,
+                    SalesOrder.channel,
+                    SalesOrderLine.inventory_item_id,
+                    SalesOrderLine.purchase_type,
+                    SalesOrderLine.sale_gross_cents,
+                    SalesOrderLine.sale_net_cents,
+                    SalesOrderLine.sale_tax_cents,
+                    SalesOrderLine.shipping_allocated_cents,
+                    SalesOrderLine.cost_basis_cents,
+                    SalesOrderLine.margin_gross_cents,
+                    SalesOrderLine.margin_net_cents,
+                    SalesOrderLine.margin_tax_cents,
+                )
+                .select_from(SalesOrderLine)
+                .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+                .where(
+                    and_(
+                        SalesOrder.status == OrderStatus.FINALIZED,
+                        SalesOrder.order_date >= mr.start,
+                        SalesOrder.order_date < mr.end,
+                    )
+                )
+            )
+        ).all()
+        sl_csv = io.StringIO()
+        sw = csv.writer(sl_csv)
+        sw.writerow(
+            [
+                "order_date",
+                "invoice_number",
+                "channel",
+                "inventory_item_id",
+                "purchase_type",
+                "sale_gross_cents",
+                "sale_net_cents",
+                "sale_tax_cents",
+                "shipping_allocated_cents",
+                "cost_basis_cents",
+                "margin_gross_cents",
+                "margin_net_cents",
+                "margin_tax_cents",
+            ]
+        )
+        for r in sales_lines_rows:
+            sw.writerow(
+                [
+                    r.order_date,
+                    r.invoice_number or "",
+                    r.channel.value,
+                    r.inventory_item_id,
+                    r.purchase_type.value,
+                    r.sale_gross_cents,
+                    r.sale_net_cents,
+                    r.sale_tax_cents,
+                    r.shipping_allocated_cents,
+                    r.cost_basis_cents,
+                    r.margin_gross_cents,
+                    r.margin_net_cents,
+                    r.margin_tax_cents,
+                ]
+            )
+        zf.writestr("csv/sales_lines.csv", sl_csv.getvalue())
+
+        # Corrections (PDFs) - best-effort
+        corrections = (
+            await session.execute(
+                select(SalesCorrection).where(
+                    and_(SalesCorrection.correction_date >= mr.start, SalesCorrection.correction_date < mr.end)
+                )
+            )
+        ).scalars().all()
+        for c in corrections:
+            _zip_add_if_exists(zf, storage_dir, c.pdf_path, base_folder="output_corrections")
+
         # Documents (best-effort)
         purchases = (
             await session.execute(select(Purchase).where(and_(Purchase.purchase_date >= mr.start, Purchase.purchase_date < mr.end)))
