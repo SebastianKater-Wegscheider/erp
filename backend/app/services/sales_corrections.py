@@ -21,6 +21,7 @@ from app.services.inventory import transition_status
 from app.services.money import format_eur, split_gross_to_net_and_tax
 from app.services.pdf import render_pdf
 from app.services.sales import VAT_RATE_BP_STANDARD
+from app.services.vat import allocate_proportional, margin_components
 
 
 async def create_sales_correction(
@@ -61,6 +62,7 @@ async def create_sales_correction(
 
     refund_lines: list[SalesCorrectionLine] = []
     refund_total_gross = 0
+    weights: list[int] = []
 
     for req in data.lines:
         ol = order_line_by_item[req.inventory_item_id]
@@ -68,6 +70,8 @@ async def create_sales_correction(
         refund_gross = req.refund_gross_cents if req.refund_gross_cents is not None else ol.sale_gross_cents
         if refund_gross <= 0:
             raise ValueError("refund_gross_cents must be > 0")
+
+        weights.append(int(ol.shipping_allocated_cents) if ol.shipping_allocated_cents > 0 else int(ol.sale_gross_cents))
 
         if ol.purchase_type == PurchaseType.DIFF:
             tax_rate_bp = 0
@@ -89,14 +93,31 @@ async def create_sales_correction(
             )
         )
 
+    shipping_refund_allocs = allocate_proportional(total_cents=data.shipping_refund_gross_cents, weights=weights)
+    shipping_refund_margin_gross_cents = 0
+    for rl, ship_alloc in zip(refund_lines, shipping_refund_allocs, strict=True):
+        rl.shipping_refund_allocated_cents = int(ship_alloc)
+        if rl.purchase_type == PurchaseType.DIFF:
+            shipping_refund_margin_gross_cents += int(ship_alloc)
+
     correction = SalesCorrection(
         order_id=order.id,
         correction_date=data.correction_date,
         correction_number=correction_number,
         refund_gross_cents=refund_total_gross,
         shipping_refund_gross_cents=data.shipping_refund_gross_cents,
+        shipping_refund_margin_gross_cents=int(shipping_refund_margin_gross_cents),
         payment_source=data.payment_source,
     )
+    shipping_refund_regular_gross_cents = int(data.shipping_refund_gross_cents) - int(shipping_refund_margin_gross_cents)
+    ship_net, ship_tax = split_gross_to_net_and_tax(
+        gross_cents=shipping_refund_regular_gross_cents,
+        tax_rate_bp=VAT_RATE_BP_STANDARD if shipping_refund_regular_gross_cents else 0,
+    )
+    correction.shipping_refund_regular_gross_cents = shipping_refund_regular_gross_cents
+    correction.shipping_refund_regular_net_cents = ship_net
+    correction.shipping_refund_regular_tax_cents = ship_tax
+
     session.add(correction)
     await session.flush()
 
@@ -109,6 +130,28 @@ async def create_sales_correction(
             raise ValueError(f"Inventory item not found: {rl.inventory_item_id}")
         if item.status != InventoryStatus.SOLD:
             raise ValueError(f"Inventory item not SOLD: {item.id} (status={item.status})")
+
+        if rl.purchase_type == PurchaseType.DIFF:
+            original_consideration_gross = int(order_line_by_item[rl.inventory_item_id].sale_gross_cents) + int(
+                order_line_by_item[rl.inventory_item_id].shipping_allocated_cents
+            )
+            cost_basis_cents = int(order_line_by_item[rl.inventory_item_id].cost_basis_cents) or (
+                int(item.purchase_price_cents) + int(item.allocated_costs_cents)
+            )
+            orig = margin_components(
+                consideration_gross_cents=original_consideration_gross,
+                cost_cents=cost_basis_cents,
+                tax_rate_bp=VAT_RATE_BP_STANDARD,
+            )
+            new_consideration = original_consideration_gross - int(rl.refund_gross_cents) - int(
+                rl.shipping_refund_allocated_cents
+            )
+            new = margin_components(
+                consideration_gross_cents=new_consideration,
+                cost_cents=cost_basis_cents,
+                tax_rate_bp=VAT_RATE_BP_STANDARD,
+            )
+            rl.margin_vat_adjustment_cents = max(0, int(orig.margin_tax_cents) - int(new.margin_tax_cents))
 
         await transition_status(session, actor=actor, item=item, new_status=InventoryStatus.RETURNED)
         if rl.action == ReturnAction.RESTOCK:
@@ -167,9 +210,12 @@ async def create_sales_correction(
 
     lines_ctx = []
     has_diff_lines = False
+    has_regular_lines = False
     for r in mp_rows:
         if r.purchase_type == PurchaseType.DIFF:
             has_diff_lines = True
+        else:
+            has_regular_lines = True
         lines_ctx.append(
             {
                 "title": r.title,
@@ -178,19 +224,21 @@ async def create_sales_correction(
                 "purchase_type": r.purchase_type.value,
                 "action": r.action.value,
                 "gross_eur": format_eur(-r.refund_gross_cents),
-                "net_eur": format_eur(-r.refund_net_cents),
-                "tax_eur": format_eur(-r.refund_tax_cents),
+                "net_eur": None if r.purchase_type == PurchaseType.DIFF else format_eur(-r.refund_net_cents),
+                "tax_eur": None if r.purchase_type == PurchaseType.DIFF else format_eur(-r.refund_tax_cents),
             }
         )
 
-    ship_net, ship_tax = split_gross_to_net_and_tax(
-        gross_cents=data.shipping_refund_gross_cents,
-        tax_rate_bp=VAT_RATE_BP_STANDARD if data.shipping_refund_gross_cents else 0,
-    )
+    regular_goods_gross = sum(r.refund_gross_cents for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    regular_goods_net = sum(r.refund_net_cents for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    regular_goods_tax = sum(r.refund_tax_cents for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    margin_goods_gross = sum(r.refund_gross_cents for r in mp_rows if r.purchase_type == PurchaseType.DIFF)
 
-    total_gross_cents = -(refund_total_gross + data.shipping_refund_gross_cents)
-    total_net_cents = -(sum(r.refund_net_cents for r in mp_rows) + ship_net)
-    total_tax_cents = -(sum(r.refund_tax_cents for r in mp_rows) + ship_tax)
+    regular_total_gross_cents = -(regular_goods_gross + correction.shipping_refund_regular_gross_cents)
+    regular_total_net_cents = -(regular_goods_net + correction.shipping_refund_regular_net_cents)
+    regular_total_tax_cents = -(regular_goods_tax + correction.shipping_refund_regular_tax_cents)
+    margin_total_gross_cents = -(margin_goods_gross + correction.shipping_refund_margin_gross_cents)
+    total_gross_cents = regular_total_gross_cents + margin_total_gross_cents
 
     render_pdf(
         templates_dir=templates_dir,
@@ -208,13 +256,19 @@ async def create_sales_correction(
             "channel": order.channel.value,
             "lines": lines_ctx,
             "has_diff_lines": has_diff_lines,
+            "has_regular_lines": has_regular_lines,
             "shipping_refund_gross_cents": data.shipping_refund_gross_cents,
-            "shipping_gross_eur": format_eur(-data.shipping_refund_gross_cents),
-            "shipping_net_eur": format_eur(-ship_net),
-            "shipping_tax_eur": format_eur(-ship_tax),
+            "shipping_refund_regular_gross_cents": correction.shipping_refund_regular_gross_cents,
+            "shipping_refund_regular_gross_eur": format_eur(-correction.shipping_refund_regular_gross_cents),
+            "shipping_refund_regular_net_eur": format_eur(-correction.shipping_refund_regular_net_cents),
+            "shipping_refund_regular_tax_eur": format_eur(-correction.shipping_refund_regular_tax_cents),
+            "shipping_refund_margin_gross_cents": correction.shipping_refund_margin_gross_cents,
+            "shipping_refund_margin_gross_eur": format_eur(-correction.shipping_refund_margin_gross_cents),
+            "regular_total_gross_eur": format_eur(regular_total_gross_cents),
+            "regular_total_net_eur": format_eur(regular_total_net_cents),
+            "regular_total_tax_eur": format_eur(regular_total_tax_cents),
+            "margin_total_gross_eur": format_eur(margin_total_gross_cents),
             "total_gross_eur": format_eur(total_gross_cents),
-            "total_net_eur": format_eur(total_net_cents),
-            "total_tax_eur": format_eur(total_tax_cents),
         },
         output_path=out_path,
         css_paths=[templates_dir / "base.css"],

@@ -19,6 +19,7 @@ from app.services.documents import next_document_number
 from app.services.inventory import transition_status
 from app.services.money import format_eur, split_gross_to_net_and_tax
 from app.services.pdf import render_pdf
+from app.services.vat import allocate_proportional, margin_components
 
 
 VAT_RATE_BP_STANDARD = 2000
@@ -89,6 +90,8 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
     if not order.lines:
         raise ValueError("Cannot finalize an order without lines")
 
+    line_by_id: dict[uuid.UUID, SalesOrderLine] = {line.id: line for line in order.lines}
+
     invoice_number = await next_document_number(
         session, doc_type=DocumentType.SALES_INVOICE, issue_date=order.order_date
     )
@@ -103,11 +106,14 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
     mp_rows = (
         await session.execute(
             select(
+                SalesOrderLine.id,
                 SalesOrderLine.inventory_item_id,
                 SalesOrderLine.purchase_type,
                 SalesOrderLine.sale_gross_cents,
                 SalesOrderLine.sale_net_cents,
                 SalesOrderLine.sale_tax_cents,
+                InventoryItem.purchase_price_cents,
+                InventoryItem.allocated_costs_cents,
                 MasterProduct.title,
                 MasterProduct.platform,
                 MasterProduct.region,
@@ -119,30 +125,89 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
         )
     ).all()
 
-    lines_ctx = []
-    has_diff_lines = False
-    for r in mp_rows:
-        if r.purchase_type == PurchaseType.DIFF:
-            has_diff_lines = True
-        lines_ctx.append(
-            {
-                "title": r.title,
-                "platform": r.platform,
-                "region": r.region,
-                "purchase_type": r.purchase_type.value,
-                "gross_eur": format_eur(r.sale_gross_cents),
-                "net_eur": format_eur(r.sale_net_cents),
-                "tax_eur": format_eur(r.sale_tax_cents),
-            }
-        )
-
-    shipping_net_cents, shipping_tax_cents = split_gross_to_net_and_tax(
-        gross_cents=order.shipping_gross_cents, tax_rate_bp=VAT_RATE_BP_STANDARD if order.shipping_gross_cents else 0
+    rows_sorted = sorted(mp_rows, key=lambda r: str(r.inventory_item_id))
+    shipping_allocs = allocate_proportional(
+        total_cents=order.shipping_gross_cents, weights=[int(r.sale_gross_cents) for r in rows_sorted]
     )
 
-    total_gross_cents = sum(r.sale_gross_cents for r in mp_rows) + order.shipping_gross_cents
-    total_net_cents = sum(r.sale_net_cents for r in mp_rows) + shipping_net_cents
-    total_tax_cents = sum(r.sale_tax_cents for r in mp_rows) + shipping_tax_cents
+    has_diff_lines = any(r.purchase_type == PurchaseType.DIFF for r in rows_sorted)
+    has_regular_lines = any(r.purchase_type == PurchaseType.REGULAR for r in rows_sorted)
+
+    shipping_margin_gross_cents = 0
+    regular_goods_net_cents = 0
+    regular_goods_tax_cents = 0
+    regular_goods_gross_cents = 0
+    margin_goods_gross_cents = 0
+
+    lines_ctx = []
+    for r, ship_alloc in zip(rows_sorted, shipping_allocs, strict=True):
+        cost_basis_cents = int(r.purchase_price_cents) + int(r.allocated_costs_cents)
+
+        sol = line_by_id.get(r.id)
+        if sol is None:
+            raise ValueError(f"Sales order line not found: {r.id}")
+        sol.shipping_allocated_cents = int(ship_alloc)
+        sol.cost_basis_cents = int(cost_basis_cents)
+
+        if r.purchase_type == PurchaseType.DIFF:
+            shipping_margin_gross_cents += int(ship_alloc)
+            mc = margin_components(
+                consideration_gross_cents=int(r.sale_gross_cents) + int(ship_alloc),
+                cost_cents=cost_basis_cents,
+                tax_rate_bp=VAT_RATE_BP_STANDARD,
+            )
+            sol.margin_gross_cents = mc.margin_gross_cents
+            sol.margin_net_cents = mc.margin_net_cents
+            sol.margin_tax_cents = mc.margin_tax_cents
+
+            margin_goods_gross_cents += int(r.sale_gross_cents)
+            lines_ctx.append(
+                {
+                    "title": r.title,
+                    "platform": r.platform,
+                    "region": r.region,
+                    "purchase_type": r.purchase_type.value,
+                    "gross_eur": format_eur(r.sale_gross_cents),
+                    "net_eur": None,
+                    "tax_eur": None,
+                }
+            )
+        else:
+            sol.margin_gross_cents = 0
+            sol.margin_net_cents = 0
+            sol.margin_tax_cents = 0
+
+            regular_goods_gross_cents += int(r.sale_gross_cents)
+            regular_goods_net_cents += int(r.sale_net_cents)
+            regular_goods_tax_cents += int(r.sale_tax_cents)
+            lines_ctx.append(
+                {
+                    "title": r.title,
+                    "platform": r.platform,
+                    "region": r.region,
+                    "purchase_type": r.purchase_type.value,
+                    "gross_eur": format_eur(r.sale_gross_cents),
+                    "net_eur": format_eur(r.sale_net_cents),
+                    "tax_eur": format_eur(r.sale_tax_cents),
+                }
+            )
+
+    shipping_regular_gross_cents = int(order.shipping_gross_cents) - int(shipping_margin_gross_cents)
+    shipping_regular_net_cents, shipping_regular_tax_cents = split_gross_to_net_and_tax(
+        gross_cents=shipping_regular_gross_cents,
+        tax_rate_bp=VAT_RATE_BP_STANDARD if shipping_regular_gross_cents else 0,
+    )
+    order.shipping_regular_gross_cents = shipping_regular_gross_cents
+    order.shipping_regular_net_cents = shipping_regular_net_cents
+    order.shipping_regular_tax_cents = shipping_regular_tax_cents
+    order.shipping_margin_gross_cents = int(shipping_margin_gross_cents)
+
+    regular_total_gross_cents = regular_goods_gross_cents + shipping_regular_gross_cents
+    regular_total_net_cents = regular_goods_net_cents + shipping_regular_net_cents
+    regular_total_tax_cents = regular_goods_tax_cents + shipping_regular_tax_cents
+
+    margin_total_gross_cents = margin_goods_gross_cents + int(shipping_margin_gross_cents)
+    total_gross_cents = regular_total_gross_cents + margin_total_gross_cents
 
     render_pdf(
         templates_dir=templates_dir,
@@ -159,13 +224,19 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
             "channel": order.channel.value,
             "lines": lines_ctx,
             "has_diff_lines": has_diff_lines,
+            "has_regular_lines": has_regular_lines,
             "shipping_gross_cents": order.shipping_gross_cents,
-            "shipping_gross_eur": format_eur(order.shipping_gross_cents),
-            "shipping_net_eur": format_eur(shipping_net_cents),
-            "shipping_tax_eur": format_eur(shipping_tax_cents),
+            "shipping_regular_gross_cents": shipping_regular_gross_cents,
+            "shipping_regular_gross_eur": format_eur(shipping_regular_gross_cents),
+            "shipping_regular_net_eur": format_eur(shipping_regular_net_cents),
+            "shipping_regular_tax_eur": format_eur(shipping_regular_tax_cents),
+            "shipping_margin_gross_cents": int(shipping_margin_gross_cents),
+            "shipping_margin_gross_eur": format_eur(int(shipping_margin_gross_cents)),
+            "regular_total_gross_eur": format_eur(regular_total_gross_cents),
+            "regular_total_net_eur": format_eur(regular_total_net_cents),
+            "regular_total_tax_eur": format_eur(regular_total_tax_cents),
+            "margin_total_gross_eur": format_eur(margin_total_gross_cents),
             "total_gross_eur": format_eur(total_gross_cents),
-            "total_net_eur": format_eur(total_net_cents),
-            "total_tax_eur": format_eur(total_tax_cents),
         },
         output_path=out_path,
         css_paths=[templates_dir / "base.css"],

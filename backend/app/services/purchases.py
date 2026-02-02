@@ -14,7 +14,7 @@ from app.models.purchase import Purchase, PurchaseLine
 from app.schemas.purchase import PurchaseCreate
 from app.services.audit import audit_log
 from app.services.documents import next_document_number
-from app.services.money import format_eur
+from app.services.money import format_eur, split_gross_to_net_and_tax
 from app.services.pdf import render_pdf
 
 
@@ -25,6 +25,17 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
     expected_type = PurchaseType.DIFF if data.kind == PurchaseKind.PRIVATE_DIFF else PurchaseType.REGULAR
     if any(line.purchase_type != expected_type for line in data.lines):
         raise ValueError(f"All lines.purchase_type must be {expected_type} for {data.kind}")
+
+    tax_rate_bp = 0 if data.kind == PurchaseKind.PRIVATE_DIFF else (data.tax_rate_bp or 0)
+
+    line_splits: list[tuple[int, int]] = []
+    total_net = 0
+    total_tax = 0
+    for line in data.lines:
+        net, tax = split_gross_to_net_and_tax(gross_cents=line.purchase_price_cents, tax_rate_bp=tax_rate_bp)
+        line_splits.append((net, tax))
+        total_net += net
+        total_tax += tax
 
     document_number: str | None = None
     if data.kind == PurchaseKind.PRIVATE_DIFF:
@@ -38,6 +49,9 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         counterparty_name=data.counterparty_name,
         counterparty_address=data.counterparty_address,
         total_amount_cents=data.total_amount_cents,
+        total_net_cents=total_net,
+        total_tax_cents=total_tax,
+        tax_rate_bp=tax_rate_bp,
         payment_source=data.payment_source,
         document_number=document_number,
         external_invoice_number=data.external_invoice_number,
@@ -46,23 +60,27 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
     session.add(purchase)
     await session.flush()
 
-    for line in data.lines:
+    for line, (line_net, line_tax) in zip(data.lines, line_splits, strict=True):
         pl = PurchaseLine(
             purchase_id=purchase.id,
             master_product_id=line.master_product_id,
             condition=line.condition,
             purchase_type=line.purchase_type,
             purchase_price_cents=line.purchase_price_cents,
+            purchase_price_net_cents=line_net,
+            purchase_price_tax_cents=line_tax,
+            tax_rate_bp=tax_rate_bp,
         )
         session.add(pl)
         await session.flush()
 
+        inventory_cost_cents = line_net if line.purchase_type == PurchaseType.REGULAR else line.purchase_price_cents
         item = InventoryItem(
             master_product_id=line.master_product_id,
             purchase_line_id=pl.id,
             condition=line.condition,
             purchase_type=line.purchase_type,
-            purchase_price_cents=line.purchase_price_cents,
+            purchase_price_cents=inventory_cost_cents,
             allocated_costs_cents=0,
             storage_location=None,
             status=InventoryStatus.AVAILABLE,
@@ -105,6 +123,9 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         after={
             "kind": purchase.kind,
             "total_amount_cents": purchase.total_amount_cents,
+            "total_net_cents": purchase.total_net_cents,
+            "total_tax_cents": purchase.total_tax_cents,
+            "tax_rate_bp": purchase.tax_rate_bp,
             "payment_source": purchase.payment_source,
             "document_number": purchase.document_number,
             "external_invoice_number": purchase.external_invoice_number,

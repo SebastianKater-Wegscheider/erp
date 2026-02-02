@@ -48,6 +48,7 @@ export function OpexPage() {
   const [recipient, setRecipient] = useState("");
   const [category, setCategory] = useState("PACKAGING");
   const [amount, setAmount] = useState("0,00");
+  const [taxRateBp, setTaxRateBp] = useState("2000");
   const [paymentSource, setPaymentSource] = useState("CASH");
   const [receiptUploadPath, setReceiptUploadPath] = useState("");
 
@@ -74,6 +75,7 @@ export function OpexPage() {
           recipient,
           category,
           amount_cents: parseEurToCents(amount),
+          tax_rate_bp: Number(taxRateBp),
           payment_source: paymentSource,
           receipt_upload_path: receiptUploadPath || null,
         },
@@ -121,6 +123,19 @@ export function OpexPage() {
           <div className="space-y-2">
             <Label>Betrag (EUR)</Label>
             <Input value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>USt-Satz</Label>
+            <Select value={taxRateBp} onValueChange={setTaxRateBp}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">0%</SelectItem>
+                <SelectItem value="1000">10%</SelectItem>
+                <SelectItem value="2000">20%</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label>Zahlungsquelle</Label>

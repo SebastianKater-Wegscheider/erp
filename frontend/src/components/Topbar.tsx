@@ -13,6 +13,7 @@ const NAV = [
   { to: "/cost-allocations", label: "Kostenverteilung" },
   { to: "/opex", label: "Betriebsausgaben" },
   { to: "/mileage", label: "Fahrtenbuch" },
+  { to: "/vat", label: "Umsatzsteuer" },
 ];
 
 export function Topbar() {

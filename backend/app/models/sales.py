@@ -23,6 +23,11 @@ class SalesOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     buyer_address: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     shipping_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # If an order contains both REGULAR and DIFF items, shipping is split for reporting/invoicing.
+    shipping_regular_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shipping_regular_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shipping_regular_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shipping_margin_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     payment_source: Mapped[PaymentSource] = mapped_column(payment_source_enum, nullable=False)
 
     invoice_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -48,5 +53,15 @@ class SalesOrderLine(UUIDPrimaryKeyMixin, Base):
     sale_net_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     sale_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Internal accounting fields:
+    # - shipping_allocated_cents: allocates SalesOrder.shipping_gross_cents to items (for margin/regular splits)
+    # - cost_basis_cents: snapshot of item cost at finalization (purchase price + allocated costs)
+    # - margin_*: computed from (sale_gross + shipping_alloc) - cost_basis (VAT portion from margin)
+    shipping_allocated_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_basis_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    margin_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    margin_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    margin_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     order: Mapped[SalesOrder] = relationship(back_populates="lines")

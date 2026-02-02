@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.db import engine
+from app.core.schema import ensure_schema
 from app.core.security import require_basic_auth
 from app.models.base import Base
 
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
         settings.upload_dir.mkdir(parents=True, exist_ok=True)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await ensure_schema(conn)
 
     app.include_router(api_router, prefix="/api/v1")
     return app

@@ -10,6 +10,7 @@ import { SalesPage } from "./pages/Sales";
 import { CostAllocationsPage } from "./pages/CostAllocations";
 import { OpexPage } from "./pages/Opex";
 import { MileagePage } from "./pages/Mileage";
+import { VatPage } from "./pages/Vat";
 
 export function App() {
   return (
@@ -27,10 +28,10 @@ export function App() {
             <Route path="/cost-allocations" element={<CostAllocationsPage />} />
             <Route path="/opex" element={<OpexPage />} />
             <Route path="/mileage" element={<MileagePage />} />
+            <Route path="/vat" element={<VatPage />} />
           </Routes>
         </div>
       </div>
     </AuthGate>
   );
 }
-

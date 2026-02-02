@@ -23,6 +23,7 @@ class PurchaseCreate(BaseModel):
     counterparty_address: str | None = None
 
     total_amount_cents: int = Field(ge=0)
+    tax_rate_bp: int | None = Field(default=None, ge=0, le=10000)
     payment_source: PaymentSource
 
     # COMMERCIAL_REGULAR only
@@ -34,10 +35,19 @@ class PurchaseCreate(BaseModel):
     @model_validator(mode="after")
     def validate_kind_fields(self) -> "PurchaseCreate":
         if self.kind == PurchaseKind.COMMERCIAL_REGULAR:
+            if self.tax_rate_bp is None:
+                self.tax_rate_bp = 2000
+            if self.tax_rate_bp <= 0:
+                raise ValueError("tax_rate_bp must be > 0 for COMMERCIAL_REGULAR purchases")
             if not self.external_invoice_number:
                 raise ValueError("external_invoice_number is required for COMMERCIAL_REGULAR purchases")
             if not self.receipt_upload_path:
                 raise ValueError("receipt_upload_path is required for COMMERCIAL_REGULAR purchases")
+        else:
+            if self.tax_rate_bp is None:
+                self.tax_rate_bp = 0
+            if self.tax_rate_bp != 0:
+                raise ValueError("tax_rate_bp must be 0 for PRIVATE_DIFF purchases")
         return self
 
 
@@ -49,6 +59,9 @@ class PurchaseLineOut(BaseModel):
     condition: InventoryCondition
     purchase_type: PurchaseType
     purchase_price_cents: int
+    purchase_price_net_cents: int
+    purchase_price_tax_cents: int
+    tax_rate_bp: int
 
 
 class PurchaseOut(BaseModel):
@@ -62,6 +75,9 @@ class PurchaseOut(BaseModel):
     counterparty_address: str | None
 
     total_amount_cents: int
+    total_net_cents: int
+    total_tax_cents: int
+    tax_rate_bp: int
     payment_source: PaymentSource
 
     document_number: str | None
@@ -72,4 +88,3 @@ class PurchaseOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     lines: list[PurchaseLineOut]
-

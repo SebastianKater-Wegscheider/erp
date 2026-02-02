@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,10 @@ class CostAllocation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allocation_date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    amount_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False, default=2000)
+    input_tax_deductible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     payment_source: Mapped[PaymentSource] = mapped_column(payment_source_enum, nullable=False)
 
     receipt_upload_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -37,6 +41,7 @@ class CostAllocationLine(UUIDPrimaryKeyMixin, Base):
         UUID(as_uuid=True), ForeignKey("inventory_items.id"), nullable=False
     )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    amount_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     allocation: Mapped[CostAllocation] = relationship(back_populates="lines")
-
