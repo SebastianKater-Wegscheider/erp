@@ -13,6 +13,7 @@ const NAV = [
   { to: "/cost-allocations", label: "Cost Allocation" },
   { to: "/opex", label: "OpEx" },
   { to: "/mileage", label: "Mileage" },
+  { to: "/vat", label: "VAT" },
 ];
 
 export function Topbar() {
@@ -47,4 +48,3 @@ export function Topbar() {
     </div>
   );
 }
-

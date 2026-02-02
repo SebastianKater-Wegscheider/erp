@@ -57,6 +57,7 @@ export function PurchasesPage() {
 
   const [externalInvoiceNumber, setExternalInvoiceNumber] = useState<string>("");
   const [receiptUploadPath, setReceiptUploadPath] = useState<string>("");
+  const [taxRateBp, setTaxRateBp] = useState<string>("2000");
 
   const [lines, setLines] = useState<Line[]>([]);
 
@@ -101,6 +102,7 @@ export function PurchasesPage() {
         counterparty_name: counterpartyName,
         counterparty_address: counterpartyAddress || null,
         total_amount_cents: totalCents,
+        tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? Number(taxRateBp) : 0,
         payment_source: paymentSource,
         external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
         receipt_upload_path: kind === "COMMERCIAL_REGULAR" ? receiptUploadPath : null,
@@ -183,10 +185,22 @@ export function PurchasesPage() {
           </div>
 
           {kind === "COMMERCIAL_REGULAR" && (
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
               <div className="space-y-2">
                 <Label>External invoice number</Label>
                 <Input value={externalInvoiceNumber} onChange={(e) => setExternalInvoiceNumber(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>VAT rate</Label>
+                <Select value={taxRateBp} onValueChange={setTaxRateBp}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1000">10%</SelectItem>
+                    <SelectItem value="2000">20%</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label>Receipt upload</Label>
@@ -397,4 +411,3 @@ export function PurchasesPage() {
     </div>
   );
 }
-

@@ -26,6 +26,7 @@ export function CostAllocationsPage() {
   const qc = useQueryClient();
   const [allocationDate, setAllocationDate] = useState(new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState("");
+  const [taxRateBp, setTaxRateBp] = useState("2000");
   const [paymentSource, setPaymentSource] = useState("CASH");
   const [lines, setLines] = useState<Line[]>([]);
 
@@ -51,6 +52,7 @@ export function CostAllocationsPage() {
           allocation_date: allocationDate,
           description,
           amount_cents: sumCents,
+          tax_rate_bp: Number(taxRateBp),
           payment_source: paymentSource,
           receipt_upload_path: null,
           lines: lines
@@ -79,10 +81,23 @@ export function CostAllocationsPage() {
           <CardTitle>Create</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2">
               <Label>Date</Label>
               <Input type="date" value={allocationDate} onChange={(e) => setAllocationDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>VAT rate</Label>
+              <Select value={taxRateBp} onValueChange={setTaxRateBp}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">0%</SelectItem>
+                  <SelectItem value="1000">10%</SelectItem>
+                  <SelectItem value="2000">20%</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Payment source</Label>
@@ -215,4 +230,3 @@ export function CostAllocationsPage() {
     </div>
   );
 }
-
