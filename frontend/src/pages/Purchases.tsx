@@ -34,6 +34,33 @@ type Line = {
   purchase_price: string;
 };
 
+const PURCHASE_KIND_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "PRIVATE_DIFF", label: "Privat (Differenz)" },
+  { value: "COMMERCIAL_REGULAR", label: "Gewerblich (Regulär)" },
+];
+
+const PAYMENT_SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "CASH", label: "Bar" },
+  { value: "BANK", label: "Bank" },
+];
+
+const CONDITION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "NEW", label: "Neu" },
+  { value: "LIKE_NEW", label: "Wie neu" },
+  { value: "GOOD", label: "Gut" },
+  { value: "ACCEPTABLE", label: "Akzeptabel" },
+  { value: "DEFECT", label: "Defekt" },
+];
+
+const PURCHASE_TYPE_LABEL: Record<string, string> = {
+  DIFF: "Differenz",
+  REGULAR: "Regulär",
+};
+
+function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
 export function PurchasesPage() {
   const api = useApi();
   const qc = useQueryClient();
@@ -132,40 +159,48 @@ export function PurchasesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Purchases</div>
+      <div className="text-xl font-semibold">Einkäufe</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Create purchase</CardTitle>
+          <CardTitle>Einkauf erfassen</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>Kind</Label>
+              <Label>Art</Label>
               <Select value={kind} onValueChange={setKind}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PRIVATE_DIFF">PRIVATE_DIFF</SelectItem>
-                  <SelectItem value="COMMERCIAL_REGULAR">COMMERCIAL_REGULAR</SelectItem>
+                  {PURCHASE_KIND_OPTIONS.map((k) => (
+                    <SelectItem key={k.value} value={k.value}>
+                      {k.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <div className="text-xs text-gray-500">Purchase type is forced to {purchaseType}.</div>
+              <div className="text-xs text-gray-500">
+                Einkaufstyp ist fest auf {PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType} gesetzt.
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>Date</Label>
+              <Label>Datum</Label>
               <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Payment source</Label>
+              <Label>Zahlungsquelle</Label>
               <Select value={paymentSource} onValueChange={setPaymentSource}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CASH">CASH</SelectItem>
-                  <SelectItem value="BANK">BANK</SelectItem>
+                  {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -173,25 +208,25 @@ export function PurchasesPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>Seller / Supplier</Label>
+              <Label>Verkäufer / Lieferant</Label>
               <Input value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder="Name" />
             </div>
             <div className="space-y-2">
-              <Label>Address (optional)</Label>
-              <Input value={counterpartyAddress} onChange={(e) => setCounterpartyAddress(e.target.value)} placeholder="Address" />
+              <Label>Adresse (optional)</Label>
+              <Input value={counterpartyAddress} onChange={(e) => setCounterpartyAddress(e.target.value)} placeholder="Adresse" />
             </div>
           </div>
 
           {kind === "COMMERCIAL_REGULAR" && (
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
-                <Label>External invoice number</Label>
+                <Label>Externe Rechnungsnummer</Label>
                 <Input value={externalInvoiceNumber} onChange={(e) => setExternalInvoiceNumber(e.target.value)} />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>Receipt upload</Label>
+                <Label>Beleg-Upload</Label>
                 <div className="flex items-center gap-2">
-                  <Input value={receiptUploadPath} readOnly placeholder="Upload a PDF/image…" />
+                  <Input value={receiptUploadPath} readOnly placeholder="PDF/Bild hochladen…" />
                   <Input
                     type="file"
                     className="max-w-xs"
@@ -206,19 +241,19 @@ export function PurchasesPage() {
           )}
 
           <div className="space-y-2">
-            <Label>Total amount (EUR)</Label>
+            <Label>Gesamtbetrag (EUR)</Label>
             <Input value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
           </div>
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Badge variant={splitOk ? "success" : "warning"}>
-                Split: {sumLinesCents === null ? "invalid" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
+                Aufteilung: {sumLinesCents === null ? "ungültig" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
               </Badge>
-              {!splitOk && <div className="text-xs text-gray-500">Save is blocked until sums match.</div>}
+              {!splitOk && <div className="text-xs text-gray-500">Erstellen ist blockiert, bis die Summen übereinstimmen.</div>}
             </div>
             <Button onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
-              Create
+              Erstellen
             </Button>
           </div>
 
@@ -230,7 +265,7 @@ export function PurchasesPage() {
 
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle>Lines</CardTitle>
+              <CardTitle>Positionen</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
@@ -244,16 +279,16 @@ export function PurchasesPage() {
                   }
                   disabled={!master.data?.length}
                 >
-                  Add line
+                  Position hinzufügen
                 </Button>
-                {!master.data?.length && <div className="text-xs text-gray-500">Create master products first.</div>}
+                {!master.data?.length && <div className="text-xs text-gray-500">Erst Produktstamm anlegen.</div>}
               </div>
 
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Condition</TableHead>
+                    <TableHead>Produkt</TableHead>
+                    <TableHead>Zustand</TableHead>
                     <TableHead className="text-right">EK (EUR)</TableHead>
                     <TableHead className="text-right"></TableHead>
                   </TableRow>
@@ -269,7 +304,7 @@ export function PurchasesPage() {
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select…" />
+                            <SelectValue placeholder="Auswählen…" />
                           </SelectTrigger>
                           <SelectContent>
                             {(master.data ?? []).map((m) => (
@@ -289,9 +324,9 @@ export function PurchasesPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {["NEW", "LIKE_NEW", "GOOD", "ACCEPTABLE", "DEFECT"].map((c) => (
-                              <SelectItem key={c} value={c}>
-                                {c}
+                            {CONDITION_OPTIONS.map((c) => (
+                              <SelectItem key={c.value} value={c.value}>
+                                {c.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -308,7 +343,7 @@ export function PurchasesPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" onClick={() => setLines((s) => s.filter((_, i) => i !== idx))}>
-                          Remove
+                          Entfernen
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -316,7 +351,7 @@ export function PurchasesPage() {
                   {!lines.length && (
                     <TableRow>
                       <TableCell colSpan={4} className="text-sm text-gray-500">
-                        No lines yet.
+                        Noch keine Positionen.
                       </TableCell>
                     </TableRow>
                   )}
@@ -329,11 +364,11 @@ export function PurchasesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>History</CardTitle>
+          <CardTitle>Historie</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button variant="secondary" onClick={() => list.refetch()}>
-            Refresh
+            Aktualisieren
           </Button>
 
           {list.isError && (
@@ -345,18 +380,18 @@ export function PurchasesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead>Seller</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Docs</TableHead>
+                <TableHead>Datum</TableHead>
+                <TableHead>Art</TableHead>
+                <TableHead>Verkäufer</TableHead>
+                <TableHead className="text-right">Gesamt</TableHead>
+                <TableHead className="text-right">Dokumente</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {(list.data ?? []).map((p) => (
                 <TableRow key={p.id}>
                   <TableCell>{p.purchase_date}</TableCell>
-                  <TableCell>{p.kind}</TableCell>
+                  <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
                   <TableCell>{p.counterparty_name}</TableCell>
                   <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
                   <TableCell className="text-right">
@@ -367,12 +402,12 @@ export function PurchasesPage() {
                         </DialogTrigger>
                         <DialogContent>
                           <DialogHeader>
-                            <DialogTitle>Purchase PDF</DialogTitle>
+                            <DialogTitle>Einkauf (PDF)</DialogTitle>
                             <DialogDescription>{p.pdf_path}</DialogDescription>
                           </DialogHeader>
                           <DialogFooter>
                             <Button variant="secondary" onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}>
-                              Download
+                              Herunterladen
                             </Button>
                           </DialogFooter>
                         </DialogContent>
@@ -386,7 +421,7 @@ export function PurchasesPage() {
               {!list.data?.length && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-sm text-gray-500">
-                    No data.
+                    Keine Daten.
                   </TableCell>
                 </TableRow>
               )}
@@ -397,4 +432,3 @@ export function PurchasesPage() {
     </div>
   );
 }
-

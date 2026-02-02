@@ -44,7 +44,7 @@ export function useApi() {
     if (!res.ok) {
       const detail = isJson ? await res.json().catch(() => undefined) : await res.text().catch(() => undefined);
       const msg = typeof detail === "object" && detail && "detail" in (detail as any) ? (detail as any).detail : res.statusText;
-      throw new ApiError(String(msg || "Request failed"), res.status, detail);
+      throw new ApiError(String(msg || "Anfrage fehlgeschlagen"), res.status, detail);
     }
 
     if (res.status === 204) return undefined as T;
@@ -58,7 +58,7 @@ export function useApi() {
       headers.set("Authorization", basicAuthHeader(credentials.username, credentials.password));
     }
     const res = await fetch(`${API_BASE_URL}/files/${relPath.replace(/^\/+/, "")}`, { headers });
-    if (!res.ok) throw new ApiError("Download failed", res.status);
+    if (!res.ok) throw new ApiError("Download fehlgeschlagen", res.status);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -72,4 +72,3 @@ export function useApi() {
 
   return { request, download };
 }
-

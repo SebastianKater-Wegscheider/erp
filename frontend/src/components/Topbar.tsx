@@ -5,14 +5,14 @@ import { useAuth } from "../lib/auth";
 import { Button } from "./ui/button";
 
 const NAV = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/master-products", label: "Master Products" },
-  { to: "/inventory", label: "Inventory" },
-  { to: "/purchases", label: "Purchases" },
-  { to: "/sales", label: "Sales" },
-  { to: "/cost-allocations", label: "Cost Allocation" },
-  { to: "/opex", label: "OpEx" },
-  { to: "/mileage", label: "Mileage" },
+  { to: "/dashboard", label: "Übersicht" },
+  { to: "/master-products", label: "Produktstamm" },
+  { to: "/inventory", label: "Lagerbestand" },
+  { to: "/purchases", label: "Einkäufe" },
+  { to: "/sales", label: "Verkäufe" },
+  { to: "/cost-allocations", label: "Kostenverteilung" },
+  { to: "/opex", label: "Betriebsausgaben" },
+  { to: "/mileage", label: "Fahrtenbuch" },
 ];
 
 export function Topbar() {
@@ -41,10 +41,9 @@ export function Topbar() {
         </div>
         <Button variant="secondary" onClick={clearCredentials}>
           <LogOut className="h-4 w-4" />
-          Logout
+          Abmelden
         </Button>
       </div>
     </div>
   );
 }
-

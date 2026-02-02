@@ -48,19 +48,19 @@ export function MasterProductsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Master Products</div>
+      <div className="text-xl font-semibold">Produktstamm</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Create</CardTitle>
+          <CardTitle>Anlegen</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
-            <Label>Title</Label>
+            <Label>Titel</Label>
             <Input value={form.title} onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))} />
           </div>
           <div className="space-y-2">
-            <Label>Platform</Label>
+            <Label>Plattform</Label>
             <Input value={form.platform} onChange={(e) => setForm((s) => ({ ...s, platform: e.target.value }))} />
           </div>
           <div className="space-y-2">
@@ -72,7 +72,7 @@ export function MasterProductsPage() {
               onClick={() => create.mutate()}
               disabled={!form.title.trim() || !form.platform.trim() || !form.region.trim() || create.isPending}
             >
-              Create
+              Anlegen
             </Button>
           </div>
           {create.isError && (
@@ -85,13 +85,13 @@ export function MasterProductsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>List</CardTitle>
+          <CardTitle>Liste</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2">
-            <Input placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input placeholder="Suchen…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <Button variant="secondary" onClick={() => list.refetch()}>
-              Refresh
+              Aktualisieren
             </Button>
           </div>
 
@@ -104,8 +104,8 @@ export function MasterProductsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Platform</TableHead>
+                <TableHead>Titel</TableHead>
+                <TableHead>Plattform</TableHead>
                 <TableHead>Region</TableHead>
                 <TableHead className="text-right">EAN</TableHead>
               </TableRow>
@@ -122,7 +122,7 @@ export function MasterProductsPage() {
               {!rows.length && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-sm text-gray-500">
-                    No data.
+                    Keine Daten.
                   </TableCell>
                 </TableRow>
               )}
@@ -133,4 +133,3 @@ export function MasterProductsPage() {
     </div>
   );
 }
-

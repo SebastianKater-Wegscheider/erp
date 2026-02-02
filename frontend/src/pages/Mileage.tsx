@@ -21,6 +21,17 @@ type MileageOut = {
   amount_cents: number;
 };
 
+const PURPOSE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "BUYING", label: "Einkauf" },
+  { value: "POST", label: "Post" },
+  { value: "MATERIAL", label: "Material" },
+  { value: "OTHER", label: "Sonstiges" },
+];
+
+function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
 export function MileagePage() {
   const api = useApi();
   const qc = useQueryClient();
@@ -58,15 +69,15 @@ export function MileagePage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Mileage</div>
+      <div className="text-xl font-semibold">Fahrtenbuch</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Create</CardTitle>
+          <CardTitle>Erfassen</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
-            <Label>Date</Label>
+            <Label>Datum</Label>
             <Input type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} />
           </div>
           <div className="space-y-2">
@@ -74,31 +85,31 @@ export function MileagePage() {
             <Input value={start} onChange={(e) => setStart(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Destination</Label>
+            <Label>Ziel</Label>
             <Input value={destination} onChange={(e) => setDestination(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Purpose</Label>
+            <Label>Zweck</Label>
             <Select value={purpose} onValueChange={setPurpose}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["BUYING", "POST", "MATERIAL", "OTHER"].map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
+                {PURPOSE_OPTIONS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>KM</Label>
-            <Input value={km} onChange={(e) => setKm(e.target.value)} placeholder="e.g. 12.3" />
+            <Label>km</Label>
+            <Input value={km} onChange={(e) => setKm(e.target.value)} placeholder="z. B. 12.3" />
           </div>
           <div className="flex items-end">
             <Button onClick={() => create.mutate()} disabled={!start.trim() || !destination.trim() || create.isPending}>
-              Create
+              Erstellen
             </Button>
           </div>
           {create.isError && (
@@ -111,11 +122,11 @@ export function MileagePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>List</CardTitle>
+          <CardTitle>Liste</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button variant="secondary" onClick={() => list.refetch()}>
-            Refresh
+            Aktualisieren
           </Button>
           {list.isError && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -125,10 +136,10 @@ export function MileagePage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Route</TableHead>
-                <TableHead>Purpose</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Datum</TableHead>
+                <TableHead>Strecke</TableHead>
+                <TableHead>Zweck</TableHead>
+                <TableHead className="text-right">Betrag</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -139,14 +150,14 @@ export function MileagePage() {
                     <div className="font-medium">{m.start_location} → {m.destination}</div>
                     <div className="text-xs text-gray-500">{(m.distance_meters / 1000).toFixed(2)} km</div>
                   </TableCell>
-                  <TableCell>{m.purpose}</TableCell>
+                  <TableCell>{optionLabel(PURPOSE_OPTIONS, m.purpose)}</TableCell>
                   <TableCell className="text-right">{formatEur(m.amount_cents)} €</TableCell>
                 </TableRow>
               ))}
               {!list.data?.length && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-sm text-gray-500">
-                    No data.
+                    Keine Daten.
                   </TableCell>
                 </TableRow>
               )}
@@ -157,4 +168,3 @@ export function MileagePage() {
     </div>
   );
 }
-

@@ -20,7 +20,7 @@ export function DashboardPage() {
   const data = q.data;
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Dashboard</div>
+      <div className="text-xl font-semibold">Übersicht</div>
 
       {q.isError && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -31,19 +31,19 @@ export function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>Inventory Value</CardTitle>
+            <CardTitle>Lagerwert</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.inventory_value_cents)} €` : "…"}</CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Gross Profit (Month)</CardTitle>
+            <CardTitle>Bruttogewinn (Monat)</CardTitle>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.gross_profit_month_cents)} €` : "…"}</CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Cash/Bank</CardTitle>
+            <CardTitle>Kasse/Bank</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
             {data ? (
@@ -62,4 +62,3 @@ export function DashboardPage() {
     </div>
   );
 }
-

@@ -18,16 +18,16 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <div className="mx-auto max-w-md px-4 py-16">
         <Card>
           <CardHeader>
-            <CardTitle>Login</CardTitle>
-            <CardDescription>HTTP Basic Auth for the ERP API.</CardDescription>
+            <CardTitle>Anmeldung</CardTitle>
+            <CardDescription>HTTP Basic Auth für die ERP-API.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Username</Label>
+              <Label>Benutzername</Label>
               <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
             </div>
             <div className="space-y-2">
-              <Label>Password</Label>
+              <Label>Passwort</Label>
               <Input
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -40,10 +40,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               onClick={() => setCredentials({ username: username.trim(), password })}
               disabled={!username.trim() || !password}
             >
-              Save credentials
+              Zugangsdaten speichern
             </Button>
             <div className="text-xs text-gray-500">
-              API base URL: <span className="font-mono">{import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1"}</span>
+              API-Basis-URL:{" "}
+              <span className="font-mono">{import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1"}</span>
             </div>
           </CardContent>
         </Card>
@@ -51,4 +52,3 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-

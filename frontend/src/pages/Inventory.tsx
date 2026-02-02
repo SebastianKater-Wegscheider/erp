@@ -24,11 +24,46 @@ type InventoryItem = {
 
 type MasterProduct = { id: string; title: string; platform: string; region: string };
 
+const INVENTORY_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "DRAFT", label: "Entwurf" },
+  { value: "AVAILABLE", label: "Verfügbar" },
+  { value: "RESERVED", label: "Reserviert" },
+  { value: "SOLD", label: "Verkauft" },
+  { value: "RETURNED", label: "Retourniert" },
+  { value: "LOST", label: "Verloren" },
+];
+
+const CONDITION_LABEL: Record<string, string> = {
+  NEW: "Neu",
+  LIKE_NEW: "Wie neu",
+  GOOD: "Gut",
+  ACCEPTABLE: "Akzeptabel",
+  DEFECT: "Defekt",
+};
+
+const PURCHASE_TYPE_LABEL: Record<string, string> = {
+  DIFF: "Differenz",
+  REGULAR: "Regulär",
+};
+
+function inventoryStatusLabel(status: string): string {
+  const opt = INVENTORY_STATUS_OPTIONS.find((o) => o.value === status);
+  return opt?.label ?? status;
+}
+
+function conditionLabel(condition: string): string {
+  return CONDITION_LABEL[condition] ?? condition;
+}
+
+function purchaseTypeLabel(purchaseType: string): string {
+  return PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType;
+}
+
 function ageVariant(days: number | null) {
-  if (days === null) return { variant: "secondary" as const, label: "n/a" };
-  if (days < 30) return { variant: "success" as const, label: `${days}d` };
-  if (days <= 90) return { variant: "warning" as const, label: `${days}d` };
-  return { variant: "danger" as const, label: `${days}d` };
+  if (days === null) return { variant: "secondary" as const, label: "k. A." };
+  if (days < 30) return { variant: "success" as const, label: `${days}T` };
+  if (days <= 90) return { variant: "warning" as const, label: `${days}T` };
+  return { variant: "danger" as const, label: `${days}T` };
 }
 
 export function InventoryPage() {
@@ -60,31 +95,31 @@ export function InventoryPage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Inventory</div>
+      <div className="text-xl font-semibold">Lagerbestand</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Search</CardTitle>
+          <CardTitle>Suche</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 md:flex-row md:items-center">
-          <Input placeholder="Title or master product UUID…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input placeholder="Titel oder Produktstamm-UUID…" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="w-full md:w-56">
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger>
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">ALL</SelectItem>
-                {["DRAFT", "AVAILABLE", "RESERVED", "SOLD", "RETURNED", "LOST"].map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
+                <SelectItem value="ALL">Alle</SelectItem>
+                {INVENTORY_STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <Button variant="secondary" onClick={() => inv.refetch()}>
-            Refresh
+            Aktualisieren
           </Button>
         </CardContent>
       </Card>
@@ -97,18 +132,18 @@ export function InventoryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Items</CardTitle>
+          <CardTitle>Artikel</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Product</TableHead>
+                <TableHead>Produkt</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Age</TableHead>
-                <TableHead>Condition</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Cost (EUR)</TableHead>
+                <TableHead>Alter</TableHead>
+                <TableHead>Zustand</TableHead>
+                <TableHead>Typ</TableHead>
+                <TableHead className="text-right">Kosten (EUR)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -126,13 +161,13 @@ export function InventoryPage() {
                       <div className="text-xs text-gray-400 font-mono">{it.id}</div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{it.status}</Badge>
+                      <Badge variant="secondary">{inventoryStatusLabel(it.status)}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant={av.variant}>{av.label}</Badge>
                     </TableCell>
-                    <TableCell>{it.condition}</TableCell>
-                    <TableCell>{it.purchase_type}</TableCell>
+                    <TableCell>{conditionLabel(it.condition)}</TableCell>
+                    <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
                     <TableCell className="text-right">
                       {formatEur(it.purchase_price_cents + it.allocated_costs_cents)} €
                     </TableCell>
@@ -142,7 +177,7 @@ export function InventoryPage() {
               {!rows.length && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-sm text-gray-500">
-                    No data.
+                    Keine Daten.
                   </TableCell>
                 </TableRow>
               )}
@@ -153,4 +188,3 @@ export function InventoryPage() {
     </div>
   );
 }
-

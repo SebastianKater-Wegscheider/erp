@@ -21,6 +21,11 @@ type AllocationOut = {
 
 type Line = { inventory_item_id: string; amount: string };
 
+const PAYMENT_SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "CASH", label: "Bar" },
+  { value: "BANK", label: "Bank" },
+];
+
 export function CostAllocationsPage() {
   const api = useApi();
   const qc = useQueryClient();
@@ -72,45 +77,52 @@ export function CostAllocationsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Cost Allocation</div>
+      <div className="text-xl font-semibold">Kostenverteilung</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Create</CardTitle>
+          <CardTitle>Erfassen</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label>Date</Label>
+              <Label>Datum</Label>
               <Input type="date" value={allocationDate} onChange={(e) => setAllocationDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Payment source</Label>
+              <Label>Zahlungsquelle</Label>
               <Select value={paymentSource} onValueChange={setPaymentSource}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CASH">CASH</SelectItem>
-                  <SelectItem value="BANK">BANK</SelectItem>
+                  {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Total (computed)</Label>
+              <Label>Summe (berechnet)</Label>
               <Input value={`${formatEur(sumCents)} €`} readOnly />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>Description</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Disc cleaning / FBA inbound shipping" />
+            <Label>Beschreibung</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="z. B. Disc-Reinigung / FBA-Inbound-Versand"
+            />
           </div>
 
           <div className="flex items-center justify-between">
-            <Badge variant={sumCents > 0 ? "success" : "secondary"}>Sum: {formatEur(sumCents)} €</Badge>
+            <Badge variant={sumCents > 0 ? "success" : "secondary"}>Summe: {formatEur(sumCents)} €</Badge>
             <Button onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
-              Create
+              Erstellen
             </Button>
           </div>
 
@@ -122,16 +134,16 @@ export function CostAllocationsPage() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <div className="font-medium">Lines</div>
+              <div className="font-medium">Positionen</div>
               <Button variant="secondary" onClick={() => setLines((s) => [...s, { inventory_item_id: "", amount: "0,00" }])}>
-                Add line
+                Position hinzufügen
               </Button>
             </div>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Inventory item UUID</TableHead>
-                  <TableHead className="text-right">Amount (EUR)</TableHead>
+                  <TableHead>Lagerartikel-UUID</TableHead>
+                  <TableHead className="text-right">Betrag (EUR)</TableHead>
                   <TableHead className="text-right"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -154,7 +166,7 @@ export function CostAllocationsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" onClick={() => setLines((s) => s.filter((_, i) => i !== idx))}>
-                        Remove
+                        Entfernen
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -162,7 +174,7 @@ export function CostAllocationsPage() {
                 {!lines.length && (
                   <TableRow>
                     <TableCell colSpan={3} className="text-sm text-gray-500">
-                      No lines yet.
+                      Noch keine Positionen.
                     </TableCell>
                   </TableRow>
                 )}
@@ -174,11 +186,11 @@ export function CostAllocationsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>History</CardTitle>
+          <CardTitle>Historie</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button variant="secondary" onClick={() => list.refetch()}>
-            Refresh
+            Aktualisieren
           </Button>
           {list.isError && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -188,9 +200,9 @@ export function CostAllocationsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Datum</TableHead>
+                <TableHead>Beschreibung</TableHead>
+                <TableHead className="text-right">Betrag</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -204,7 +216,7 @@ export function CostAllocationsPage() {
               {!list.data?.length && (
                 <TableRow>
                   <TableCell colSpan={3} className="text-sm text-gray-500">
-                    No data.
+                    Keine Daten.
                   </TableCell>
                 </TableRow>
               )}
@@ -215,4 +227,3 @@ export function CostAllocationsPage() {
     </div>
   );
 }
-

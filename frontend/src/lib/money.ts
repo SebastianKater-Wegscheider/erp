@@ -10,7 +10,7 @@ export function parseEurToCents(input: string): number {
   const s = input.trim().replace(/\s+/g, "").replace(",", ".");
   if (s === "") return 0;
   if (!/^-?\d+(\.\d{1,2})?$/.test(s)) {
-    throw new Error("Invalid EUR amount");
+    throw new Error("Ungültiger EUR-Betrag");
   }
   const [intPart, decPart = ""] = s.split(".");
   const sign = intPart.startsWith("-") ? -1 : 1;
@@ -19,4 +19,3 @@ export function parseEurToCents(input: string): number {
   const cents = Number((decPart + "00").slice(0, 2));
   return sign * (euros * 100 + cents);
 }
-

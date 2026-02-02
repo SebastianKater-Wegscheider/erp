@@ -22,6 +22,25 @@ type OpexOut = {
 
 type UploadOut = { upload_path: string };
 
+const CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "PACKAGING", label: "Verpackung" },
+  { value: "POSTAGE", label: "Porto" },
+  { value: "SOFTWARE", label: "Software" },
+  { value: "OFFICE", label: "Büro" },
+  { value: "CONSULTING", label: "Beratung" },
+  { value: "FEES", label: "Gebühren" },
+  { value: "OTHER", label: "Sonstiges" },
+];
+
+const PAYMENT_SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "CASH", label: "Bar" },
+  { value: "BANK", label: "Bank" },
+];
+
+function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
 export function OpexPage() {
   const api = useApi();
   const qc = useQueryClient();
@@ -69,56 +88,59 @@ export function OpexPage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">OpEx</div>
+      <div className="text-xl font-semibold">Betriebsausgaben</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Create</CardTitle>
+          <CardTitle>Erfassen</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
-            <Label>Date</Label>
+            <Label>Datum</Label>
             <Input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Recipient</Label>
+            <Label>Empfänger</Label>
             <Input value={recipient} onChange={(e) => setRecipient(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Category</Label>
+            <Label>Kategorie</Label>
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["PACKAGING", "POSTAGE", "SOFTWARE", "OFFICE", "CONSULTING", "FEES", "OTHER"].map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
+                {CATEGORY_OPTIONS.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>
+                    {c.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Amount (EUR)</Label>
+            <Label>Betrag (EUR)</Label>
             <Input value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Payment source</Label>
+            <Label>Zahlungsquelle</Label>
             <Select value={paymentSource} onValueChange={setPaymentSource}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="CASH">CASH</SelectItem>
-                <SelectItem value="BANK">BANK</SelectItem>
+                {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2 md:col-span-2">
-            <Label>Receipt upload (optional)</Label>
+            <Label>Beleg-Upload (optional)</Label>
             <div className="flex items-center gap-2">
-              <Input value={receiptUploadPath} readOnly placeholder="Upload path…" />
+              <Input value={receiptUploadPath} readOnly placeholder="Upload-Pfad…" />
               <Input
                 type="file"
                 className="max-w-xs"
@@ -131,7 +153,7 @@ export function OpexPage() {
           </div>
           <div className="flex items-end">
             <Button onClick={() => create.mutate()} disabled={!recipient.trim() || create.isPending}>
-              Create
+              Erstellen
             </Button>
           </div>
           {create.isError && (
@@ -144,11 +166,11 @@ export function OpexPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>List</CardTitle>
+          <CardTitle>Liste</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button variant="secondary" onClick={() => list.refetch()}>
-            Refresh
+            Aktualisieren
           </Button>
           {list.isError && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -158,10 +180,10 @@ export function OpexPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Recipient</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Datum</TableHead>
+                <TableHead>Empfänger</TableHead>
+                <TableHead>Kategorie</TableHead>
+                <TableHead className="text-right">Betrag</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -169,14 +191,14 @@ export function OpexPage() {
                 <TableRow key={e.id}>
                   <TableCell>{e.expense_date}</TableCell>
                   <TableCell>{e.recipient}</TableCell>
-                  <TableCell>{e.category}</TableCell>
+                  <TableCell>{optionLabel(CATEGORY_OPTIONS, e.category)}</TableCell>
                   <TableCell className="text-right">{formatEur(e.amount_cents)} €</TableCell>
                 </TableRow>
               ))}
               {!list.data?.length && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-sm text-gray-500">
-                    No data.
+                    Keine Daten.
                   </TableCell>
                 </TableRow>
               )}
@@ -187,4 +209,3 @@ export function OpexPage() {
     </div>
   );
 }
-

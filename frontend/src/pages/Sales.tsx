@@ -50,6 +50,46 @@ type ReturnOut = {
   refund_gross_cents: number;
 };
 
+const CHANNEL_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "EBAY", label: "eBay" },
+  { value: "AMAZON", label: "Amazon" },
+  { value: "WILLHABEN", label: "willhaben" },
+  { value: "OTHER", label: "Sonstiges" },
+];
+
+const PAYMENT_SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "CASH", label: "Bar" },
+  { value: "BANK", label: "Bank" },
+];
+
+const RETURN_ACTION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "RESTOCK", label: "Wieder einlagern" },
+  { value: "WRITE_OFF", label: "Ausbuchen" },
+];
+
+const PURCHASE_TYPE_LABEL: Record<string, string> = {
+  DIFF: "Differenz",
+  REGULAR: "Regulär",
+};
+
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Entwurf",
+  FINALIZED: "Abgeschlossen",
+  CANCELLED: "Storniert",
+};
+
+function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
+function purchaseTypeLabel(purchaseType: string): string {
+  return PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType;
+}
+
+function orderStatusLabel(status: string): string {
+  return ORDER_STATUS_LABEL[status] ?? status;
+}
+
 export function SalesPage() {
   const api = useApi();
   const qc = useQueryClient();
@@ -134,7 +174,7 @@ export function SalesPage() {
 
   const createReturn = useMutation({
     mutationFn: async () => {
-      if (!returnOrderId) throw new Error("No order selected");
+      if (!returnOrderId) throw new Error("Kein Auftrag ausgewählt");
       return api.request<ReturnOut>(`/sales/${returnOrderId}/returns`, {
         method: "POST",
         json: {
@@ -161,68 +201,73 @@ export function SalesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Sales</div>
+      <div className="text-xl font-semibold">Verkäufe</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Create order</CardTitle>
+          <CardTitle>Auftrag erstellen</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2">
-              <Label>Date</Label>
+              <Label>Datum</Label>
               <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Channel</Label>
+              <Label>Kanal</Label>
               <Select value={channel} onValueChange={setChannel}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {["EBAY", "AMAZON", "WILLHABEN", "OTHER"].map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {CHANNEL_OPTIONS.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Payment source</Label>
+              <Label>Zahlungsquelle</Label>
               <Select value={paymentSource} onValueChange={setPaymentSource}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CASH">CASH</SelectItem>
-                  <SelectItem value="BANK">BANK</SelectItem>
+                  {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Shipping (gross, EUR)</Label>
+              <Label>Versand (brutto, EUR)</Label>
               <Input value={shippingGross} onChange={(e) => setShippingGross(e.target.value)} />
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>Buyer name</Label>
+              <Label>Käufername</Label>
               <Input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Buyer address (optional)</Label>
+              <Label>Käuferadresse (optional)</Label>
               <Input value={buyerAddress} onChange={(e) => setBuyerAddress(e.target.value)} />
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>Available inventory (status=AVAILABLE)</Label>
+              <Label>Verfügbarer Bestand (Status=AVAILABLE)</Label>
               <div className="flex items-center gap-2">
-                <Input placeholder="Search title…" value={searchInv} onChange={(e) => setSearchInv(e.target.value)} />
-                <Button variant="secondary" onClick={() => inv.refetch()}>Refresh</Button>
+                <Input placeholder="Titel suchen…" value={searchInv} onChange={(e) => setSearchInv(e.target.value)} />
+                <Button variant="secondary" onClick={() => inv.refetch()}>Aktualisieren</Button>
               </div>
               <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>Artikel</TableHead>
+                      <TableHead>Typ</TableHead>
                       <TableHead className="text-right"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -237,14 +282,14 @@ export function SalesPage() {
                             {mp && <div className="text-xs text-gray-500">{mp.platform} · {mp.region}</div>}
                             <div className="text-xs font-mono text-gray-400">{it.id}</div>
                           </TableCell>
-                          <TableCell>{it.purchase_type}</TableCell>
+                          <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
                           <TableCell className="text-right">
                             <Button
                               variant={already ? "secondary" : "outline"}
                               disabled={already}
                               onClick={() => setSelectedLines((s) => [...s, { inventory_item_id: it.id, sale_gross: "" }])}
                             >
-                              Add
+                              Hinzufügen
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -252,7 +297,7 @@ export function SalesPage() {
                     })}
                     {!inv.data?.length && (
                       <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-gray-500">No available items.</TableCell>
+                        <TableCell colSpan={3} className="text-sm text-gray-500">Keine verfügbaren Artikel.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -261,13 +306,13 @@ export function SalesPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Order lines</Label>
+              <Label>Auftragspositionen</Label>
               <div className="rounded-md border border-gray-200 bg-white">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Inventory item</TableHead>
-                      <TableHead className="text-right">Sale gross (EUR)</TableHead>
+                      <TableHead>Lagerartikel</TableHead>
+                      <TableHead className="text-right">Verkauf brutto (EUR)</TableHead>
                       <TableHead className="text-right"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -284,14 +329,14 @@ export function SalesPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" onClick={() => setSelectedLines((s) => s.filter((_, i) => i !== idx))}>
-                            Remove
+                            Entfernen
                           </Button>
                         </TableCell>
                       </TableRow>
                     ))}
                     {!selectedLines.length && (
                       <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-gray-500">No lines yet.</TableCell>
+                        <TableCell colSpan={3} className="text-sm text-gray-500">Noch keine Positionen.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -302,7 +347,7 @@ export function SalesPage() {
 
           <div className="flex items-center justify-end gap-2">
             <Button onClick={() => create.mutate()} disabled={!canCreateOrder || create.isPending}>
-              Create order (DRAFT)
+              Auftrag erstellen (ENTWURF)
             </Button>
           </div>
 
@@ -316,10 +361,10 @@ export function SalesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Orders</CardTitle>
+          <CardTitle>Aufträge</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button variant="secondary" onClick={() => orders.refetch()}>Refresh</Button>
+          <Button variant="secondary" onClick={() => orders.refetch()}>Aktualisieren</Button>
 
           {(orders.isError || inv.isError) && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -330,12 +375,12 @@ export function SalesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Channel</TableHead>
+                <TableHead>Datum</TableHead>
+                <TableHead>Kanal</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Buyer</TableHead>
-                <TableHead className="text-right">Gross</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Käufer</TableHead>
+                <TableHead className="text-right">Brutto</TableHead>
+                <TableHead className="text-right">Aktionen</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -344,10 +389,10 @@ export function SalesPage() {
                 return (
                   <TableRow key={o.id}>
                     <TableCell>{o.order_date}</TableCell>
-                    <TableCell>{o.channel}</TableCell>
+                    <TableCell>{optionLabel(CHANNEL_OPTIONS, o.channel)}</TableCell>
                     <TableCell>
                       <Badge variant={o.status === "FINALIZED" ? "success" : o.status === "DRAFT" ? "secondary" : "warning"}>
-                        {o.status}
+                        {orderStatusLabel(o.status)}
                       </Badge>
                       {o.invoice_number && <div className="text-xs text-gray-500">#{o.invoice_number}</div>}
                     </TableCell>
@@ -357,17 +402,17 @@ export function SalesPage() {
                       {o.status === "DRAFT" && (
                         <>
                           <Button variant="outline" onClick={() => finalize.mutate(o.id)} disabled={finalize.isPending}>
-                            Finalize
+                            Abschließen
                           </Button>
                           <Button variant="secondary" onClick={() => cancel.mutate(o.id)} disabled={cancel.isPending}>
-                            Cancel
+                            Stornieren
                           </Button>
                         </>
                       )}
                       {o.status === "FINALIZED" && o.invoice_pdf_path && (
                         <>
                           <Button variant="outline" onClick={() => api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)}>
-                            Invoice PDF
+                            Rechnung (PDF)
                           </Button>
                           <Dialog>
                             <DialogTrigger asChild>
@@ -385,32 +430,35 @@ export function SalesPage() {
                                   );
                                 }}
                               >
-                                Return / Correction
+                                Rückgabe / Korrektur
                               </Button>
                             </DialogTrigger>
                             <DialogContent>
                               <DialogHeader>
-                                <DialogTitle>Return / Correction</DialogTitle>
-                                <DialogDescription>Create a correction PDF and restock/write-off items.</DialogDescription>
+                                <DialogTitle>Rückgabe / Korrektur</DialogTitle>
+                                <DialogDescription>Korrektur-PDF erstellen und Artikel wieder einlagern/ausbuchen.</DialogDescription>
                               </DialogHeader>
                               <div className="space-y-3">
                                 <div className="grid gap-3 md:grid-cols-3">
                                   <div className="space-y-2">
-                                    <Label>Date</Label>
+                                    <Label>Datum</Label>
                                     <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Payment source</Label>
+                                    <Label>Zahlungsquelle</Label>
                                     <Select value={returnPaymentSource} onValueChange={setReturnPaymentSource}>
                                       <SelectTrigger><SelectValue /></SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="CASH">CASH</SelectItem>
-                                        <SelectItem value="BANK">BANK</SelectItem>
+                                        {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                                          <SelectItem key={p.value} value={p.value}>
+                                            {p.label}
+                                          </SelectItem>
+                                        ))}
                                       </SelectContent>
                                     </Select>
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Shipping refund (EUR)</Label>
+                                    <Label>Versand-Erstattung (EUR)</Label>
                                     <Input value={shippingRefund} onChange={(e) => setShippingRefund(e.target.value)} />
                                   </div>
                                 </div>
@@ -419,9 +467,9 @@ export function SalesPage() {
                                   <Table>
                                     <TableHeader>
                                       <TableRow>
-                                        <TableHead>Item</TableHead>
-                                        <TableHead>Action</TableHead>
-                                        <TableHead className="text-right">Refund gross</TableHead>
+                                        <TableHead>Artikel</TableHead>
+                                        <TableHead>Aktion</TableHead>
+                                        <TableHead className="text-right">Erstattung brutto</TableHead>
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -435,8 +483,11 @@ export function SalesPage() {
                                             >
                                               <SelectTrigger><SelectValue /></SelectTrigger>
                                               <SelectContent>
-                                                <SelectItem value="RESTOCK">RESTOCK</SelectItem>
-                                                <SelectItem value="WRITE_OFF">WRITE_OFF</SelectItem>
+                                                {RETURN_ACTION_OPTIONS.map((a) => (
+                                                  <SelectItem key={a.value} value={a.value}>
+                                                    {a.label}
+                                                  </SelectItem>
+                                                ))}
                                               </SelectContent>
                                             </Select>
                                           </TableCell>
@@ -458,7 +509,7 @@ export function SalesPage() {
                                   onClick={() => createReturn.mutate()}
                                   disabled={!returnOrderId || createReturn.isPending}
                                 >
-                                  Create correction
+                                  Korrektur erstellen
                                 </Button>
                               </DialogFooter>
                               {createReturn.isError && (
@@ -477,7 +528,7 @@ export function SalesPage() {
               {!orders.data?.length && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-sm text-gray-500">
-                    No orders.
+                    Keine Aufträge.
                   </TableCell>
                 </TableRow>
               )}
@@ -488,4 +539,3 @@ export function SalesPage() {
     </div>
   );
 }
-
