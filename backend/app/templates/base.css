@@ -1,0 +1,69 @@
+@page {
+  size: A4;
+  margin: 18mm 16mm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: DejaVu Sans, sans-serif;
+  font-size: 11px;
+  color: #111827;
+}
+
+h1 {
+  margin: 0 0 6px 0;
+  font-size: 18px;
+}
+
+.muted {
+  color: #6b7280;
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+}
+
+.col {
+  flex: 1;
+}
+
+.box {
+  border: 1px solid #e5e7eb;
+  padding: 10px;
+  border-radius: 6px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+}
+
+th {
+  text-align: left;
+  font-weight: 600;
+  background: #f9fafb;
+}
+
+.right {
+  text-align: right;
+}
+
+.total {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.spacer {
+  height: 12px;
+}
+

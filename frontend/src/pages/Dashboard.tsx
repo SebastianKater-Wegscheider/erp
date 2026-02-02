@@ -1,0 +1,65 @@
+import { useQuery } from "@tanstack/react-query";
+
+import { useApi } from "../lib/api";
+import { formatEur } from "../lib/money";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+
+type DashboardOut = {
+  inventory_value_cents: number;
+  cash_balance_cents: Record<string, number>;
+  gross_profit_month_cents: number;
+};
+
+export function DashboardPage() {
+  const api = useApi();
+  const q = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => api.request<DashboardOut>("/reports/dashboard"),
+  });
+
+  const data = q.data;
+  return (
+    <div className="space-y-4">
+      <div className="text-xl font-semibold">Dashboard</div>
+
+      {q.isError && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+          {(q.error as Error).message}
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Inventory Value</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.inventory_value_cents)} €` : "…"}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Gross Profit (Month)</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.gross_profit_month_cents)} €` : "…"}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Cash/Bank</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            {data ? (
+              Object.entries(data.cash_balance_cents).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between">
+                  <div className="text-gray-600">{k}</div>
+                  <div className="font-medium">{formatEur(v)} €</div>
+                </div>
+              ))
+            ) : (
+              <div>…</div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+

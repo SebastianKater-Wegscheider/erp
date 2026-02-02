@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>Gutschrift {{ document_number }}</title>
+  </head>
+  <body>
+    <h1>Gutschrift (Eigenbeleg) – Ankauf</h1>
+    <div class="muted">Dokument-Nr.: {{ document_number }} · Datum: {{ purchase_date }}</div>
+
+    <div class="spacer"></div>
+
+    <div class="row">
+      <div class="col box">
+        <div class="muted">Aussteller</div>
+        <div><strong>{{ company_name }}</strong></div>
+        <div style="white-space: pre-line;">{{ company_address }}</div>
+        {% if company_email %}<div>{{ company_email }}</div>{% endif %}
+        {% if company_vat_id %}<div>UID: {{ company_vat_id }}</div>{% endif %}
+      </div>
+
+      <div class="col box">
+        <div class="muted">Verkäufer</div>
+        <div><strong>{{ counterparty_name }}</strong></div>
+        {% if counterparty_address %}<div style="white-space: pre-line;">{{ counterparty_address }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="box">
+      <div><strong>Zahlungsart:</strong> {{ payment_source }}</div>
+      <div class="muted">Differenzbesteuerter Ankauf (Privatankauf).</div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Artikel</th>
+          <th>Zustand</th>
+          <th class="right">EK (EUR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+        <tr>
+          <td>
+            <div><strong>{{ line.title }}</strong></div>
+            <div class="muted">{{ line.platform }} · {{ line.region }}</div>
+          </td>
+          <td>{{ line.condition }}</td>
+          <td class="right">{{ line.purchase_price_eur }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <td colspan="2" class="right total">Gesamtsumme</td>
+          <td class="right total">{{ total_amount_eur }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="spacer"></div>
+    <div class="muted">
+      Hinweis: Dieser Beleg wurde als Eigenbeleg (Gutschrift) über den Privatankauf erstellt.
+    </div>
+  </body>
+</html>
+

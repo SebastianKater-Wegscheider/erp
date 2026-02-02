@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.db import get_session
+from app.core.security import require_basic_auth
+from app.models.purchase import Purchase
+from app.schemas.purchase import PurchaseCreate, PurchaseOut
+from app.services.purchases import create_purchase
+
+
+router = APIRouter()
+
+
+@router.post("", response_model=PurchaseOut)
+async def create_purchase_endpoint(
+    data: PurchaseCreate,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> PurchaseOut:
+    try:
+        async with session.begin():
+            purchase = await create_purchase(session, actor=actor, data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    await session.refresh(purchase)
+    purchase = (
+        await session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    return PurchaseOut.model_validate(purchase)
+
+
+@router.get("", response_model=list[PurchaseOut])
+async def list_purchases(session: AsyncSession = Depends(get_session)) -> list[PurchaseOut]:
+    rows = (
+        await session.execute(select(Purchase).order_by(Purchase.purchase_date.desc()).options(selectinload(Purchase.lines)))
+    ).scalars().all()
+    return [PurchaseOut.model_validate(r) for r in rows]
+
+
+@router.get("/{purchase_id}", response_model=PurchaseOut)
+async def get_purchase(purchase_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> PurchaseOut:
+    row = (
+        await session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return PurchaseOut.model_validate(row)
+
