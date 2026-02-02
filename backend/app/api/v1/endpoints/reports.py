@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.schemas.reports import DashboardOut, MonthlyCloseParams
-from app.services.reports import dashboard, monthly_close_zip
+from app.schemas.reports import DashboardOut, MonthlyCloseParams, VatReportOut, VatReportParams
+from app.services.reports import dashboard, monthly_close_zip, vat_report
 
 
 router = APIRouter()
@@ -35,3 +35,9 @@ async def month_close_export(params: MonthlyCloseParams, session: AsyncSession =
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/vat", response_model=VatReportOut)
+async def vat_report_endpoint(params: VatReportParams, session: AsyncSession = Depends(get_session)) -> VatReportOut:
+    data = await vat_report(session, year=params.year, month=params.month)
+    return VatReportOut(**data)

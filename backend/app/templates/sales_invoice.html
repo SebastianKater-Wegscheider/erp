@@ -29,55 +29,119 @@
 
     <div class="spacer"></div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Position</th>
-          <th class="right">Netto (EUR)</th>
-          <th class="right">USt (EUR)</th>
-          <th class="right">Brutto (EUR)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for line in lines %}
-        <tr>
-          <td>
-            <div><strong>{{ line.title }}</strong></div>
-            <div class="muted">{{ line.platform }} · {{ line.region }}</div>
-            {% if line.purchase_type == "DIFF" %}
+    {% if has_regular_lines %}
+      <table>
+        <thead>
+          <tr>
+            <th>Position</th>
+            <th class="right">Netto (EUR)</th>
+            <th class="right">USt (EUR)</th>
+            <th class="right">Brutto (EUR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+          <tr>
+            <td>
+              <div><strong>{{ line.title }}</strong></div>
+              <div class="muted">{{ line.platform }} · {{ line.region }}</div>
+              {% if line.purchase_type == "DIFF" %}
+                <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
+              {% endif %}
+            </td>
+            <td class="right">{{ line.net_eur or "" }}</td>
+            <td class="right">{{ line.tax_eur or "" }}</td>
+            <td class="right">{{ line.gross_eur }}</td>
+          </tr>
+          {% endfor %}
+
+          {% if shipping_regular_gross_cents > 0 %}
+          <tr>
+            <td>Versand</td>
+            <td class="right">{{ shipping_regular_net_eur }}</td>
+            <td class="right">{{ shipping_regular_tax_eur }}</td>
+            <td class="right">{{ shipping_regular_gross_eur }}</td>
+          </tr>
+          {% endif %}
+
+          {% if shipping_margin_gross_cents > 0 %}
+          <tr>
+            <td>Versand (Differenzbesteuerung)</td>
+            <td class="right"></td>
+            <td class="right"></td>
+            <td class="right">{{ shipping_margin_gross_eur }}</td>
+          </tr>
+          {% endif %}
+
+          {% if has_diff_lines %}
+            <tr>
+              <td class="right total">Summe regelbesteuert</td>
+              <td class="right total">{{ regular_total_net_eur }}</td>
+              <td class="right total">{{ regular_total_tax_eur }}</td>
+              <td class="right total">{{ regular_total_gross_eur }}</td>
+            </tr>
+            <tr>
+              <td class="right total">Summe differenzbesteuert</td>
+              <td class="right total"></td>
+              <td class="right total"></td>
+              <td class="right total">{{ margin_total_gross_eur }}</td>
+            </tr>
+            <tr>
+              <td class="right total">Gesamt</td>
+              <td class="right total"></td>
+              <td class="right total"></td>
+              <td class="right total">{{ total_gross_eur }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td class="right total">Gesamt</td>
+              <td class="right total">{{ regular_total_net_eur }}</td>
+              <td class="right total">{{ regular_total_tax_eur }}</td>
+              <td class="right total">{{ regular_total_gross_eur }}</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    {% else %}
+      <table>
+        <thead>
+          <tr>
+            <th>Position</th>
+            <th class="right">Brutto (EUR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+          <tr>
+            <td>
+              <div><strong>{{ line.title }}</strong></div>
+              <div class="muted">{{ line.platform }} · {{ line.region }}</div>
               <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
-            {% endif %}
-          </td>
-          <td class="right">{{ line.net_eur }}</td>
-          <td class="right">{{ line.tax_eur }}</td>
-          <td class="right">{{ line.gross_eur }}</td>
-        </tr>
-        {% endfor %}
+            </td>
+            <td class="right">{{ line.gross_eur }}</td>
+          </tr>
+          {% endfor %}
 
-        {% if shipping_gross_cents > 0 %}
-        <tr>
-          <td>Versand</td>
-          <td class="right">{{ shipping_net_eur }}</td>
-          <td class="right">{{ shipping_tax_eur }}</td>
-          <td class="right">{{ shipping_gross_eur }}</td>
-        </tr>
-        {% endif %}
+          {% if shipping_gross_cents > 0 %}
+          <tr>
+            <td>Versand</td>
+            <td class="right">{{ shipping_margin_gross_eur }}</td>
+          </tr>
+          {% endif %}
 
-        <tr>
-          <td class="right total">Gesamt</td>
-          <td class="right total">{{ total_net_eur }}</td>
-          <td class="right total">{{ total_tax_eur }}</td>
-          <td class="right total">{{ total_gross_eur }}</td>
-        </tr>
-      </tbody>
-    </table>
+          <tr>
+            <td class="right total">Gesamt</td>
+            <td class="right total">{{ total_gross_eur }}</td>
+          </tr>
+        </tbody>
+      </table>
+    {% endif %}
 
     <div class="spacer"></div>
     {% if has_diff_lines %}
       <div class="muted">
-        Hinweis: Für differenzbesteuerte Artikel erfolgt keine Umsatzsteuer-Ausweisung auf der Rechnung (Margenbesteuerung).
+        Hinweis: Differenzbesteuerung gem. § 24 UStG (Gebrauchtgegenstände/Sonderregelung) – keine Umsatzsteuer-Ausweisung.
       </div>
     {% endif %}
   </body>
 </html>
-

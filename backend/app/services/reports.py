@@ -10,13 +10,15 @@ from pathlib import Path
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import InventoryStatus, OrderStatus
+from app.core.enums import InventoryStatus, OrderStatus, PurchaseKind, PurchaseType
+from app.models.cost_allocation import CostAllocation
 from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.mileage_log import MileageLog
 from app.models.opex_expense import OpexExpense
 from app.models.purchase import Purchase
 from app.models.sales import SalesOrder, SalesOrderLine
+from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
 
 
 @dataclass(frozen=True)
@@ -174,6 +176,36 @@ async def monthly_close_zip(
             )
         zf.writestr("csv/mileage.csv", mileage_csv.getvalue())
 
+        # VAT summary (best-effort)
+        vat = await vat_report(session, year=year, month=month)
+        vat_csv = io.StringIO()
+        vw = csv.writer(vat_csv)
+        vw.writerow(
+            [
+                "period_start",
+                "period_end",
+                "output_vat_regular_cents",
+                "output_vat_margin_cents",
+                "output_vat_adjustments_regular_cents",
+                "output_vat_adjustments_margin_cents",
+                "input_vat_cents",
+                "vat_payable_cents",
+            ]
+        )
+        vw.writerow(
+            [
+                vat["period_start"],
+                vat["period_end"],
+                vat["output_vat_regular_cents"],
+                vat["output_vat_margin_cents"],
+                vat["output_vat_adjustments_regular_cents"],
+                vat["output_vat_adjustments_margin_cents"],
+                vat["input_vat_cents"],
+                vat["vat_payable_cents"],
+            ]
+        )
+        zf.writestr("csv/vat_summary.csv", vat_csv.getvalue())
+
         # Documents (best-effort)
         purchases = (
             await session.execute(select(Purchase).where(and_(Purchase.purchase_date >= mr.start, Purchase.purchase_date < mr.end)))
@@ -199,6 +231,142 @@ async def monthly_close_zip(
             _zip_add_if_exists(zf, storage_dir, o.invoice_pdf_path, base_folder="output_invoices")
 
     return filename, buf.getvalue()
+
+
+async def vat_report(session: AsyncSession, *, year: int, month: int) -> dict:
+    """
+    Lightweight VAT report for Austria-focused reseller flows.
+
+    Notes:
+    - Regular sales VAT is taken from SalesOrderLine.sale_tax_cents + SalesOrder.shipping_regular_tax_cents.
+    - Margin scheme VAT is taken from SalesOrderLine.margin_tax_cents (computed at finalization).
+    - Corrections reduce VAT via SalesCorrectionLine.refund_tax_cents / margin_vat_adjustment_cents and
+      SalesCorrection.shipping_refund_regular_tax_cents.
+    - Input VAT is from COMMERCIAL_REGULAR purchases + OpEx + Cost Allocations (when deductible).
+    """
+    mr = month_range(year=year, month=month)
+
+    output_vat_regular_sales_stmt = (
+        select(func.coalesce(func.sum(SalesOrderLine.sale_tax_cents), 0))
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+        .where(
+            and_(
+                SalesOrder.status == OrderStatus.FINALIZED,
+                SalesOrder.order_date >= mr.start,
+                SalesOrder.order_date < mr.end,
+                SalesOrderLine.purchase_type == PurchaseType.REGULAR,
+            )
+        )
+    )
+    output_vat_regular_sales_cents = int((await session.execute(output_vat_regular_sales_stmt)).scalar_one())
+
+    output_vat_regular_shipping_stmt = select(func.coalesce(func.sum(SalesOrder.shipping_regular_tax_cents), 0)).where(
+        and_(
+            SalesOrder.status == OrderStatus.FINALIZED,
+            SalesOrder.order_date >= mr.start,
+            SalesOrder.order_date < mr.end,
+        )
+    )
+    output_vat_regular_shipping_cents = int((await session.execute(output_vat_regular_shipping_stmt)).scalar_one())
+
+    output_vat_margin_stmt = (
+        select(func.coalesce(func.sum(SalesOrderLine.margin_tax_cents), 0))
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+        .where(
+            and_(
+                SalesOrder.status == OrderStatus.FINALIZED,
+                SalesOrder.order_date >= mr.start,
+                SalesOrder.order_date < mr.end,
+                SalesOrderLine.purchase_type == PurchaseType.DIFF,
+            )
+        )
+    )
+    output_vat_margin_cents = int((await session.execute(output_vat_margin_stmt)).scalar_one())
+
+    adj_vat_regular_lines_stmt = (
+        select(func.coalesce(func.sum(SalesCorrectionLine.refund_tax_cents), 0))
+        .select_from(SalesCorrectionLine)
+        .join(SalesCorrection, SalesCorrection.id == SalesCorrectionLine.correction_id)
+        .where(
+            and_(
+                SalesCorrection.correction_date >= mr.start,
+                SalesCorrection.correction_date < mr.end,
+                SalesCorrectionLine.purchase_type == PurchaseType.REGULAR,
+            )
+        )
+    )
+    adj_vat_regular_lines_cents = int((await session.execute(adj_vat_regular_lines_stmt)).scalar_one())
+
+    adj_vat_regular_shipping_stmt = select(
+        func.coalesce(func.sum(SalesCorrection.shipping_refund_regular_tax_cents), 0)
+    ).where(and_(SalesCorrection.correction_date >= mr.start, SalesCorrection.correction_date < mr.end))
+    adj_vat_regular_shipping_cents = int((await session.execute(adj_vat_regular_shipping_stmt)).scalar_one())
+
+    adj_vat_margin_stmt = (
+        select(func.coalesce(func.sum(SalesCorrectionLine.margin_vat_adjustment_cents), 0))
+        .select_from(SalesCorrectionLine)
+        .join(SalesCorrection, SalesCorrection.id == SalesCorrectionLine.correction_id)
+        .where(
+            and_(
+                SalesCorrection.correction_date >= mr.start,
+                SalesCorrection.correction_date < mr.end,
+                SalesCorrectionLine.purchase_type == PurchaseType.DIFF,
+            )
+        )
+    )
+    adj_vat_margin_cents = int((await session.execute(adj_vat_margin_stmt)).scalar_one())
+
+    input_vat_purchases_stmt = select(func.coalesce(func.sum(Purchase.total_tax_cents), 0)).where(
+        and_(
+            Purchase.kind == PurchaseKind.COMMERCIAL_REGULAR,
+            Purchase.purchase_date >= mr.start,
+            Purchase.purchase_date < mr.end,
+        )
+    )
+    input_vat_purchases_cents = int((await session.execute(input_vat_purchases_stmt)).scalar_one())
+
+    input_vat_opex_stmt = select(func.coalesce(func.sum(OpexExpense.amount_tax_cents), 0)).where(
+        and_(
+            OpexExpense.input_tax_deductible.is_(True),
+            OpexExpense.expense_date >= mr.start,
+            OpexExpense.expense_date < mr.end,
+        )
+    )
+    input_vat_opex_cents = int((await session.execute(input_vat_opex_stmt)).scalar_one())
+
+    input_vat_allocations_stmt = select(func.coalesce(func.sum(CostAllocation.amount_tax_cents), 0)).where(
+        and_(
+            CostAllocation.input_tax_deductible.is_(True),
+            CostAllocation.allocation_date >= mr.start,
+            CostAllocation.allocation_date < mr.end,
+        )
+    )
+    input_vat_allocations_cents = int((await session.execute(input_vat_allocations_stmt)).scalar_one())
+
+    output_vat_regular_cents = output_vat_regular_sales_cents + output_vat_regular_shipping_cents
+    output_vat_adjustments_regular_cents = adj_vat_regular_lines_cents + adj_vat_regular_shipping_cents
+    output_vat_adjustments_margin_cents = adj_vat_margin_cents
+
+    input_vat_cents = input_vat_purchases_cents + input_vat_opex_cents + input_vat_allocations_cents
+
+    vat_payable_cents = (
+        (output_vat_regular_cents - output_vat_adjustments_regular_cents)
+        + (output_vat_margin_cents - output_vat_adjustments_margin_cents)
+        - input_vat_cents
+    )
+
+    return {
+        "period_start": mr.start.isoformat(),
+        "period_end": mr.end.isoformat(),
+        "output_vat_regular_cents": output_vat_regular_cents,
+        "output_vat_margin_cents": output_vat_margin_cents,
+        "output_vat_adjustments_regular_cents": output_vat_adjustments_regular_cents,
+        "output_vat_adjustments_margin_cents": output_vat_adjustments_margin_cents,
+        "input_vat_cents": input_vat_cents,
+        "vat_payable_cents": vat_payable_cents,
+    }
 
 
 def _zip_add_if_exists(zf: zipfile.ZipFile, storage_dir: Path, rel_path: str | None, *, base_folder: str) -> None:

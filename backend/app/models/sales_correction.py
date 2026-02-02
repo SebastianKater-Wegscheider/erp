@@ -23,6 +23,10 @@ class SalesCorrection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     refund_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     shipping_refund_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shipping_refund_regular_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shipping_refund_regular_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shipping_refund_regular_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shipping_refund_margin_gross_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     payment_source: Mapped[PaymentSource] = mapped_column(payment_source_enum, nullable=False)
 
     lines: Mapped[list["SalesCorrectionLine"]] = relationship(back_populates="correction", cascade="all, delete-orphan")
@@ -49,5 +53,7 @@ class SalesCorrectionLine(UUIDPrimaryKeyMixin, Base):
     refund_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    correction: Mapped[SalesCorrection] = relationship(back_populates="lines")
+    shipping_refund_allocated_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    margin_vat_adjustment_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    correction: Mapped[SalesCorrection] = relationship(back_populates="lines")

@@ -22,6 +22,9 @@ class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     counterparty_address: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     total_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     payment_source: Mapped[PaymentSource] = mapped_column(payment_source_enum, nullable=False)
 
     document_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -42,5 +45,8 @@ class PurchaseLine(UUIDPrimaryKeyMixin, Base):
     condition: Mapped[InventoryCondition] = mapped_column(inventory_condition_enum, nullable=False)
     purchase_type: Mapped[PurchaseType] = mapped_column(purchase_type_enum, nullable=False)
     purchase_price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    purchase_price_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    purchase_price_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     purchase: Mapped[Purchase] = relationship(back_populates="lines")
