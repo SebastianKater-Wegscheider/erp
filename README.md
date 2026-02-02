@@ -56,6 +56,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Sales: `POST /sales` → `POST /sales/{id}/finalize` (PDF + Status SOLD)
 - Returns: `POST /sales/{order_id}/returns` (Korrektur-PDF + Restock/Write-Off)
 - Dashboard: `GET /reports/dashboard`
+- USt/Vorsteuer Report: `POST /reports/vat`
 - Monatsabschluss ZIP: `POST /reports/month-close`
 
 ## Notes
@@ -63,3 +64,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Geldbeträge werden **immer als Integer in Cents** gespeichert (keine Floats).
 - PDF-Erstellung via **WeasyPrint** (HTML Templates unter `backend/app/templates`).
 - Audit Trail in Tabelle `audit_logs` (Status- und Finanzoperationen).
+
+## Steuer-Notizen
+
+- Implementationsnotizen zur (Einzel‑)Differenzbesteuerung und USt/Vorsteuer-Logik: `docs/tax.md`
