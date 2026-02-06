@@ -74,3 +74,10 @@ class DocumentType(StrEnum):
 class ReturnAction(StrEnum):
     RESTOCK = "RESTOCK"
     WRITE_OFF = "WRITE_OFF"
+
+
+class MasterProductKind(StrEnum):
+    GAME = "GAME"
+    CONSOLE = "CONSOLE"
+    ACCESSORY = "ACCESSORY"
+    OTHER = "OTHER"
