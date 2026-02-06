@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.models.master_product import MasterProduct
+from app.models.master_product import MasterProduct, master_product_sku_from_id
 from app.schemas.master_product import MasterProductCreate, MasterProductOut, MasterProductUpdate
 
 
@@ -19,7 +19,12 @@ router = APIRouter()
 async def create_master_product(
     data: MasterProductCreate, session: AsyncSession = Depends(get_session)
 ) -> MasterProductOut:
-    mp = MasterProduct(**data.model_dump())
+    mp_id = uuid.uuid4()
+    mp = MasterProduct(
+        id=mp_id,
+        sku=master_product_sku_from_id(mp_id),
+        **data.model_dump(),
+    )
     session.add(mp)
     try:
         await session.commit()

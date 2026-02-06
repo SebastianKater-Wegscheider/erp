@@ -17,6 +17,8 @@ class MasterProductCreate(BaseModel):
 
     ean: str | None = Field(default=None, max_length=32)
     asin: str | None = Field(default=None, max_length=32)
+    manufacturer: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=80)
     genre: str | None = Field(default=None, max_length=80)
     release_year: int | None = Field(default=None, ge=1970, le=2100)
     reference_image_url: str | None = Field(default=None, max_length=500)
@@ -31,6 +33,8 @@ class MasterProductUpdate(BaseModel):
 
     ean: str | None = Field(default=None, max_length=32)
     asin: str | None = Field(default=None, max_length=32)
+    manufacturer: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=80)
     genre: str | None = Field(default=None, max_length=80)
     release_year: int | None = Field(default=None, ge=1970, le=2100)
     reference_image_url: str | None = Field(default=None, max_length=500)
@@ -40,6 +44,7 @@ class MasterProductOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    sku: str
     kind: MasterProductKind
     title: str
     platform: str
@@ -47,6 +52,8 @@ class MasterProductOut(BaseModel):
     variant: str
     ean: str | None
     asin: str | None
+    manufacturer: str | None
+    model: str | None
     genre: str | None
     release_year: int | None
     reference_image_url: str | None

@@ -30,6 +30,7 @@ class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allocated_costs_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     storage_location: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[InventoryStatus] = mapped_column(inventory_status_enum, nullable=False, default=InventoryStatus.DRAFT)
 
     acquired_date: Mapped[date | None] = mapped_column(Date, nullable=True)

@@ -21,6 +21,7 @@ class InventoryItemOut(BaseModel):
     allocated_costs_cents: int
 
     storage_location: str | None
+    serial_number: str | None
     status: InventoryStatus
     acquired_date: date | None
 
@@ -30,8 +31,8 @@ class InventoryItemOut(BaseModel):
 
 class InventoryItemUpdate(BaseModel):
     storage_location: str | None = Field(default=None, max_length=100)
+    serial_number: str | None = Field(default=None, max_length=120)
 
 
 class InventoryStatusTransition(BaseModel):
     new_status: InventoryStatus
-

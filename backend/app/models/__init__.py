@@ -2,6 +2,7 @@ from app.models.audit_log import AuditLog
 from app.models.cost_allocation import CostAllocation, CostAllocationLine
 from app.models.document_counter import DocumentCounter
 from app.models.inventory_item import InventoryItem
+from app.models.inventory_item_image import InventoryItemImage
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.mileage_log import MileageLog
@@ -16,6 +17,7 @@ __all__ = [
     "CostAllocationLine",
     "DocumentCounter",
     "InventoryItem",
+    "InventoryItemImage",
     "LedgerEntry",
     "MasterProduct",
     "MileageLog",
