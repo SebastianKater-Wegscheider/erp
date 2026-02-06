@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.models.inventory_item import InventoryItem
 from app.models.master_product import MasterProduct, master_product_sku_from_id
+from app.models.purchase import PurchaseLine
 from app.schemas.master_product import MasterProductCreate, MasterProductOut, MasterProductUpdate
 
 
@@ -79,3 +81,41 @@ async def update_master_product(
         raise HTTPException(status_code=409, detail="Master product already exists") from e
     await session.refresh(mp)
     return MasterProductOut.model_validate(mp)
+
+
+@router.delete("/{master_product_id}", status_code=204)
+async def delete_master_product(
+    master_product_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    mp = await session.get(MasterProduct, master_product_id)
+    if mp is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Provide a helpful, deterministic 409 instead of a generic FK integrity error.
+    inv_count = (
+        await session.scalar(
+            select(func.count()).select_from(InventoryItem).where(InventoryItem.master_product_id == master_product_id)
+        )
+    ) or 0
+    purchase_line_count = (
+        await session.scalar(
+            select(func.count()).select_from(PurchaseLine).where(PurchaseLine.master_product_id == master_product_id)
+        )
+    ) or 0
+
+    if inv_count or purchase_line_count:
+        parts: list[str] = []
+        if inv_count:
+            parts.append(f"{inv_count} inventory items")
+        if purchase_line_count:
+            parts.append(f"{purchase_line_count} purchase lines")
+        raise HTTPException(status_code=409, detail=f"Cannot delete: referenced by {', '.join(parts)}")
+
+    await session.delete(mp)
+    try:
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Cannot delete: master product is still referenced") from e
+    return Response(status_code=204)
