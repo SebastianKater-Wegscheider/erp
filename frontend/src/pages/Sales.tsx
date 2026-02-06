@@ -19,7 +19,7 @@ type InventoryItem = {
   status: string;
 };
 
-type MasterProduct = { id: string; title: string; platform: string; region: string; variant?: string };
+type MasterProduct = { id: string; sku?: string; title: string; platform: string; region: string; variant?: string };
 
 type SalesOrder = {
   id: string;
@@ -259,7 +259,7 @@ export function SalesPage() {
             <div className="space-y-2">
               <Label>Verfügbarer Bestand (Status=AVAILABLE)</Label>
               <div className="flex items-center gap-2">
-                <Input placeholder="Titel/EAN/ASIN suchen…" value={searchInv} onChange={(e) => setSearchInv(e.target.value)} />
+                <Input placeholder="SKU/Titel/EAN/ASIN suchen…" value={searchInv} onChange={(e) => setSearchInv(e.target.value)} />
                 <Button variant="secondary" onClick={() => inv.refetch()}>Aktualisieren</Button>
               </div>
               <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white">
@@ -285,6 +285,7 @@ export function SalesPage() {
                                 {mp.variant ? ` · ${mp.variant}` : ""}
                               </div>
                             )}
+                            {mp?.sku && <div className="text-xs font-mono text-gray-400">{mp.sku}</div>}
                             <div className="text-xs font-mono text-gray-400">{it.id}</div>
                           </TableCell>
                           <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>

@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatEur } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
@@ -18,11 +20,20 @@ type InventoryItem = {
   purchase_price_cents: number;
   allocated_costs_cents: number;
   storage_location?: string | null;
+  serial_number?: string | null;
   status: string;
   acquired_date?: string | null;
 };
 
-type MasterProduct = { id: string; title: string; platform: string; region: string; variant?: string };
+type MasterProduct = { id: string; sku?: string; title: string; platform: string; region: string; variant?: string };
+
+type InventoryImage = {
+  id: string;
+  upload_path: string;
+  created_at: string;
+};
+
+type UploadOut = { upload_path: string };
 
 const INVENTORY_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "DRAFT", label: "Entwurf" },
@@ -68,8 +79,13 @@ function ageVariant(days: number | null) {
 
 export function InventoryPage() {
   const api = useApi();
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("ALL");
+
+  const [editing, setEditing] = useState<InventoryItem | null>(null);
+  const [editStorageLocation, setEditStorageLocation] = useState("");
+  const [editSerialNumber, setEditSerialNumber] = useState("");
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -93,6 +109,53 @@ export function InventoryPage() {
   const rows = inv.data ?? [];
   const today = new Date();
 
+  const images = useQuery({
+    queryKey: ["inventory-images", editing?.id],
+    enabled: !!editing?.id,
+    queryFn: () => api.request<InventoryImage[]>(`/inventory/${editing!.id}/images`),
+  });
+
+  const update = useMutation({
+    mutationFn: async () => {
+      if (!editing) throw new Error("Kein Artikel ausgewählt");
+      return api.request<InventoryItem>(`/inventory/${editing.id}`, {
+        method: "PATCH",
+        json: {
+          storage_location: editStorageLocation.trim() ? editStorageLocation.trim() : null,
+          serial_number: editSerialNumber.trim() ? editSerialNumber.trim() : null,
+        },
+      });
+    },
+    onSuccess: async () => {
+      setEditing(null);
+      await qc.invalidateQueries({ queryKey: ["inventory"] });
+    },
+  });
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return api.request<UploadOut>("/uploads", { method: "POST", body: fd });
+    },
+    onSuccess: async (r) => {
+      if (!editing) return;
+      await api.request<InventoryImage>(`/inventory/${editing.id}/images`, { method: "POST", json: { upload_path: r.upload_path } });
+      await qc.invalidateQueries({ queryKey: ["inventory-images", editing.id] });
+    },
+  });
+
+  const removeImage = useMutation({
+    mutationFn: async (imageId: string) => {
+      if (!editing) throw new Error("Kein Artikel ausgewählt");
+      return api.request<void>(`/inventory/${editing.id}/images/${imageId}`, { method: "DELETE" });
+    },
+    onSuccess: async () => {
+      if (!editing) return;
+      await qc.invalidateQueries({ queryKey: ["inventory-images", editing.id] });
+    },
+  });
+
   return (
     <div className="space-y-4">
       <div className="text-xl font-semibold">Lagerbestand</div>
@@ -102,7 +165,7 @@ export function InventoryPage() {
           <CardTitle>Suche</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 md:flex-row md:items-center">
-          <Input placeholder="Titel/EAN/ASIN oder Produktstamm-UUID…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input placeholder="SKU/Titel/EAN/ASIN oder Produktstamm-UUID…" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="w-full md:w-56">
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger>
@@ -144,6 +207,7 @@ export function InventoryPage() {
                 <TableHead>Zustand</TableHead>
                 <TableHead>Typ</TableHead>
                 <TableHead className="text-right">Kosten (EUR)</TableHead>
+                <TableHead className="text-right"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -163,6 +227,9 @@ export function InventoryPage() {
                           {mp.variant ? ` · ${mp.variant}` : ""}
                         </div>
                       )}
+                      {mp?.sku && <div className="text-xs text-gray-400 font-mono">{mp.sku}</div>}
+                      {it.serial_number && <div className="text-xs text-gray-500">SN: <span className="font-mono">{it.serial_number}</span></div>}
+                      {it.storage_location && <div className="text-xs text-gray-500">Lager: {it.storage_location}</div>}
                       <div className="text-xs text-gray-400 font-mono">{it.id}</div>
                     </TableCell>
                     <TableCell>
@@ -176,12 +243,24 @@ export function InventoryPage() {
                     <TableCell className="text-right">
                       {formatEur(it.purchase_price_cents + it.allocated_costs_cents)} €
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setEditing(it);
+                          setEditStorageLocation(it.storage_location ?? "");
+                          setEditSerialNumber(it.serial_number ?? "");
+                        }}
+                      >
+                        Bearbeiten
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 );
               })}
               {!rows.length && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-sm text-gray-500">
+                  <TableCell colSpan={7} className="text-sm text-gray-500">
                     Keine Daten.
                   </TableCell>
                 </TableRow>
@@ -190,6 +269,100 @@ export function InventoryPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Artikel bearbeiten</DialogTitle>
+            <DialogDescription>{editing ? editing.id : ""}</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Seriennummer (optional)</Label>
+              <Input value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} placeholder="SN / IMEI / …" />
+            </div>
+            <div className="space-y-2">
+              <Label>Lagerplatz (optional)</Label>
+              <Input value={editStorageLocation} onChange={(e) => setEditStorageLocation(e.target.value)} placeholder="Regal 2 / Box A / …" />
+            </div>
+          </div>
+
+          {update.isError && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+              {(update.error as Error).message}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">Bilder</div>
+              <Input
+                type="file"
+                className="max-w-xs"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) upload.mutate(f);
+                }}
+              />
+            </div>
+
+            {(images.isError || upload.isError || removeImage.isError) && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                {((images.error ?? upload.error ?? removeImage.error) as Error).message}
+              </div>
+            )}
+
+            <div className="rounded-md border border-gray-200 bg-white">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Datei</TableHead>
+                    <TableHead className="text-right"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(images.data ?? []).map((img) => (
+                    <TableRow key={img.id}>
+                      <TableCell className="font-mono text-xs">{img.upload_path}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="secondary" onClick={() => api.download(img.upload_path)} disabled={removeImage.isPending}>
+                            Download
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => removeImage.mutate(img.id)}
+                            disabled={removeImage.isPending}
+                          >
+                            Entfernen
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!images.data?.length && (
+                    <TableRow>
+                      <TableCell colSpan={2} className="text-sm text-gray-500">
+                        Noch keine Bilder.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setEditing(null)} disabled={update.isPending}>
+              Schließen
+            </Button>
+            <Button onClick={() => update.mutate()} disabled={update.isPending}>
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

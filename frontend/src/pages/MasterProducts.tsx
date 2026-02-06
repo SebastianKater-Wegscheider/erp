@@ -15,6 +15,7 @@ type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
 
 type MasterProduct = {
   id: string;
+  sku: string;
   kind: MasterProductKind;
   title: string;
   platform: string;
@@ -22,6 +23,8 @@ type MasterProduct = {
   variant: string;
   ean?: string | null;
   asin?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
   genre?: string | null;
   release_year?: number | null;
   reference_image_url?: string | null;
@@ -30,6 +33,8 @@ type MasterProduct = {
 type MasterProductFormState = {
   kind: MasterProductKind;
   title: string;
+  manufacturer: string;
+  model: string;
   platform: string;
   region: string;
   variant: string;
@@ -50,6 +55,8 @@ const KIND_OPTIONS: Array<{ value: MasterProductKind; label: string }> = [
 const EMPTY_FORM: MasterProductFormState = {
   kind: "GAME",
   title: "",
+  manufacturer: "",
+  model: "",
   platform: "",
   region: "EU",
   variant: "",
@@ -100,6 +107,8 @@ export function MasterProductsPage() {
         json: {
           kind: form.kind,
           title: form.title.trim(),
+          manufacturer: opt(form.manufacturer),
+          model: opt(form.model),
           platform: form.platform.trim(),
           region: form.region.trim(),
           variant: form.variant.trim(),
@@ -127,6 +136,8 @@ export function MasterProductsPage() {
         json: {
           kind: editForm.kind,
           title: editForm.title.trim(),
+          manufacturer: opt(editForm.manufacturer),
+          model: opt(editForm.model),
           platform: editForm.platform.trim(),
           region: editForm.region.trim(),
           variant: editForm.variant.trim(),
@@ -149,7 +160,9 @@ export function MasterProductsPage() {
     const all = list.data ?? [];
     if (!q) return all;
     return all.filter((m) =>
-      `${m.kind} ${m.title} ${m.platform} ${m.region} ${m.variant} ${m.ean ?? ""} ${m.asin ?? ""}`.toLowerCase().includes(q),
+      `${m.kind} ${m.sku} ${m.title} ${m.manufacturer ?? ""} ${m.model ?? ""} ${m.platform} ${m.region} ${m.variant} ${m.ean ?? ""} ${m.asin ?? ""}`
+        .toLowerCase()
+        .includes(q),
     );
   }, [list.data, search]);
 
@@ -191,6 +204,18 @@ export function MasterProductsPage() {
               <Input value={form.region} onChange={(e) => setForm((s) => ({ ...s, region: e.target.value }))} placeholder="EU, US, JP, N/A" />
             </div>
 
+            <div className="space-y-2 md:col-span-2">
+              <Label>Hersteller (optional)</Label>
+              <Input
+                value={form.manufacturer}
+                onChange={(e) => setForm((s) => ({ ...s, manufacturer: e.target.value }))}
+                placeholder="z.B. Nintendo, Sony, Microsoft"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Modell (optional)</Label>
+              <Input value={form.model} onChange={(e) => setForm((s) => ({ ...s, model: e.target.value }))} placeholder="z.B. Switch OLED, DualSense" />
+            </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Variante (z.B. Farbe)</Label>
               <Input value={form.variant} onChange={(e) => setForm((s) => ({ ...s, variant: e.target.value }))} placeholder="White, Black, 512GB, Bundle…" />
@@ -250,7 +275,7 @@ export function MasterProductsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2">
-            <Input placeholder="Suchen (Titel, EAN, ASIN, …) …" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input placeholder="Suchen (SKU, Titel, EAN, ASIN, …) …" value={search} onChange={(e) => setSearch(e.target.value)} />
             <Button variant="secondary" onClick={() => list.refetch()}>
               Aktualisieren
             </Button>
@@ -282,7 +307,13 @@ export function MasterProductsPage() {
                       {m.platform} · {m.region}
                       {m.variant ? ` · ${m.variant}` : ""}
                     </div>
-                    <div className="text-xs text-gray-400 font-mono">{m.id}</div>
+                    {(m.manufacturer || m.model) && (
+                      <div className="text-xs text-gray-500">
+                        {m.manufacturer ?? ""}{m.manufacturer && m.model ? " · " : ""}{m.model ?? ""}
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-400 font-mono">{m.sku}</div>
+                    <div className="text-xs text-gray-300 font-mono">{m.id}</div>
                   </TableCell>
                   <TableCell className="text-sm">
                     <div>
@@ -300,6 +331,8 @@ export function MasterProductsPage() {
                         setEditForm({
                           kind: m.kind,
                           title: m.title ?? "",
+                          manufacturer: m.manufacturer ?? "",
+                          model: m.model ?? "",
                           platform: m.platform ?? "",
                           region: m.region ?? "",
                           variant: m.variant ?? "",
@@ -332,7 +365,7 @@ export function MasterProductsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Produkt bearbeiten</DialogTitle>
-            <DialogDescription>{editing ? `${editing.title} (${kindLabel(editing.kind)})` : ""}</DialogDescription>
+            <DialogDescription>{editing ? `${editing.sku} · ${editing.title} (${kindLabel(editing.kind)})` : ""}</DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 md:grid-cols-6">
@@ -364,6 +397,22 @@ export function MasterProductsPage() {
               <Input value={editForm.region} onChange={(e) => setEditForm((s) => ({ ...s, region: e.target.value }))} />
             </div>
 
+            <div className="space-y-2 md:col-span-2">
+              <Label>Hersteller (optional)</Label>
+              <Input
+                value={editForm.manufacturer}
+                onChange={(e) => setEditForm((s) => ({ ...s, manufacturer: e.target.value }))}
+                placeholder="z.B. Nintendo, Sony, Microsoft"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Modell (optional)</Label>
+              <Input
+                value={editForm.model}
+                onChange={(e) => setEditForm((s) => ({ ...s, model: e.target.value }))}
+                placeholder="z.B. Switch OLED, DualSense"
+              />
+            </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Variante (z.B. Farbe)</Label>
               <Input value={editForm.variant} onChange={(e) => setEditForm((s) => ({ ...s, variant: e.target.value }))} />
