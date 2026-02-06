@@ -60,3 +60,15 @@ async def ensure_schema(conn: AsyncConnection) -> None:
     for stmt in stmts:
         await conn.execute(text(stmt))
 
+    # master_products
+    await conn.execute(text("ALTER TABLE master_products ADD COLUMN IF NOT EXISTS asin VARCHAR(32)"))
+    await conn.execute(text("ALTER TABLE master_products ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'GAME'"))
+    await conn.execute(text("ALTER TABLE master_products ADD COLUMN IF NOT EXISTS variant VARCHAR(80) NOT NULL DEFAULT ''"))
+    # Allow multiple variants (e.g. different colors) for the same title/platform/region.
+    await conn.execute(text("ALTER TABLE master_products DROP CONSTRAINT IF EXISTS uq_master_product_identity"))
+    await conn.execute(
+        text(
+            "ALTER TABLE master_products "
+            "ADD CONSTRAINT uq_master_product_identity UNIQUE (kind, title, platform, region, variant)"
+        )
+    )

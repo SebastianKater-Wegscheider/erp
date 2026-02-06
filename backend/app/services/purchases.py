@@ -140,7 +140,13 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
 
         mp_rows = (
             await session.execute(
-                select(MasterProduct.id, MasterProduct.title, MasterProduct.platform, MasterProduct.region).where(
+                select(
+                    MasterProduct.id,
+                    MasterProduct.title,
+                    MasterProduct.platform,
+                    MasterProduct.region,
+                    MasterProduct.variant,
+                ).where(
                     MasterProduct.id.in_([line.master_product_id for line in data.lines])
                 )
             )
@@ -155,6 +161,7 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
                     "title": mp.title if mp else str(line.master_product_id),
                     "platform": mp.platform if mp else "",
                     "region": mp.region if mp else "",
+                    "variant": mp.variant if mp else "",
                     "condition": line.condition.value,
                     "purchase_price_eur": format_eur(line.purchase_price_cents),
                 }

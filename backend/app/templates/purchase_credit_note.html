@@ -48,7 +48,9 @@
         <tr>
           <td>
             <div><strong>{{ line.title }}</strong></div>
-            <div class="muted">{{ line.platform }} · {{ line.region }}</div>
+            <div class="muted">
+              {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
+            </div>
           </td>
           <td>{{ line.condition }}</td>
           <td class="right">{{ line.purchase_price_eur }}</td>
@@ -67,4 +69,3 @@
     </div>
   </body>
 </html>
-

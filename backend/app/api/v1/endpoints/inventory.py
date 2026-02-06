@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -20,7 +20,7 @@ router = APIRouter()
 
 @router.get("", response_model=list[InventoryItemOut])
 async def list_inventory(
-    q: str | None = Query(default=None, description="Search by title (ILIKE) or master product UUID"),
+    q: str | None = Query(default=None, description="Search by title/EAN/ASIN (ILIKE) or master product UUID"),
     status: InventoryStatus | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -34,9 +34,17 @@ async def list_inventory(
             mp_id = uuid.UUID(q)
             stmt = stmt.where(InventoryItem.master_product_id == mp_id)
         except ValueError:
+            pat = f"%{q}%"
             stmt = (
                 stmt.join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id).where(
-                    MasterProduct.title.ilike(f"%{q}%")
+                    or_(
+                        MasterProduct.title.ilike(pat),
+                        MasterProduct.platform.ilike(pat),
+                        MasterProduct.region.ilike(pat),
+                        MasterProduct.variant.ilike(pat),
+                        MasterProduct.ean.ilike(pat),
+                        MasterProduct.asin.ilike(pat),
+                    )
                 )
             )
 

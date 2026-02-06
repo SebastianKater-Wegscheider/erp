@@ -32,7 +32,19 @@ async def create_master_product(
 
 @router.get("", response_model=list[MasterProductOut])
 async def list_master_products(session: AsyncSession = Depends(get_session)) -> list[MasterProductOut]:
-    rows = (await session.execute(select(MasterProduct).order_by(MasterProduct.title))).scalars().all()
+    rows = (
+        (await session.execute(
+            select(MasterProduct).order_by(
+                MasterProduct.kind,
+                MasterProduct.title,
+                MasterProduct.platform,
+                MasterProduct.region,
+                MasterProduct.variant,
+            )
+        ))
+        .scalars()
+        .all()
+    )
     return [MasterProductOut.model_validate(r) for r in rows]
 
 
@@ -62,4 +74,3 @@ async def update_master_product(
         raise HTTPException(status_code=409, detail="Master product already exists") from e
     await session.refresh(mp)
     return MasterProductOut.model_validate(mp)
-

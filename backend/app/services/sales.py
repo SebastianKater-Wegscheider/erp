@@ -117,6 +117,7 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
                 MasterProduct.title,
                 MasterProduct.platform,
                 MasterProduct.region,
+                MasterProduct.variant,
             )
             .select_from(SalesOrderLine)
             .join(InventoryItem, InventoryItem.id == SalesOrderLine.inventory_item_id)
@@ -166,6 +167,7 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
                     "title": r.title,
                     "platform": r.platform,
                     "region": r.region,
+                    "variant": r.variant,
                     "purchase_type": r.purchase_type.value,
                     "gross_eur": format_eur(r.sale_gross_cents),
                     "net_eur": None,
@@ -185,6 +187,7 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
                     "title": r.title,
                     "platform": r.platform,
                     "region": r.region,
+                    "variant": r.variant,
                     "purchase_type": r.purchase_type.value,
                     "gross_eur": format_eur(r.sale_gross_cents),
                     "net_eur": format_eur(r.sale_net_cents),

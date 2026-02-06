@@ -200,6 +200,7 @@ async def create_sales_correction(
                 MasterProduct.title,
                 MasterProduct.platform,
                 MasterProduct.region,
+                MasterProduct.variant,
             )
             .select_from(SalesCorrectionLine)
             .join(InventoryItem, InventoryItem.id == SalesCorrectionLine.inventory_item_id)
@@ -221,6 +222,7 @@ async def create_sales_correction(
                 "title": r.title,
                 "platform": r.platform,
                 "region": r.region,
+                "variant": r.variant,
                 "purchase_type": r.purchase_type.value,
                 "action": r.action.value,
                 "gross_eur": format_eur(-r.refund_gross_cents),

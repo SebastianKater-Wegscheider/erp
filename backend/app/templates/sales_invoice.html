@@ -44,7 +44,9 @@
           <tr>
             <td>
               <div><strong>{{ line.title }}</strong></div>
-              <div class="muted">{{ line.platform }} · {{ line.region }}</div>
+              <div class="muted">
+                {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
+              </div>
               {% if line.purchase_type == "DIFF" %}
                 <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
               {% endif %}
@@ -115,7 +117,9 @@
           <tr>
             <td>
               <div><strong>{{ line.title }}</strong></div>
-              <div class="muted">{{ line.platform }} · {{ line.region }}</div>
+              <div class="muted">
+                {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
+              </div>
               <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
             </td>
             <td class="right">{{ line.gross_eur }}</td>
