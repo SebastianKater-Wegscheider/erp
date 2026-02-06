@@ -12,7 +12,7 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
-type MasterProduct = { id: string; title: string; platform: string; region: string };
+type MasterProduct = { id: string; kind?: string; title: string; platform: string; region: string; variant?: string };
 
 type PurchaseOut = {
   id: string;
@@ -324,6 +324,7 @@ export function PurchasesPage() {
                             {(master.data ?? []).map((m) => (
                               <SelectItem key={m.id} value={m.id}>
                                 {m.title} · {m.platform} · {m.region}
+                                {m.variant ? ` · ${m.variant}` : ""}
                               </SelectItem>
                             ))}
                           </SelectContent>
