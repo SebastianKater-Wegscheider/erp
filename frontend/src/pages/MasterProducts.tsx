@@ -1,6 +1,7 @@
 import { Image as ImageIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { useApi } from "../lib/api";
 import { Badge } from "../components/ui/badge";
@@ -150,6 +151,9 @@ function ReferenceImageThumb({
 export function MasterProductsPage() {
   const api = useApi();
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const createParam = searchParams.get("create");
+  const handledCreateRef = useRef(false);
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<MasterProductKind | "ALL">("ALL");
 
@@ -165,6 +169,25 @@ export function MasterProductsPage() {
     queryKey: ["master-products"],
     queryFn: () => api.request<MasterProduct[]>("/master-products"),
   });
+
+  useEffect(() => {
+    if (createParam !== "1") {
+      handledCreateRef.current = false;
+      return;
+    }
+    if (handledCreateRef.current) return;
+    handledCreateRef.current = true;
+
+    setEditorMode("create");
+    setActiveProduct(null);
+    setForm({ ...EMPTY_FORM });
+    setShowAdvanced(false);
+    setEditorOpen(true);
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("create");
+    setSearchParams(next, { replace: true });
+  }, [createParam, searchParams, setSearchParams]);
 
   const releaseYear = releaseYearOrNull(form.release_year);
   const releaseYearValid = releaseYear === null || (Number.isInteger(releaseYear) && releaseYear >= 1970 && releaseYear <= 2100);

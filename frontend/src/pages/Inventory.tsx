@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { useApi } from "../lib/api";
 import { formatEur } from "../lib/money";
@@ -93,8 +94,13 @@ function ageVariant(days: number | null) {
 export function InventoryPage() {
   const api = useApi();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState<string>("ALL");
+  const [status, setStatus] = useState<string>(() => {
+    const s = (searchParams.get("status") ?? "").toUpperCase();
+    if (s && INVENTORY_STATUS_OPTIONS.some((o) => o.value === s)) return s;
+    return "ALL";
+  });
 
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [editStorageLocation, setEditStorageLocation] = useState("");
