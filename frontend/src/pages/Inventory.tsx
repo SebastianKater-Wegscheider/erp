@@ -1,3 +1,4 @@
+import { Image as ImageIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -26,7 +27,18 @@ type InventoryItem = {
   acquired_date?: string | null;
 };
 
-type MasterProduct = { id: string; sku?: string; title: string; platform: string; region: string; variant?: string };
+type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
+
+type MasterProduct = {
+  id: string;
+  sku?: string;
+  kind?: MasterProductKind;
+  title: string;
+  platform: string;
+  region: string;
+  variant?: string;
+  reference_image_url?: string | null;
+};
 
 type InventoryImage = {
   id: string;
@@ -58,9 +70,34 @@ const PURCHASE_TYPE_LABEL: Record<string, string> = {
   REGULAR: "Regulär",
 };
 
+const MASTER_KIND_LABEL: Record<string, string> = {
+  GAME: "Spiel",
+  CONSOLE: "Konsole",
+  ACCESSORY: "Zubehör",
+  OTHER: "Sonstiges",
+};
+
 function inventoryStatusLabel(status: string): string {
   const opt = INVENTORY_STATUS_OPTIONS.find((o) => o.value === status);
   return opt?.label ?? status;
+}
+
+function inventoryStatusVariant(status: string) {
+  switch (status) {
+    case "AVAILABLE":
+      return "success" as const;
+    case "RESERVED":
+      return "warning" as const;
+    case "LOST":
+      return "danger" as const;
+    case "SOLD":
+      return "secondary" as const;
+    case "RETURNED":
+      return "outline" as const;
+    case "DRAFT":
+    default:
+      return "secondary" as const;
+  }
 }
 
 function conditionLabel(condition: string): string {
@@ -69,6 +106,11 @@ function conditionLabel(condition: string): string {
 
 function purchaseTypeLabel(purchaseType: string): string {
   return PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType;
+}
+
+function kindLabel(kind: string | null | undefined): string {
+  if (!kind) return "";
+  return MASTER_KIND_LABEL[kind] ?? kind;
 }
 
 function isLikelyImagePath(path: string): boolean {
@@ -89,6 +131,57 @@ function ageVariant(days: number | null) {
   if (days < 30) return { variant: "success" as const, label: `${days}T` };
   if (days <= 90) return { variant: "warning" as const, label: `${days}T` };
   return { variant: "danger" as const, label: `${days}T` };
+}
+
+function ReferenceThumb({
+  url,
+  alt,
+  size = 44,
+}: {
+  url?: string | null;
+  alt: string;
+  size?: number;
+}) {
+  const src = (url ?? "").trim();
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => setErrored(false), [src]);
+
+  const hasSrc = !!src;
+
+  return (
+    <div
+      className={[
+        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm",
+        "dark:border-gray-800 dark:bg-gray-950/40",
+      ].join(" ")}
+      style={{ width: size, height: size }}
+    >
+      {hasSrc && !errored ? (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setErrored(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 text-gray-400 dark:bg-gray-900/40 dark:text-gray-500">
+          <ImageIcon className="h-4 w-4" />
+          <span className="text-[10px] font-medium uppercase tracking-wide">Bild</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetaPill({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex max-w-[18rem] items-center gap-1 truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
+      <span className="text-gray-500 dark:text-gray-400">{label}:</span>
+      <span className="font-mono">{value}</span>
+    </span>
+  );
 }
 
 export function InventoryPage() {
@@ -325,35 +418,69 @@ export function InventoryPage() {
                 const days =
                   acquired ? Math.max(0, Math.floor((today.getTime() - acquired.getTime()) / (1000 * 60 * 60 * 24))) : null;
                 const av = ageVariant(days);
+                const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
+                const hasAllocated = it.allocated_costs_cents > 0;
                 return (
                   <TableRow key={it.id}>
                     <TableCell>
-                      <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
-                      {mp && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {mp.platform} · {mp.region}
-                          {mp.variant ? ` · ${mp.variant}` : ""}
+                      <div className="flex items-start gap-3">
+                        <ReferenceThumb url={mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
+                            {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
+                            {mp?.sku ? (
+                              <Badge variant="outline" className="font-mono text-[11px]">
+                                {mp.sku}
+                              </Badge>
+                            ) : null}
+                          </div>
+
+                          {mp && (
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                              <span>{mp.platform}</span>
+                              <span className="text-gray-300 dark:text-gray-700">•</span>
+                              <span>{mp.region}</span>
+                              {mp.variant ? (
+                                <>
+                                  <span className="text-gray-300 dark:text-gray-700">•</span>
+                                  <span className="truncate">{mp.variant}</span>
+                                </>
+                              ) : null}
+                            </div>
+                          )}
+
+                          {(it.serial_number || it.storage_location) && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
+                              {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
+                            </div>
+                          )}
+
+                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            ID: <span className="font-mono text-gray-400 dark:text-gray-500">{it.id}</span>
+                          </div>
                         </div>
-                      )}
-                      {mp?.sku && <div className="text-xs text-gray-400 font-mono dark:text-gray-500">{mp.sku}</div>}
-                      {it.serial_number && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          SN: <span className="font-mono">{it.serial_number}</span>
-                        </div>
-                      )}
-                      {it.storage_location && <div className="text-xs text-gray-500 dark:text-gray-400">Lager: {it.storage_location}</div>}
-                      <div className="text-xs text-gray-400 font-mono dark:text-gray-500">{it.id}</div>
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{inventoryStatusLabel(it.status)}</Badge>
+                      <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant={av.variant}>{av.label}</Badge>
                     </TableCell>
-                    <TableCell>{conditionLabel(it.condition)}</TableCell>
-                    <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
+                    </TableCell>
                     <TableCell className="text-right">
-                      {formatEur(it.purchase_price_cents + it.allocated_costs_cents)} €
+                      <div className="font-medium">{formatEur(totalCostCents)} €</div>
+                      <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
