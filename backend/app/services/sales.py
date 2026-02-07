@@ -284,6 +284,7 @@ async def generate_sales_invoice_pdf(
     templates_dir = Path(__file__).resolve().parents[1] / "templates"
     rel_path = f"pdfs/invoices/{order.invoice_number}.pdf"
     out_path = settings.app_storage_dir / rel_path
+    payment_source_label = {"CASH": "Bar", "BANK": "Bank"}.get(order.payment_source.value, order.payment_source.value)
 
     render_pdf(
         templates_dir=templates_dir,
@@ -299,10 +300,12 @@ async def generate_sales_invoice_pdf(
             "buyer_name": order.buyer_name,
             "buyer_address": order.buyer_address,
             "channel": order.channel.value,
+            "payment_source": payment_source_label,
             "lines": lines_ctx,
             "has_diff_lines": has_diff_lines,
             "has_regular_lines": has_regular_lines,
             "shipping_gross_cents": int(order.shipping_gross_cents),
+            "shipping_gross_eur": format_eur(int(order.shipping_gross_cents)),
             "shipping_regular_gross_cents": shipping_regular_gross_cents,
             "shipping_regular_gross_eur": format_eur(shipping_regular_gross_cents),
             "shipping_regular_net_eur": format_eur(shipping_regular_net_cents),

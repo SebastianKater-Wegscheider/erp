@@ -5,145 +5,197 @@
     <title>Rechnung {{ invoice_number }}</title>
   </head>
   <body>
-    <h1>Rechnung</h1>
-    <div class="muted">Rechnungs-Nr.: {{ invoice_number }} · Datum: {{ order_date }}</div>
+    {% set show_vat = has_regular_lines and company_vat_id and not company_small_business_notice %}
 
-    <div class="spacer"></div>
-
-    <div class="row">
-      <div class="col box">
-        <div class="muted">Leistungserbringer</div>
-        <div><strong>{{ company_name }}</strong></div>
-        <div style="white-space: pre-line;">{{ company_address }}</div>
+    <header class="letterhead">
+      <div class="lh-left">
+        <div class="lh-name">{{ company_name }}</div>
+        <div class="lh-address preline">{{ company_address }}</div>
+      </div>
+      <div class="lh-right">
         {% if company_email %}<div>{{ company_email }}</div>{% endif %}
         {% if company_vat_id %}<div>UID: {{ company_vat_id }}</div>{% endif %}
       </div>
+    </header>
 
-      <div class="col box">
-        <div class="muted">Kunde</div>
-        <div><strong>{{ buyer_name }}</strong></div>
-        {% if buyer_address %}<div style="white-space: pre-line;">{{ buyer_address }}</div>{% endif %}
-        <div class="muted">Kanal: {{ channel }}</div>
+    <div class="letter-grid">
+      <div class="recipient">
+        <div class="small muted">Rechnung an</div>
+        <div class="recipient-name">{{ buyer_name }}</div>
+        {% if buyer_address %}
+          <div class="recipient-address preline">{{ buyer_address }}</div>
+        {% endif %}
+      </div>
+
+      <div class="meta">
+        <table class="meta-table">
+          <tr>
+            <td>Rechnungsnr.</td>
+            <td class="right mono">{{ invoice_number }}</td>
+          </tr>
+          <tr>
+            <td>Rechnungsdatum</td>
+            <td class="right">{{ order_date }}</td>
+          </tr>
+          <tr>
+            <td>Leistungsdatum</td>
+            <td class="right">{{ order_date }}</td>
+          </tr>
+          <tr>
+            <td>Kanal</td>
+            <td class="right">{{ channel }}</td>
+          </tr>
+          {% if payment_source %}
+            <tr>
+              <td>Zahlung</td>
+              <td class="right">{{ payment_source }}</td>
+            </tr>
+          {% endif %}
+        </table>
       </div>
     </div>
 
-    <div class="spacer"></div>
+    <div class="subject">Rechnung</div>
+    <div class="subline">
+      Vielen Dank für Ihren Einkauf. Nachfolgend erhalten Sie die Rechnung zu Ihrem Auftrag.
+    </div>
 
-    {% if has_regular_lines %}
-      <table>
+    {% if show_vat %}
+      <table class="items">
         <thead>
           <tr>
-            <th>Position</th>
-            <th class="right">Netto (EUR)</th>
-            <th class="right">USt (EUR)</th>
-            <th class="right">Brutto (EUR)</th>
+            <th class="col-pos">Pos</th>
+            <th>Artikel</th>
+            <th class="right col-money">Netto (EUR)</th>
+            <th class="right col-money">USt (EUR)</th>
+            <th class="right col-money">Brutto (EUR)</th>
           </tr>
         </thead>
         <tbody>
           {% for line in lines %}
-          <tr>
-            <td>
-              <div><strong>{{ line.title }}</strong></div>
-              <div class="muted">
-                {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
-              </div>
-              {% if line.purchase_type == "DIFF" %}
-                <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
-              {% endif %}
-            </td>
-            <td class="right">{{ line.net_eur or "" }}</td>
-            <td class="right">{{ line.tax_eur or "" }}</td>
-            <td class="right">{{ line.gross_eur }}</td>
-          </tr>
+            <tr>
+              <td class="col-pos">{{ loop.index }}</td>
+              <td>
+                <div><strong>{{ line.title }}</strong></div>
+                <div class="muted small">
+                  {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
+                  {% if line.purchase_type == "DIFF" %} · Differenzbesteuerung{% endif %}
+                </div>
+              </td>
+              <td class="right col-money">{{ line.net_eur or "" }}</td>
+              <td class="right col-money">{{ line.tax_eur or "" }}</td>
+              <td class="right col-money">{{ line.gross_eur }}</td>
+            </tr>
           {% endfor %}
 
           {% if shipping_regular_gross_cents > 0 %}
-          <tr>
-            <td>Versand</td>
-            <td class="right">{{ shipping_regular_net_eur }}</td>
-            <td class="right">{{ shipping_regular_tax_eur }}</td>
-            <td class="right">{{ shipping_regular_gross_eur }}</td>
-          </tr>
+            <tr>
+              <td class="col-pos"></td>
+              <td>Versand</td>
+              <td class="right col-money">{{ shipping_regular_net_eur }}</td>
+              <td class="right col-money">{{ shipping_regular_tax_eur }}</td>
+              <td class="right col-money">{{ shipping_regular_gross_eur }}</td>
+            </tr>
           {% endif %}
 
           {% if shipping_margin_gross_cents > 0 %}
-          <tr>
-            <td>Versand (Differenzbesteuerung)</td>
-            <td class="right"></td>
-            <td class="right"></td>
-            <td class="right">{{ shipping_margin_gross_eur }}</td>
-          </tr>
-          {% endif %}
-
-          {% if has_diff_lines %}
             <tr>
-              <td class="right total">Summe regelbesteuert</td>
-              <td class="right total">{{ regular_total_net_eur }}</td>
-              <td class="right total">{{ regular_total_tax_eur }}</td>
-              <td class="right total">{{ regular_total_gross_eur }}</td>
-            </tr>
-            <tr>
-              <td class="right total">Summe differenzbesteuert</td>
-              <td class="right total"></td>
-              <td class="right total"></td>
-              <td class="right total">{{ margin_total_gross_eur }}</td>
-            </tr>
-            <tr>
-              <td class="right total">Gesamt</td>
-              <td class="right total"></td>
-              <td class="right total"></td>
-              <td class="right total">{{ total_gross_eur }}</td>
-            </tr>
-          {% else %}
-            <tr>
-              <td class="right total">Gesamt</td>
-              <td class="right total">{{ regular_total_net_eur }}</td>
-              <td class="right total">{{ regular_total_tax_eur }}</td>
-              <td class="right total">{{ regular_total_gross_eur }}</td>
+              <td class="col-pos"></td>
+              <td>Versand (Differenzbesteuerung)</td>
+              <td class="right col-money"></td>
+              <td class="right col-money"></td>
+              <td class="right col-money">{{ shipping_margin_gross_eur }}</td>
             </tr>
           {% endif %}
         </tbody>
       </table>
+
+      <div class="totals-wrap">
+        <table class="totals-table">
+          {% if has_diff_lines %}
+            <tr>
+              <td class="label">Summe regelbesteuert (Netto)</td>
+              <td class="right mono">{{ regular_total_net_eur }}</td>
+            </tr>
+            <tr>
+              <td class="label">Umsatzsteuer</td>
+              <td class="right mono">{{ regular_total_tax_eur }}</td>
+            </tr>
+            <tr>
+              <td class="label">Summe regelbesteuert (Brutto)</td>
+              <td class="right mono">{{ regular_total_gross_eur }}</td>
+            </tr>
+            <tr>
+              <td class="label">Summe differenzbesteuert</td>
+              <td class="right mono">{{ margin_total_gross_eur }}</td>
+            </tr>
+            <tr class="total-row">
+              <td>Rechnungsbetrag</td>
+              <td class="right mono">{{ total_gross_eur }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td class="label">Netto</td>
+              <td class="right mono">{{ regular_total_net_eur }}</td>
+            </tr>
+            <tr>
+              <td class="label">Umsatzsteuer</td>
+              <td class="right mono">{{ regular_total_tax_eur }}</td>
+            </tr>
+            <tr class="total-row">
+              <td>Rechnungsbetrag</td>
+              <td class="right mono">{{ regular_total_gross_eur }}</td>
+            </tr>
+          {% endif %}
+        </table>
+      </div>
     {% else %}
-      <table>
+      <table class="items">
         <thead>
           <tr>
-            <th>Position</th>
-            <th class="right">Brutto (EUR)</th>
+            <th class="col-pos">Pos</th>
+            <th>Artikel</th>
+            <th class="right col-money">Brutto (EUR)</th>
           </tr>
         </thead>
         <tbody>
           {% for line in lines %}
-          <tr>
-            <td>
-              <div><strong>{{ line.title }}</strong></div>
-              <div class="muted">
-                {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
-              </div>
-              <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
-            </td>
-            <td class="right">{{ line.gross_eur }}</td>
-          </tr>
+            <tr>
+              <td class="col-pos">{{ loop.index }}</td>
+              <td>
+                <div><strong>{{ line.title }}</strong></div>
+                <div class="muted small">
+                  {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
+                  {% if line.purchase_type == "DIFF" %} · Differenzbesteuerung{% endif %}
+                </div>
+              </td>
+              <td class="right col-money">{{ line.gross_eur }}</td>
+            </tr>
           {% endfor %}
 
           {% if shipping_gross_cents > 0 %}
-          <tr>
-            <td>Versand</td>
-            <td class="right">{{ shipping_margin_gross_eur }}</td>
-          </tr>
+            <tr>
+              <td class="col-pos"></td>
+              <td>Versand</td>
+              <td class="right col-money">{{ shipping_gross_eur }}</td>
+            </tr>
           {% endif %}
-
-          <tr>
-            <td class="right total">Gesamt</td>
-            <td class="right total">{{ total_gross_eur }}</td>
-          </tr>
         </tbody>
       </table>
+
+      <div class="totals-wrap">
+        <table class="totals-table">
+          <tr class="total-row">
+            <td>Rechnungsbetrag</td>
+            <td class="right mono">{{ total_gross_eur }}</td>
+          </tr>
+        </table>
+      </div>
     {% endif %}
 
     <footer class="doc-footer">
       <div>
-        <strong>Impressum</strong>: {{ company_name }} · <span style="white-space: pre-line;">{{ company_address }}</span>
+        <strong>Impressum</strong>: {{ company_name }} · <span class="preline">{{ company_address }}</span>
         {% if company_email %} · {{ company_email }}{% endif %}
         {% if company_vat_id %} · UID: {{ company_vat_id }}{% endif %}
       </div>

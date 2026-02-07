@@ -4,7 +4,7 @@ from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     company_email: str | None = Field("business@kater.cloud", alias="COMPANY_EMAIL")
     company_vat_id: str | None = Field(None, alias="COMPANY_VAT_ID")
     company_small_business_notice: str | None = Field(
-        "Kleinunternehmerregelung – es wird keine Umsatzsteuer ausgewiesen.",
+        "Gemäß § 6 Abs. 1 Z 27 UStG wird keine Umsatzsteuer berechnet.",
         alias="COMPANY_SMALL_BUSINESS_NOTICE",
     )
 
@@ -54,6 +54,14 @@ class Settings(BaseSettings):
     gocardless_bank_data_secret_key: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_SECRET_KEY")
     gocardless_bank_data_access_token: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_ACCESS_TOKEN")
     gocardless_bank_data_requisition_ids: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_REQUISITION_IDS")
+
+    @field_validator("company_address", mode="before")
+    @classmethod
+    def _normalize_company_address(cls, v: object) -> object:
+        # `.env.example` uses "\n" escapes; convert them to real newlines so PDFs render nicely.
+        if isinstance(v, str):
+            return v.replace("\\n", "\n").replace("\r\n", "\n")
+        return v
 
     @property
     def pdf_dir(self) -> Path:
