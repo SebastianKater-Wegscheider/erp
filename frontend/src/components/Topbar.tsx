@@ -33,11 +33,8 @@ const NAV_SECTIONS = [
       { to: "/cost-allocations", label: "Kostenverteilung" },
       { to: "/opex", label: "Betriebsausgaben" },
       { to: "/vat", label: "Umsatzsteuer" },
+      { to: "/mileage", label: "Fahrtenbuch" },
     ],
-  },
-  {
-    label: "Sonstiges",
-    items: [{ to: "/mileage", label: "Fahrtenbuch" }],
   },
 ] satisfies NavSection[];
 
