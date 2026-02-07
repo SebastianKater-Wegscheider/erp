@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { Plus, RefreshCw } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -94,6 +95,7 @@ function orderStatusLabel(status: string): string {
 export function SalesPage() {
   const api = useApi();
   const qc = useQueryClient();
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -111,9 +113,11 @@ export function SalesPage() {
 
   const [selectedLines, setSelectedLines] = useState<Array<{ inventory_item_id: string; sale_gross: string }>>([]);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const inv = useQuery({
     queryKey: ["inventory-available", searchInv],
+    enabled: formOpen,
     queryFn: () =>
       api.request<InventoryItem[]>(
         `/inventory?status=AVAILABLE&limit=50&offset=0${searchInv.trim() ? `&q=${encodeURIComponent(searchInv.trim())}` : ""}`,
@@ -154,6 +158,7 @@ export function SalesPage() {
       setShippingGross("0,00");
       setSelectedLines([]);
       setEditingOrderId(null);
+      setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["sales"] });
       await qc.invalidateQueries({ queryKey: ["inventory-available"] });
     },
@@ -184,6 +189,7 @@ export function SalesPage() {
       setBuyerAddress("");
       setShippingGross("0,00");
       setSelectedLines([]);
+      setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["sales"] });
       await qc.invalidateQueries({ queryKey: ["inventory-available"] });
     },
@@ -275,7 +281,8 @@ export function SalesPage() {
     setSelectedLines(o.lines.map((l) => ({ inventory_item_id: l.inventory_item_id, sale_gross: formatEur(l.sale_gross_cents) })));
     create.reset();
     update.reset();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setFormOpen(true);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function cancelEdit() {
@@ -291,210 +298,51 @@ export function SalesPage() {
     update.reset();
   }
 
+  function openCreateForm() {
+    cancelEdit();
+    setFormOpen(true);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function closeForm() {
+    cancelEdit();
+    setFormOpen(false);
+  }
+
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Verkäufe</div>
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-xl font-semibold">Verkäufe</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Aufträge erfassen, abschließen und Rechnungen als PDF erstellen.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => orders.refetch()} disabled={orders.isFetching}>
+            <RefreshCw className="h-4 w-4" />
+            Aktualisieren
+          </Button>
+          <Button onClick={openCreateForm}>
+            <Plus className="h-4 w-4" />
+            {editingOrderId ? "Neuer Auftrag" : "Auftrag erstellen"}
+          </Button>
+        </div>
+      </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>{editingOrderId ? "Auftrag bearbeiten" : "Auftrag erstellen"}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="space-y-2">
-              <Label>Datum</Label>
-              <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Kanal</Label>
-              <Select value={channel} onValueChange={setChannel}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CHANNEL_OPTIONS.map((c) => (
-                    <SelectItem key={c.value} value={c.value}>
-                      {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Zahlungsquelle</Label>
-              <Select value={paymentSource} onValueChange={setPaymentSource}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_SOURCE_OPTIONS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Versand (brutto, EUR)</Label>
-              <Input value={shippingGross} onChange={(e) => setShippingGross(e.target.value)} />
-            </div>
+        <CardHeader className="space-y-2">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Aufträge</CardTitle>
+            <CardDescription>
+              {orders.isPending ? "Lade…" : `${(orders.data ?? []).length} Aufträge`}
+            </CardDescription>
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Käufername</Label>
-              <Input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Käuferadresse (optional)</Label>
-              <Input value={buyerAddress} onChange={(e) => setBuyerAddress(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            {editingIsFinalized ? (
-              <div className="space-y-2">
-                <Label>Hinweis</Label>
-                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
-                  Positionen können nach Abschluss nicht mehr verändert werden. Solange noch keine PDF erzeugt wurde,
-                  kannst du Käuferdaten, Datum, Versand und Preise anpassen.
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label>Verfügbarer Bestand (Status=AVAILABLE)</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="SKU/Titel/EAN/ASIN suchen…"
-                    value={searchInv}
-                    onChange={(e) => setSearchInv(e.target.value)}
-                  />
-                  <Button variant="secondary" onClick={() => inv.refetch()}>Aktualisieren</Button>
-                </div>
-                <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Artikel</TableHead>
-                        <TableHead>Typ</TableHead>
-                        <TableHead className="text-right"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(inv.data ?? []).map((it) => {
-                        const mp = mpById.get(it.master_product_id);
-                        const already = selectedLines.some((l) => l.inventory_item_id === it.id);
-                        return (
-                          <TableRow key={it.id}>
-                            <TableCell>
-                              <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
-                              {mp && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                  {mp.platform} · {mp.region}
-                                  {mp.variant ? ` · ${mp.variant}` : ""}
-                                </div>
-                              )}
-                              {mp?.sku && <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{mp.sku}</div>}
-                              <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{it.id}</div>
-                            </TableCell>
-                            <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant={already ? "secondary" : "outline"}
-                                disabled={already}
-                                onClick={() => setSelectedLines((s) => [...s, { inventory_item_id: it.id, sale_gross: "" }])}
-                              >
-                                Hinzufügen
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                      {!inv.data?.length && (
-                        <TableRow>
-                          <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Keine verfügbaren Artikel.</TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Auftragspositionen</Label>
-              <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Lagerartikel</TableHead>
-                      <TableHead className="text-right">Verkauf brutto (EUR)</TableHead>
-                      <TableHead className="text-right"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedLines.map((l, idx) => (
-                      <TableRow key={l.inventory_item_id}>
-                        <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            className="text-right"
-                            value={l.sale_gross}
-                            onChange={(e) =>
-                              setSelectedLines((s) => s.map((x, i) => (i === idx ? { ...x, sale_gross: e.target.value } : x)))
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {editingIsFinalized ? (
-                            <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
-                          ) : (
-                            <Button variant="ghost" onClick={() => setSelectedLines((s) => s.filter((_, i) => i !== idx))}>
-                              Entfernen
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {!selectedLines.length && (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Noch keine Positionen.</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            {editingOrderId && (
-              <Button type="button" variant="secondary" onClick={cancelEdit} disabled={create.isPending || update.isPending}>
-                Abbrechen
-              </Button>
-            )}
-            <Button
-              onClick={() => (editingOrderId ? update.mutate() : create.mutate())}
-              disabled={!canCreateOrder || create.isPending || update.isPending}
-            >
-              {editingOrderId ? "Änderungen speichern" : "Auftrag erstellen (ENTWURF)"}
-            </Button>
-          </div>
-
-          {(create.isError || update.isError) && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-              {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Aufträge</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button variant="secondary" onClick={() => orders.refetch()}>Aktualisieren</Button>
-
-          {(orders.isError || inv.isError) && (
+          {orders.isError && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-              {((orders.error ?? inv.error) as Error).message}
+              {(orders.error as Error).message}
             </div>
           )}
 
@@ -524,7 +372,7 @@ export function SalesPage() {
                     </TableCell>
                     <TableCell>{o.buyer_name}</TableCell>
                     <TableCell className="text-right">{formatEur(gross)} €</TableCell>
-                      <TableCell className="text-right space-x-2">
+                    <TableCell className="text-right space-x-2">
                       {o.status === "DRAFT" && (
                         <>
                           <Button variant="secondary" onClick={() => startEdit(o)} disabled={create.isPending || update.isPending}>
@@ -739,6 +587,201 @@ export function SalesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {(formOpen || editingOrderId) && (
+        <Card ref={formRef}>
+          <CardHeader>
+            <CardTitle>{editingOrderId ? "Auftrag bearbeiten" : "Auftrag erstellen"}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="space-y-2">
+                <Label>Datum</Label>
+                <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Kanal</Label>
+                <Select value={channel} onValueChange={setChannel}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CHANNEL_OPTIONS.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Zahlungsquelle</Label>
+                <Select value={paymentSource} onValueChange={setPaymentSource}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Versand (brutto, EUR)</Label>
+                <Input value={shippingGross} onChange={(e) => setShippingGross(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Käufername</Label>
+                <Input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Käuferadresse (optional)</Label>
+                <Input value={buyerAddress} onChange={(e) => setBuyerAddress(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {editingIsFinalized ? (
+                <div className="space-y-2">
+                  <Label>Hinweis</Label>
+                  <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+                    Positionen können nach Abschluss nicht mehr verändert werden. Solange noch keine PDF erzeugt wurde,
+                    kannst du Käuferdaten, Datum, Versand und Preise anpassen.
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Verfügbarer Bestand (Status=AVAILABLE)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="SKU/Titel/EAN/ASIN suchen…"
+                      value={searchInv}
+                      onChange={(e) => setSearchInv(e.target.value)}
+                    />
+                    <Button variant="secondary" onClick={() => inv.refetch()}>Aktualisieren</Button>
+                  </div>
+                  {inv.isError && (
+                    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                      {(inv.error as Error).message}
+                    </div>
+                  )}
+                  <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Artikel</TableHead>
+                          <TableHead>Typ</TableHead>
+                          <TableHead className="text-right"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(inv.data ?? []).map((it) => {
+                          const mp = mpById.get(it.master_product_id);
+                          const already = selectedLines.some((l) => l.inventory_item_id === it.id);
+                          return (
+                            <TableRow key={it.id}>
+                              <TableCell>
+                                <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
+                                {mp && (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    {mp.platform} · {mp.region}
+                                    {mp.variant ? ` · ${mp.variant}` : ""}
+                                  </div>
+                                )}
+                                {mp?.sku && <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{mp.sku}</div>}
+                                <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{it.id}</div>
+                              </TableCell>
+                              <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant={already ? "secondary" : "outline"}
+                                  disabled={already}
+                                  onClick={() => setSelectedLines((s) => [...s, { inventory_item_id: it.id, sale_gross: "" }])}
+                                >
+                                  Hinzufügen
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {!inv.data?.length && (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Keine verfügbaren Artikel.</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Auftragspositionen</Label>
+                <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Lagerartikel</TableHead>
+                        <TableHead className="text-right">Verkauf brutto (EUR)</TableHead>
+                        <TableHead className="text-right"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedLines.map((l, idx) => (
+                        <TableRow key={l.inventory_item_id}>
+                          <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              className="text-right"
+                              value={l.sale_gross}
+                              onChange={(e) =>
+                                setSelectedLines((s) => s.map((x, i) => (i === idx ? { ...x, sale_gross: e.target.value } : x)))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {editingIsFinalized ? (
+                              <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                            ) : (
+                              <Button variant="ghost" onClick={() => setSelectedLines((s) => s.filter((_, i) => i !== idx))}>
+                                Entfernen
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {!selectedLines.length && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Noch keine Positionen.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={closeForm} disabled={create.isPending || update.isPending}>
+                {editingOrderId ? "Abbrechen" : "Schließen"}
+              </Button>
+              <Button
+                onClick={() => (editingOrderId ? update.mutate() : create.mutate())}
+                disabled={!canCreateOrder || create.isPending || update.isPending}
+              >
+                {editingOrderId ? "Änderungen speichern" : "Auftrag erstellen (ENTWURF)"}
+              </Button>
+            </div>
+
+            {(create.isError || update.isError) && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

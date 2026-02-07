@@ -1,3 +1,4 @@
+import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,7 +7,7 @@ import { useApi } from "../lib/api";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -382,6 +383,8 @@ function MasterProductCombobox({
 export function PurchasesPage() {
   const api = useApi();
   const qc = useQueryClient();
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -490,6 +493,7 @@ export function PurchasesPage() {
       setReceiptUploadPath("");
       setTotalAmount("0,00");
       setLines([]);
+      setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
     },
   });
@@ -527,6 +531,7 @@ export function PurchasesPage() {
       setReceiptUploadPath("");
       setTotalAmount("0,00");
       setLines([]);
+      setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
     },
   });
@@ -618,7 +623,8 @@ export function PurchasesPage() {
     );
     create.reset();
     update.reset();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setFormOpen(true);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function cancelEdit() {
@@ -637,247 +643,48 @@ export function PurchasesPage() {
     update.reset();
   }
 
+  function openCreateForm() {
+    cancelEdit();
+    setFormOpen(true);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function closeForm() {
+    cancelEdit();
+    setFormOpen(false);
+  }
+
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Einkäufe</div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{editingPurchaseId ? "Einkauf bearbeiten" : "Einkauf erfassen"}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label>Art</Label>
-              <Select value={kind} onValueChange={setKind} disabled={!!editingPurchaseId}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PURCHASE_KIND_OPTIONS.map((k) => (
-                    <SelectItem key={k.value} value={k.value}>
-                      {k.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                Einkaufstyp ist fest auf {PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType} gesetzt.
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Datum</Label>
-              <Input
-                value={purchaseDate}
-                onChange={(e) => setPurchaseDate(e.target.value)}
-                placeholder="TT.MM.JJJJ"
-                inputMode="numeric"
-              />
-              {!purchaseDateValid && <div className="text-xs text-red-700 dark:text-red-300">Format: TT.MM.JJJJ</div>}
-            </div>
-            <div className="space-y-2">
-              <Label>Zahlungsquelle</Label>
-              <Select value={paymentSource} onValueChange={setPaymentSource}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_SOURCE_OPTIONS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-xl font-semibold">Einkäufe</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Einkäufe erfassen, Belege hochladen und Eigenbelege als PDF erstellen.
           </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Verkäufer / Lieferant</Label>
-              <Input value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder="Name" />
-            </div>
-            <div className="space-y-2">
-              <Label>Adresse (optional)</Label>
-              <Input value={counterpartyAddress} onChange={(e) => setCounterpartyAddress(e.target.value)} placeholder="Adresse" />
-            </div>
-          </div>
-
-          {kind === "COMMERCIAL_REGULAR" && (
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="space-y-2">
-                <Label>Externe Rechnungsnummer</Label>
-                <Input value={externalInvoiceNumber} onChange={(e) => setExternalInvoiceNumber(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>USt-Satz</Label>
-                <Select value={taxRateBp} onValueChange={setTaxRateBp}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1000">10%</SelectItem>
-                    <SelectItem value="2000">20%</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Beleg-Upload</Label>
-                <div className="flex items-center gap-2">
-                  <Input value={receiptUploadPath} readOnly placeholder="PDF/Bild hochladen…" />
-                  <Input
-                    type="file"
-                    className="max-w-xs"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) upload.mutate(f);
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Gesamtbetrag (EUR)</Label>
-            <Input value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge variant={splitOk ? "success" : "warning"}>
-                Aufteilung: {sumLinesCents === null ? "ungültig" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
-              </Badge>
-              {!splitOk && (
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {editingPurchaseId ? "Speichern" : "Erstellen"} ist blockiert, bis die Summen übereinstimmen.
-                </div>
-              )}
-              {splitOk && !allLinesHaveProduct && <div className="text-xs text-gray-500 dark:text-gray-400">Jede Position braucht ein Produkt.</div>}
-            </div>
-            <div className="flex items-center gap-2">
-              {editingPurchaseId && (
-                <Button type="button" variant="secondary" onClick={cancelEdit} disabled={create.isPending || update.isPending}>
-                  Abbrechen
-                </Button>
-              )}
-              <Button
-                onClick={() => (editingPurchaseId ? update.mutate() : create.mutate())}
-                disabled={!canSubmit || create.isPending || update.isPending}
-              >
-                {editingPurchaseId ? "Änderungen speichern" : "Erstellen"}
-              </Button>
-            </div>
-          </div>
-
-          {(create.isError || update.isError) && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-              {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
-            </div>
-          )}
-
-          <Card className="border-dashed">
-            <CardHeader>
-              <CardTitle>Positionen</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    setLines((s) => [
-                      ...s,
-                      { ui_id: newLineId(), master_product_id: "", condition: "GOOD", purchase_price: "0,00" },
-                    ])
-                  }
-                >
-                  Position hinzufügen
-                </Button>
-                {master.isPending && <div className="text-xs text-gray-500 dark:text-gray-400">Produktstamm wird geladen…</div>}
-                {!master.isPending && !master.data?.length && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Noch kein Produktstamm. Lege Produkte direkt in der Position an.</div>
-                )}
-              </div>
-
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Produkt</TableHead>
-                    <TableHead>Zustand</TableHead>
-                    <TableHead className="text-right">EK (EUR)</TableHead>
-                    <TableHead className="text-right"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lines.map((l) => (
-                    <TableRow key={l.ui_id}>
-                      <TableCell>
-                        <MasterProductCombobox
-                          value={l.master_product_id}
-                          options={master.data ?? []}
-                          loading={master.isPending}
-                          placeholder="Suchen (SKU, Titel, EAN, …) oder neu anlegen…"
-                          onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, master_product_id: v } : x)))}
-                          onCreateNew={(seed) => openQuickCreate(l.ui_id, seed)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={l.condition}
-                          onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, condition: v } : x)))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CONDITION_OPTIONS.map((c) => (
-                              <SelectItem key={c.value} value={c.value}>
-                                {c.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Input
-                          className="text-right"
-                          value={l.purchase_price}
-                          onChange={(e) =>
-                            setLines((s) =>
-                              s.map((x) => (x.ui_id === l.ui_id ? { ...x, purchase_price: e.target.value } : x)),
-                            )
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.ui_id !== l.ui_id))}>
-                          Entfernen
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {!lines.length && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
-                        Noch keine Positionen.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Historie</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button variant="secondary" onClick={() => list.refetch()}>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
+            <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
+          <Button onClick={openCreateForm}>
+            <Plus className="h-4 w-4" />
+            {editingPurchaseId ? "Neuer Einkauf" : "Einkauf erfassen"}
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="space-y-2">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Historie</CardTitle>
+            <CardDescription>
+              {list.isPending ? "Lade…" : `${(list.data ?? []).length} Einkäufe`}
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
 
           {list.isError && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
@@ -954,6 +761,239 @@ export function PurchasesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {(formOpen || editingPurchaseId) && (
+        <Card ref={formRef}>
+          <CardHeader>
+            <CardTitle>{editingPurchaseId ? "Einkauf bearbeiten" : "Einkauf erfassen"}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Art</Label>
+                <Select value={kind} onValueChange={setKind} disabled={!!editingPurchaseId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PURCHASE_KIND_OPTIONS.map((k) => (
+                      <SelectItem key={k.value} value={k.value}>
+                        {k.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Einkaufstyp ist fest auf {PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType} gesetzt.
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Datum</Label>
+                <Input
+                  value={purchaseDate}
+                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  placeholder="TT.MM.JJJJ"
+                  inputMode="numeric"
+                />
+                {!purchaseDateValid && <div className="text-xs text-red-700 dark:text-red-300">Format: TT.MM.JJJJ</div>}
+              </div>
+              <div className="space-y-2">
+                <Label>Zahlungsquelle</Label>
+                <Select value={paymentSource} onValueChange={setPaymentSource}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Verkäufer / Lieferant</Label>
+                <Input value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder="Name" />
+              </div>
+              <div className="space-y-2">
+                <Label>Adresse (optional)</Label>
+                <Input value={counterpartyAddress} onChange={(e) => setCounterpartyAddress(e.target.value)} placeholder="Adresse" />
+              </div>
+            </div>
+
+            {kind === "COMMERCIAL_REGULAR" && (
+              <div className="grid gap-4 md:grid-cols-4">
+                <div className="space-y-2">
+                  <Label>Externe Rechnungsnummer</Label>
+                  <Input value={externalInvoiceNumber} onChange={(e) => setExternalInvoiceNumber(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>USt-Satz</Label>
+                  <Select value={taxRateBp} onValueChange={setTaxRateBp}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1000">10%</SelectItem>
+                      <SelectItem value="2000">20%</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Beleg-Upload</Label>
+                  <div className="flex items-center gap-2">
+                    <Input value={receiptUploadPath} readOnly placeholder="PDF/Bild hochladen…" />
+                    <Input
+                      type="file"
+                      className="max-w-xs"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) upload.mutate(f);
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Gesamtbetrag (EUR)</Label>
+              <Input value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Badge variant={splitOk ? "success" : "warning"}>
+                  Aufteilung: {sumLinesCents === null ? "ungültig" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
+                </Badge>
+                {!splitOk && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {editingPurchaseId ? "Speichern" : "Erstellen"} ist blockiert, bis die Summen übereinstimmen.
+                  </div>
+                )}
+                {splitOk && !allLinesHaveProduct && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Jede Position braucht ein Produkt.</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="secondary" onClick={closeForm} disabled={create.isPending || update.isPending}>
+                  {editingPurchaseId ? "Abbrechen" : "Schließen"}
+                </Button>
+                <Button
+                  onClick={() => (editingPurchaseId ? update.mutate() : create.mutate())}
+                  disabled={!canSubmit || create.isPending || update.isPending}
+                >
+                  {editingPurchaseId ? "Änderungen speichern" : "Erstellen"}
+                </Button>
+              </div>
+            </div>
+
+            {(create.isError || update.isError) && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+              </div>
+            )}
+
+            <Card className="border-dashed">
+              <CardHeader>
+                <CardTitle>Positionen</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      setLines((s) => [
+                        ...s,
+                        { ui_id: newLineId(), master_product_id: "", condition: "GOOD", purchase_price: "0,00" },
+                      ])
+                    }
+                  >
+                    Position hinzufügen
+                  </Button>
+                  {master.isPending && <div className="text-xs text-gray-500 dark:text-gray-400">Produktstamm wird geladen…</div>}
+                  {!master.isPending && !master.data?.length && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Noch kein Produktstamm. Lege Produkte direkt in der Position an.
+                    </div>
+                  )}
+                </div>
+
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produkt</TableHead>
+                      <TableHead>Zustand</TableHead>
+                      <TableHead className="text-right">EK (EUR)</TableHead>
+                      <TableHead className="text-right"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lines.map((l) => (
+                      <TableRow key={l.ui_id}>
+                        <TableCell>
+                          <MasterProductCombobox
+                            value={l.master_product_id}
+                            options={master.data ?? []}
+                            loading={master.isPending}
+                            placeholder="Suchen (SKU, Titel, EAN, …) oder neu anlegen…"
+                            onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, master_product_id: v } : x)))}
+                            onCreateNew={(seed) => openQuickCreate(l.ui_id, seed)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={l.condition}
+                            onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, condition: v } : x)))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CONDITION_OPTIONS.map((c) => (
+                                <SelectItem key={c.value} value={c.value}>
+                                  {c.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            className="text-right"
+                            value={l.purchase_price}
+                            onChange={(e) =>
+                              setLines((s) =>
+                                s.map((x) => (x.ui_id === l.ui_id ? { ...x, purchase_price: e.target.value } : x)),
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.ui_id !== l.ui_id))}>
+                            Entfernen
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!lines.length && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                          Noch keine Positionen.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog
         open={quickCreateOpen}
