@@ -169,12 +169,19 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-xl font-semibold">Übersicht</div>
-        <Button variant="secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
-          <RefreshCw className="h-4 w-4" />
-          Aktualisieren
-        </Button>
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-xl font-semibold">Übersicht</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Kennzahlen, Performance und Inbox auf einen Blick.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
+            <RefreshCw className="h-4 w-4" />
+            Aktualisieren
+          </Button>
+        </div>
       </div>
 
       {q.isError && (
