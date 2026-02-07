@@ -36,6 +36,8 @@ type PurchaseOut = {
   purchase_date: string;
   counterparty_name: string;
   counterparty_address?: string | null;
+  counterparty_birthdate?: string | null;
+  counterparty_id_number?: string | null;
   total_amount_cents: number;
   tax_rate_bp?: number;
   payment_source: string;
@@ -408,6 +410,8 @@ export function PurchasesPage() {
   const [purchaseDate, setPurchaseDate] = useState<string>(() => formatDateEuFromIso(todayIsoLocal()));
   const [counterpartyName, setCounterpartyName] = useState("");
   const [counterpartyAddress, setCounterpartyAddress] = useState("");
+  const [counterpartyBirthdate, setCounterpartyBirthdate] = useState("");
+  const [counterpartyIdNumber, setCounterpartyIdNumber] = useState("");
   const [paymentSource, setPaymentSource] = useState<string>("CASH");
   const [totalAmount, setTotalAmount] = useState<string>("0,00");
 
@@ -466,11 +470,18 @@ export function PurchasesPage() {
     mutationFn: async () => {
       const purchase_date_iso = parseDateEuToIso(purchaseDate);
       if (!purchase_date_iso) throw new Error("Datum muss im Format TT.MM.JJJJ sein");
+      const counterparty_birthdate_iso = parseDateEuToIso(counterpartyBirthdate);
+      if (counterpartyBirthdate.trim() && !counterparty_birthdate_iso) {
+        throw new Error("Geburtsdatum muss im Format TT.MM.JJJJ sein");
+      }
       const payload = {
         kind,
         purchase_date: purchase_date_iso,
         counterparty_name: counterpartyName,
         counterparty_address: counterpartyAddress || null,
+        counterparty_birthdate: kind === "PRIVATE_DIFF" ? counterparty_birthdate_iso : null,
+        counterparty_id_number:
+          kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
         total_amount_cents: totalCents,
         tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? Number(taxRateBp) : 0,
         payment_source: paymentSource,
@@ -489,6 +500,8 @@ export function PurchasesPage() {
       setEditingPurchaseId(null);
       setCounterpartyName("");
       setCounterpartyAddress("");
+      setCounterpartyBirthdate("");
+      setCounterpartyIdNumber("");
       setExternalInvoiceNumber("");
       setReceiptUploadPath("");
       setTotalAmount("0,00");
@@ -503,11 +516,18 @@ export function PurchasesPage() {
       if (!editingPurchaseId) throw new Error("Kein Einkauf ausgewählt");
       const purchase_date_iso = parseDateEuToIso(purchaseDate);
       if (!purchase_date_iso) throw new Error("Datum muss im Format TT.MM.JJJJ sein");
+      const counterparty_birthdate_iso = parseDateEuToIso(counterpartyBirthdate);
+      if (counterpartyBirthdate.trim() && !counterparty_birthdate_iso) {
+        throw new Error("Geburtsdatum muss im Format TT.MM.JJJJ sein");
+      }
       const payload = {
         kind,
         purchase_date: purchase_date_iso,
         counterparty_name: counterpartyName,
         counterparty_address: counterpartyAddress || null,
+        counterparty_birthdate: kind === "PRIVATE_DIFF" ? counterparty_birthdate_iso : null,
+        counterparty_id_number:
+          kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
         total_amount_cents: totalCents,
         tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? Number(taxRateBp) : 0,
         payment_source: paymentSource,
@@ -527,6 +547,8 @@ export function PurchasesPage() {
       setEditingPurchaseId(null);
       setCounterpartyName("");
       setCounterpartyAddress("");
+      setCounterpartyBirthdate("");
+      setCounterpartyIdNumber("");
       setExternalInvoiceNumber("");
       setReceiptUploadPath("");
       setTotalAmount("0,00");
@@ -607,6 +629,8 @@ export function PurchasesPage() {
     setPurchaseDate(formatDateEuFromIso(p.purchase_date));
     setCounterpartyName(p.counterparty_name);
     setCounterpartyAddress(p.counterparty_address ?? "");
+    setCounterpartyBirthdate(p.counterparty_birthdate ? formatDateEuFromIso(p.counterparty_birthdate) : "");
+    setCounterpartyIdNumber(p.counterparty_id_number ?? "");
     setPaymentSource(p.payment_source);
     setTotalAmount(formatEur(p.total_amount_cents));
     setExternalInvoiceNumber(p.external_invoice_number ?? "");
@@ -633,6 +657,8 @@ export function PurchasesPage() {
     setPurchaseDate(formatDateEuFromIso(todayIsoLocal()));
     setCounterpartyName("");
     setCounterpartyAddress("");
+    setCounterpartyBirthdate("");
+    setCounterpartyIdNumber("");
     setPaymentSource("CASH");
     setTotalAmount("0,00");
     setExternalInvoiceNumber("");
@@ -824,6 +850,28 @@ export function PurchasesPage() {
                 <Input value={counterpartyAddress} onChange={(e) => setCounterpartyAddress(e.target.value)} placeholder="Adresse" />
               </div>
             </div>
+
+            {kind === "PRIVATE_DIFF" && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Geburtsdatum (optional)</Label>
+                  <Input
+                    value={counterpartyBirthdate}
+                    onChange={(e) => setCounterpartyBirthdate(e.target.value)}
+                    placeholder="TT.MM.JJJJ"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Ausweisnummer (optional)</Label>
+                  <Input
+                    value={counterpartyIdNumber}
+                    onChange={(e) => setCounterpartyIdNumber(e.target.value)}
+                    placeholder="z.B. Reisepass / Personalausweis"
+                  />
+                </div>
+              </div>
+            )}
 
             {kind === "COMMERCIAL_REGULAR" && (
               <div className="grid gap-4 md:grid-cols-4">
