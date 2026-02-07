@@ -53,6 +53,8 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         purchase_date=data.purchase_date,
         counterparty_name=data.counterparty_name,
         counterparty_address=data.counterparty_address,
+        counterparty_birthdate=data.counterparty_birthdate,
+        counterparty_id_number=data.counterparty_id_number,
         total_amount_cents=data.total_amount_cents,
         total_net_cents=total_net,
         total_tax_cents=total_tax,
@@ -258,6 +260,8 @@ async def update_purchase(
     purchase.purchase_date = data.purchase_date
     purchase.counterparty_name = data.counterparty_name
     purchase.counterparty_address = data.counterparty_address
+    purchase.counterparty_birthdate = data.counterparty_birthdate
+    purchase.counterparty_id_number = data.counterparty_id_number
     purchase.total_amount_cents = data.total_amount_cents
     purchase.total_net_cents = total_net
     purchase.total_tax_cents = total_tax

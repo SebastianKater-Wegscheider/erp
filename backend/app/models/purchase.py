@@ -20,6 +20,8 @@ class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     counterparty_name: Mapped[str] = mapped_column(String(200), nullable=False)
     counterparty_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    counterparty_birthdate: Mapped[date | None] = mapped_column(Date, nullable=True)
+    counterparty_id_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     total_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     total_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

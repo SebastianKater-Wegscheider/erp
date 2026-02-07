@@ -20,6 +20,8 @@ async def ensure_schema(conn: AsyncConnection) -> None:
         "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS total_net_cents INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS total_tax_cents INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS tax_rate_bp INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS counterparty_birthdate DATE",
+        "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS counterparty_id_number VARCHAR(80)",
         # purchase_lines
         "ALTER TABLE purchase_lines ADD COLUMN IF NOT EXISTS purchase_price_net_cents INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE purchase_lines ADD COLUMN IF NOT EXISTS purchase_price_tax_cents INTEGER NOT NULL DEFAULT 0",

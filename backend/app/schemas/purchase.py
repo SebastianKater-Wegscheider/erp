@@ -29,6 +29,8 @@ class PurchaseCreate(BaseModel):
 
     counterparty_name: str = Field(min_length=1, max_length=200)
     counterparty_address: str | None = None
+    counterparty_birthdate: date | None = None
+    counterparty_id_number: str | None = Field(default=None, max_length=80)
 
     total_amount_cents: int = Field(ge=0)
     tax_rate_bp: int | None = Field(default=None, ge=0, le=10000)
@@ -65,6 +67,8 @@ class PurchaseUpdate(BaseModel):
 
     counterparty_name: str = Field(min_length=1, max_length=200)
     counterparty_address: str | None = None
+    counterparty_birthdate: date | None = None
+    counterparty_id_number: str | None = Field(default=None, max_length=80)
 
     total_amount_cents: int = Field(ge=0)
     tax_rate_bp: int | None = Field(default=None, ge=0, le=10000)
@@ -117,6 +121,8 @@ class PurchaseOut(BaseModel):
 
     counterparty_name: str
     counterparty_address: str | None
+    counterparty_birthdate: date | None
+    counterparty_id_number: str | None
 
     total_amount_cents: int
     total_net_cents: int
