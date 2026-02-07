@@ -158,6 +158,13 @@ export function SalesPage() {
     },
   });
 
+  const generateInvoicePdf = useMutation({
+    mutationFn: (orderId: string) => api.request<SalesOrder>(`/sales/${orderId}/generate-invoice-pdf`, { method: "POST" }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["sales"] });
+    },
+  });
+
   const cancel = useMutation({
     mutationFn: (orderId: string) => api.request<SalesOrder>(`/sales/${orderId}/cancel`, { method: "POST" }),
     onSuccess: async () => {
@@ -171,6 +178,24 @@ export function SalesPage() {
   const [returnPaymentSource, setReturnPaymentSource] = useState<string>("BANK");
   const [shippingRefund, setShippingRefund] = useState<string>("0,00");
   const [returnLines, setReturnLines] = useState<Array<{ inventory_item_id: string; action: string; refund_gross?: string }>>([]);
+
+  const returns = useQuery({
+    queryKey: ["sales-returns", returnOrderId],
+    enabled: !!returnOrderId,
+    queryFn: async () => {
+      if (!returnOrderId) return [];
+      return api.request<ReturnOut[]>(`/sales/${returnOrderId}/returns`);
+    },
+  });
+
+  const generateReturnPdf = useMutation({
+    mutationFn: ({ orderId, correctionId }: { orderId: string; correctionId: string }) =>
+      api.request<ReturnOut>(`/sales/${orderId}/returns/${correctionId}/generate-pdf`, { method: "POST" }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["sales"] });
+      await qc.invalidateQueries({ queryKey: ["sales-returns"] });
+    },
+  });
 
   const createReturn = useMutation({
     mutationFn: async () => {
@@ -190,10 +215,11 @@ export function SalesPage() {
       });
     },
     onSuccess: async () => {
-      setReturnOrderId(null);
       setReturnLines([]);
+      setShippingRefund("0,00");
       await qc.invalidateQueries({ queryKey: ["sales"] });
       await qc.invalidateQueries({ queryKey: ["inventory-available"] });
+      await qc.invalidateQueries({ queryKey: ["sales-returns"] });
     },
   });
 
@@ -415,11 +441,18 @@ export function SalesPage() {
                           </Button>
                         </>
                       )}
-                      {o.status === "FINALIZED" && o.invoice_pdf_path && (
+                      {o.status === "FINALIZED" && (
                         <>
-                          <Button variant="outline" onClick={() => api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)}>
-                            Rechnung (PDF)
-                          </Button>
+                          {o.invoice_pdf_path ? (
+                            <Button variant="outline" onClick={() => api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)}>
+                              Rechnung (PDF)
+                            </Button>
+                          ) : (
+                            <Button variant="outline" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
+                              Rechnung erstellen
+                            </Button>
+                          )}
+
                           <Dialog>
                             <DialogTrigger asChild>
                               <Button
@@ -442,85 +475,142 @@ export function SalesPage() {
                             <DialogContent>
                               <DialogHeader>
                                 <DialogTitle>Rückgabe / Korrektur</DialogTitle>
-                                <DialogDescription>Korrektur-PDF erstellen und Artikel wieder einlagern/ausbuchen.</DialogDescription>
+                                <DialogDescription>Korrektur erfassen. PDF wird danach manuell erstellt.</DialogDescription>
                               </DialogHeader>
-                              <div className="space-y-3">
-                                <div className="grid gap-3 md:grid-cols-3">
-                                  <div className="space-y-2">
-                                    <Label>Datum</Label>
-                                    <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Zahlungsquelle</Label>
-                                    <Select value={returnPaymentSource} onValueChange={setReturnPaymentSource}>
-                                      <SelectTrigger><SelectValue /></SelectTrigger>
-                                      <SelectContent>
-                                        {PAYMENT_SOURCE_OPTIONS.map((p) => (
-                                          <SelectItem key={p.value} value={p.value}>
-                                            {p.label}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Versand-Erstattung (EUR)</Label>
-                                    <Input value={shippingRefund} onChange={(e) => setShippingRefund(e.target.value)} />
-                                  </div>
+
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <div className="text-sm font-medium">Bestehende Korrekturen</div>
+                                  {returns.isLoading ? (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">Lade…</div>
+                                  ) : returns.isError ? (
+                                    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                                      {(returns.error as Error).message}
+                                    </div>
+                                  ) : (returns.data ?? []).length ? (
+                                    <div className="max-h-40 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>Nr.</TableHead>
+                                            <TableHead>Datum</TableHead>
+                                            <TableHead className="text-right">Brutto</TableHead>
+                                            <TableHead className="text-right">PDF</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {(returns.data ?? []).map((r) => (
+                                            <TableRow key={r.id}>
+                                              <TableCell className="font-mono text-xs">{r.correction_number}</TableCell>
+                                              <TableCell>{r.correction_date}</TableCell>
+                                              <TableCell className="text-right">{formatEur(r.refund_gross_cents)} €</TableCell>
+                                              <TableCell className="text-right">
+                                                {r.pdf_path ? (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => api.download(r.pdf_path!, r.pdf_path!.split("/").pop()!)}
+                                                  >
+                                                    PDF
+                                                  </Button>
+                                                ) : (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => generateReturnPdf.mutate({ orderId: o.id, correctionId: r.id })}
+                                                    disabled={generateReturnPdf.isPending}
+                                                  >
+                                                    PDF erstellen
+                                                  </Button>
+                                                )}
+                                              </TableCell>
+                                            </TableRow>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">Keine Korrekturen.</div>
+                                  )}
                                 </div>
 
-                                <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead>Artikel</TableHead>
-                                        <TableHead>Aktion</TableHead>
-                                        <TableHead className="text-right">Erstattung brutto</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {returnLines.map((l, idx) => (
-                                        <TableRow key={l.inventory_item_id}>
-                                          <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
-                                          <TableCell>
-                                            <Select
-                                              value={l.action}
-                                              onValueChange={(v) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, action: v } : x)))}
-                                            >
-                                              <SelectTrigger><SelectValue /></SelectTrigger>
-                                              <SelectContent>
-                                                {RETURN_ACTION_OPTIONS.map((a) => (
-                                                  <SelectItem key={a.value} value={a.value}>
-                                                    {a.label}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </TableCell>
-                                          <TableCell className="text-right">
-                                            <Input
-                                              className="text-right"
-                                              value={l.refund_gross ?? ""}
-                                              onChange={(e) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, refund_gross: e.target.value } : x)))}
-                                            />
-                                          </TableCell>
+                                <div className="space-y-3">
+                                  <div className="grid gap-3 md:grid-cols-3">
+                                    <div className="space-y-2">
+                                      <Label>Datum</Label>
+                                      <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label>Zahlungsquelle</Label>
+                                      <Select value={returnPaymentSource} onValueChange={setReturnPaymentSource}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                          {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                                            <SelectItem key={p.value} value={p.value}>
+                                              {p.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label>Versand-Erstattung (EUR)</Label>
+                                      <Input value={shippingRefund} onChange={(e) => setShippingRefund(e.target.value)} />
+                                    </div>
+                                  </div>
+
+                                  <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>Artikel</TableHead>
+                                          <TableHead>Aktion</TableHead>
+                                          <TableHead className="text-right">Erstattung brutto</TableHead>
                                         </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {returnLines.map((l, idx) => (
+                                          <TableRow key={l.inventory_item_id}>
+                                            <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
+                                            <TableCell>
+                                              <Select
+                                                value={l.action}
+                                                onValueChange={(v) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, action: v } : x)))}
+                                              >
+                                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                  {RETURN_ACTION_OPTIONS.map((a) => (
+                                                    <SelectItem key={a.value} value={a.value}>
+                                                      {a.label}
+                                                    </SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                              <Input
+                                                className="text-right"
+                                                value={l.refund_gross ?? ""}
+                                                onChange={(e) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, refund_gross: e.target.value } : x)))}
+                                              />
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
                                 </div>
                               </div>
+
                               <DialogFooter>
-                                <Button
-                                  onClick={() => createReturn.mutate()}
-                                  disabled={!returnOrderId || createReturn.isPending}
-                                >
+                                <Button onClick={() => createReturn.mutate()} disabled={!returnOrderId || createReturn.isPending}>
                                   Korrektur erstellen
                                 </Button>
                               </DialogFooter>
-                              {createReturn.isError && (
+
+                              {(createReturn.isError || generateReturnPdf.isError) && (
                                 <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-                                  {(createReturn.error as Error).message}
+                                  {(((createReturn.error ?? generateReturnPdf.error) as Error) ?? new Error("Unbekannter Fehler")).message}
                                 </div>
                               )}
                             </DialogContent>

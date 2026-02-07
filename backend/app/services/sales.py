@@ -98,11 +98,6 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
     order.invoice_number = invoice_number
     order.status = OrderStatus.FINALIZED
 
-    settings = get_settings()
-    templates_dir = Path(__file__).resolve().parents[1] / "templates"
-    rel_path = f"pdfs/invoices/{invoice_number}.pdf"
-    out_path = settings.app_storage_dir / rel_path
-
     mp_rows = (
         await session.execute(
             select(
@@ -114,14 +109,9 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
                 SalesOrderLine.sale_tax_cents,
                 InventoryItem.purchase_price_cents,
                 InventoryItem.allocated_costs_cents,
-                MasterProduct.title,
-                MasterProduct.platform,
-                MasterProduct.region,
-                MasterProduct.variant,
             )
             .select_from(SalesOrderLine)
             .join(InventoryItem, InventoryItem.id == SalesOrderLine.inventory_item_id)
-            .join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id)
             .where(SalesOrderLine.order_id == order.id)
         )
     ).all()
@@ -131,16 +121,7 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
         total_cents=order.shipping_gross_cents, weights=[int(r.sale_gross_cents) for r in rows_sorted]
     )
 
-    has_diff_lines = any(r.purchase_type == PurchaseType.DIFF for r in rows_sorted)
-    has_regular_lines = any(r.purchase_type == PurchaseType.REGULAR for r in rows_sorted)
-
     shipping_margin_gross_cents = 0
-    regular_goods_net_cents = 0
-    regular_goods_tax_cents = 0
-    regular_goods_gross_cents = 0
-    margin_goods_gross_cents = 0
-
-    lines_ctx = []
     for r, ship_alloc in zip(rows_sorted, shipping_allocs, strict=True):
         cost_basis_cents = int(r.purchase_price_cents) + int(r.allocated_costs_cents)
 
@@ -160,40 +141,10 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
             sol.margin_gross_cents = mc.margin_gross_cents
             sol.margin_net_cents = mc.margin_net_cents
             sol.margin_tax_cents = mc.margin_tax_cents
-
-            margin_goods_gross_cents += int(r.sale_gross_cents)
-            lines_ctx.append(
-                {
-                    "title": r.title,
-                    "platform": r.platform,
-                    "region": r.region,
-                    "variant": r.variant,
-                    "purchase_type": r.purchase_type.value,
-                    "gross_eur": format_eur(r.sale_gross_cents),
-                    "net_eur": None,
-                    "tax_eur": None,
-                }
-            )
         else:
             sol.margin_gross_cents = 0
             sol.margin_net_cents = 0
             sol.margin_tax_cents = 0
-
-            regular_goods_gross_cents += int(r.sale_gross_cents)
-            regular_goods_net_cents += int(r.sale_net_cents)
-            regular_goods_tax_cents += int(r.sale_tax_cents)
-            lines_ctx.append(
-                {
-                    "title": r.title,
-                    "platform": r.platform,
-                    "region": r.region,
-                    "variant": r.variant,
-                    "purchase_type": r.purchase_type.value,
-                    "gross_eur": format_eur(r.sale_gross_cents),
-                    "net_eur": format_eur(r.sale_net_cents),
-                    "tax_eur": format_eur(r.sale_tax_cents),
-                }
-            )
 
     shipping_regular_gross_cents = int(order.shipping_gross_cents) - int(shipping_margin_gross_cents)
     shipping_regular_net_cents, shipping_regular_tax_cents = split_gross_to_net_and_tax(
@@ -204,56 +155,6 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
     order.shipping_regular_net_cents = shipping_regular_net_cents
     order.shipping_regular_tax_cents = shipping_regular_tax_cents
     order.shipping_margin_gross_cents = int(shipping_margin_gross_cents)
-
-    regular_total_gross_cents = regular_goods_gross_cents + shipping_regular_gross_cents
-    regular_total_net_cents = regular_goods_net_cents + shipping_regular_net_cents
-    regular_total_tax_cents = regular_goods_tax_cents + shipping_regular_tax_cents
-
-    margin_total_gross_cents = margin_goods_gross_cents + int(shipping_margin_gross_cents)
-    total_gross_cents = regular_total_gross_cents + margin_total_gross_cents
-
-    render_pdf(
-        templates_dir=templates_dir,
-        template_name="sales_invoice.html",
-        context={
-            "invoice_number": invoice_number,
-            "order_date": order.order_date.isoformat(),
-            "company_name": settings.company_name,
-            "company_address": settings.company_address,
-            "company_email": settings.company_email,
-            "company_vat_id": settings.company_vat_id,
-            "buyer_name": order.buyer_name,
-            "buyer_address": order.buyer_address,
-            "channel": order.channel.value,
-            "lines": lines_ctx,
-            "has_diff_lines": has_diff_lines,
-            "has_regular_lines": has_regular_lines,
-            "shipping_gross_cents": order.shipping_gross_cents,
-            "shipping_regular_gross_cents": shipping_regular_gross_cents,
-            "shipping_regular_gross_eur": format_eur(shipping_regular_gross_cents),
-            "shipping_regular_net_eur": format_eur(shipping_regular_net_cents),
-            "shipping_regular_tax_eur": format_eur(shipping_regular_tax_cents),
-            "shipping_margin_gross_cents": int(shipping_margin_gross_cents),
-            "shipping_margin_gross_eur": format_eur(int(shipping_margin_gross_cents)),
-            "regular_total_gross_eur": format_eur(regular_total_gross_cents),
-            "regular_total_net_eur": format_eur(regular_total_net_cents),
-            "regular_total_tax_eur": format_eur(regular_total_tax_cents),
-            "margin_total_gross_eur": format_eur(margin_total_gross_cents),
-            "total_gross_eur": format_eur(total_gross_cents),
-        },
-        output_path=out_path,
-        css_paths=[templates_dir / "base.css"],
-    )
-    order.invoice_pdf_path = rel_path
-
-    await audit_log(
-        session,
-        actor=actor,
-        entity_type="sale",
-        entity_id=order.id,
-        action="generate_invoice_pdf",
-        after={"invoice_number": invoice_number, "invoice_pdf_path": order.invoice_pdf_path},
-    )
 
     for line in order.lines:
         item = await session.get(InventoryItem, line.inventory_item_id)
@@ -283,6 +184,149 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
         action="finalize",
         before={"status": OrderStatus.DRAFT},
         after={"status": order.status, "invoice_number": invoice_number},
+    )
+
+    return order
+
+
+async def generate_sales_invoice_pdf(
+    session: AsyncSession,
+    *,
+    actor: str,
+    order_id: uuid.UUID,
+) -> SalesOrder:
+    """
+    Generate the invoice PDF for a FINALIZED sales order.
+
+    This is separated from finalization so the invoice can be created manually
+    once all data is reviewed and complete.
+    """
+    result = await session.execute(
+        select(SalesOrder).where(SalesOrder.id == order_id).options(selectinload(SalesOrder.lines))
+    )
+    order = result.scalar_one_or_none()
+    if order is None:
+        raise ValueError("Sales order not found")
+    if order.status != OrderStatus.FINALIZED:
+        raise ValueError("Only FINALIZED orders can generate an invoice PDF")
+    if not order.invoice_number:
+        raise ValueError("Order has no invoice_number")
+
+    mp_rows = (
+        await session.execute(
+            select(
+                SalesOrderLine.purchase_type,
+                SalesOrderLine.sale_gross_cents,
+                SalesOrderLine.sale_net_cents,
+                SalesOrderLine.sale_tax_cents,
+                MasterProduct.title,
+                MasterProduct.platform,
+                MasterProduct.region,
+                MasterProduct.variant,
+            )
+            .select_from(SalesOrderLine)
+            .join(InventoryItem, InventoryItem.id == SalesOrderLine.inventory_item_id)
+            .join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id)
+            .where(SalesOrderLine.order_id == order.id)
+        )
+    ).all()
+
+    has_diff_lines = any(r.purchase_type == PurchaseType.DIFF for r in mp_rows)
+    has_regular_lines = any(r.purchase_type == PurchaseType.REGULAR for r in mp_rows)
+
+    regular_goods_net_cents = sum(int(r.sale_net_cents) for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    regular_goods_tax_cents = sum(int(r.sale_tax_cents) for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    regular_goods_gross_cents = sum(int(r.sale_gross_cents) for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    margin_goods_gross_cents = sum(int(r.sale_gross_cents) for r in mp_rows if r.purchase_type == PurchaseType.DIFF)
+
+    shipping_regular_gross_cents = int(order.shipping_regular_gross_cents)
+    shipping_regular_net_cents = int(order.shipping_regular_net_cents)
+    shipping_regular_tax_cents = int(order.shipping_regular_tax_cents)
+    shipping_margin_gross_cents = int(order.shipping_margin_gross_cents)
+
+    regular_total_gross_cents = regular_goods_gross_cents + shipping_regular_gross_cents
+    regular_total_net_cents = regular_goods_net_cents + shipping_regular_net_cents
+    regular_total_tax_cents = regular_goods_tax_cents + shipping_regular_tax_cents
+
+    margin_total_gross_cents = margin_goods_gross_cents + shipping_margin_gross_cents
+    total_gross_cents = regular_total_gross_cents + margin_total_gross_cents
+
+    lines_ctx = []
+    for r in mp_rows:
+        if r.purchase_type == PurchaseType.DIFF:
+            lines_ctx.append(
+                {
+                    "title": r.title,
+                    "platform": r.platform,
+                    "region": r.region,
+                    "variant": r.variant,
+                    "purchase_type": r.purchase_type.value,
+                    "gross_eur": format_eur(r.sale_gross_cents),
+                    "net_eur": None,
+                    "tax_eur": None,
+                }
+            )
+        else:
+            lines_ctx.append(
+                {
+                    "title": r.title,
+                    "platform": r.platform,
+                    "region": r.region,
+                    "variant": r.variant,
+                    "purchase_type": r.purchase_type.value,
+                    "gross_eur": format_eur(r.sale_gross_cents),
+                    "net_eur": format_eur(r.sale_net_cents),
+                    "tax_eur": format_eur(r.sale_tax_cents),
+                }
+            )
+
+    settings = get_settings()
+    templates_dir = Path(__file__).resolve().parents[1] / "templates"
+    rel_path = f"pdfs/invoices/{order.invoice_number}.pdf"
+    out_path = settings.app_storage_dir / rel_path
+
+    render_pdf(
+        templates_dir=templates_dir,
+        template_name="sales_invoice.html",
+        context={
+            "invoice_number": order.invoice_number,
+            "order_date": order.order_date.strftime("%d.%m.%Y"),
+            "company_name": settings.company_name,
+            "company_address": settings.company_address,
+            "company_email": settings.company_email,
+            "company_vat_id": settings.company_vat_id,
+            "company_small_business_notice": settings.company_small_business_notice,
+            "buyer_name": order.buyer_name,
+            "buyer_address": order.buyer_address,
+            "channel": order.channel.value,
+            "lines": lines_ctx,
+            "has_diff_lines": has_diff_lines,
+            "has_regular_lines": has_regular_lines,
+            "shipping_gross_cents": int(order.shipping_gross_cents),
+            "shipping_regular_gross_cents": shipping_regular_gross_cents,
+            "shipping_regular_gross_eur": format_eur(shipping_regular_gross_cents),
+            "shipping_regular_net_eur": format_eur(shipping_regular_net_cents),
+            "shipping_regular_tax_eur": format_eur(shipping_regular_tax_cents),
+            "shipping_margin_gross_cents": shipping_margin_gross_cents,
+            "shipping_margin_gross_eur": format_eur(shipping_margin_gross_cents),
+            "regular_total_gross_eur": format_eur(regular_total_gross_cents),
+            "regular_total_net_eur": format_eur(regular_total_net_cents),
+            "regular_total_tax_eur": format_eur(regular_total_tax_cents),
+            "margin_total_gross_eur": format_eur(margin_total_gross_cents),
+            "total_gross_eur": format_eur(total_gross_cents),
+        },
+        output_path=out_path,
+        css_paths=[templates_dir / "base.css"],
+    )
+    order.invoice_pdf_path = rel_path
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="sale",
+        entity_id=order.id,
+        action="generate_invoice_pdf",
+        after={"invoice_number": order.invoice_number, "invoice_pdf_path": order.invoice_pdf_path},
     )
 
     return order

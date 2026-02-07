@@ -382,6 +382,13 @@ export function PurchasesPage() {
     queryFn: () => api.request<PurchaseOut[]>("/purchases"),
   });
 
+  const generatePdf = useMutation({
+    mutationFn: (purchaseId: string) => api.request<PurchaseOut>(`/purchases/${purchaseId}/generate-pdf`, { method: "POST" }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["purchases"] });
+    },
+  });
+
   const [kind, setKind] = useState<string>("PRIVATE_DIFF");
   const [purchaseDate, setPurchaseDate] = useState<string>(() => formatDateEuFromIso(todayIsoLocal()));
   const [counterpartyName, setCounterpartyName] = useState("");
@@ -806,6 +813,15 @@ export function PurchasesPage() {
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
+                    ) : p.kind === "PRIVATE_DIFF" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => generatePdf.mutate(p.id)}
+                        disabled={generatePdf.isPending}
+                      >
+                        Eigenbeleg erstellen
+                      </Button>
                     ) : (
                       <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
                     )}

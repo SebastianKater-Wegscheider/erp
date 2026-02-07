@@ -141,11 +141,18 @@
       </table>
     {% endif %}
 
-    <div class="spacer"></div>
-    {% if has_diff_lines %}
-      <div class="muted">
-        Hinweis: Differenzbesteuerung gem. § 24 UStG (Gebrauchtgegenstände/Sonderregelung) – keine Umsatzsteuer-Ausweisung.
+    <footer class="doc-footer">
+      <div>
+        <strong>Impressum</strong>: {{ company_name }} · <span style="white-space: pre-line;">{{ company_address }}</span>
+        {% if company_email %} · {{ company_email }}{% endif %}
+        {% if company_vat_id %} · UID: {{ company_vat_id }}{% endif %}
       </div>
-    {% endif %}
+      {% if company_small_business_notice %}
+        <div>{{ company_small_business_notice }}</div>
+      {% endif %}
+      {% if has_diff_lines %}
+        <div>Hinweis: Differenzbesteuerung gem. § 24 UStG – keine Umsatzsteuer-Ausweisung für differenzbesteuerte Positionen.</div>
+      {% endif %}
+    </footer>
   </body>
 </html>

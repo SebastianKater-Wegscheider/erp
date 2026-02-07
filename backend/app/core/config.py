@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -22,12 +23,37 @@ class Settings(BaseSettings):
 
     mileage_rate_cents_per_km: int = Field(42, alias="MILEAGE_RATE_CENTS_PER_KM")
 
-    company_name: str = Field("Reseller ERP", alias="COMPANY_NAME")
-    company_address: str = Field("", alias="COMPANY_ADDRESS")
-    company_email: str | None = Field(None, alias="COMPANY_EMAIL")
+    company_name: str = Field("Sebastian Kater-Wegscheider", alias="COMPANY_NAME")
+    company_address: str = Field("Im Gütle 8\n6921 Kennelbach\nÖsterreich", alias="COMPANY_ADDRESS")
+    company_email: str | None = Field("business@kater.cloud", alias="COMPANY_EMAIL")
     company_vat_id: str | None = Field(None, alias="COMPANY_VAT_ID")
+    company_small_business_notice: str | None = Field(
+        "Kleinunternehmerregelung – es wird keine Umsatzsteuer ausgewiesen.",
+        alias="COMPANY_SMALL_BUSINESS_NOTICE",
+    )
 
     cors_origins: str | None = Field(None, alias="CORS_ORIGINS")
+
+    # --- Bank transaction sync ---
+    bank_sync_enabled: bool = Field(True, alias="BANK_SYNC_ENABLED")
+    bank_sync_interval_seconds: int = Field(900, alias="BANK_SYNC_INTERVAL_SECONDS")
+    bank_sync_start_date: date | None = Field(None, alias="BANK_SYNC_START_DATE")
+    bank_sync_overlap_days: int = Field(14, alias="BANK_SYNC_OVERLAP_DAYS")
+    bank_sync_initial_lookback_days: int = Field(365 * 5, alias="BANK_SYNC_INITIAL_LOOKBACK_DAYS")
+
+    # --- GoCardless ---
+    # GoCardless Pro (Direct Debit) access token.
+    gocardless_token: str | None = Field(None, alias="GOCARDLESS_TOKEN")
+
+    # GoCardless Bank Account Data (Open Banking, formerly Nordigen).
+    gocardless_bank_data_base_url: str = Field(
+        "https://bankaccountdata.gocardless.com/api/v2",
+        alias="GOCARDLESS_BANK_DATA_BASE_URL",
+    )
+    gocardless_bank_data_secret_id: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_SECRET_ID")
+    gocardless_bank_data_secret_key: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_SECRET_KEY")
+    gocardless_bank_data_access_token: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_ACCESS_TOKEN")
+    gocardless_bank_data_requisition_ids: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_REQUISITION_IDS")
 
     @property
     def pdf_dir(self) -> Path:

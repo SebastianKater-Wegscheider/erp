@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from sqlalchemy import select
@@ -134,69 +135,96 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         },
     )
 
-    if data.kind == PurchaseKind.PRIVATE_DIFF and purchase.document_number:
-        settings = get_settings()
-        templates_dir = Path(__file__).resolve().parents[1] / "templates"
-        rel_path = f"pdfs/credit-notes/{purchase.document_number}.pdf"
-        out_path = settings.app_storage_dir / rel_path
+    return purchase
 
-        mp_rows = (
-            await session.execute(
-                select(
-                    MasterProduct.id,
-                    MasterProduct.title,
-                    MasterProduct.platform,
-                    MasterProduct.region,
-                    MasterProduct.variant,
-                ).where(
-                    MasterProduct.id.in_([line.master_product_id for line in data.lines])
-                )
-            )
-        ).all()
-        mp_map = {r.id: r for r in mp_rows}
 
-        lines = []
-        for line in data.lines:
-            mp = mp_map.get(line.master_product_id)
-            lines.append(
-                {
-                    "title": mp.title if mp else str(line.master_product_id),
-                    "platform": mp.platform if mp else "",
-                    "region": mp.region if mp else "",
-                    "variant": mp.variant if mp else "",
-                    "condition": line.condition.value,
-                    "purchase_price_eur": format_eur(line.purchase_price_cents),
-                }
-            )
+async def generate_purchase_credit_note_pdf(
+    session: AsyncSession,
+    *,
+    actor: str,
+    purchase_id: uuid.UUID,
+) -> Purchase:
+    """
+    Generate the Eigenbeleg (credit note) PDF for a PRIVATE_DIFF purchase.
 
-        render_pdf(
-            templates_dir=templates_dir,
-            template_name="purchase_credit_note.html",
-            context={
-                "document_number": purchase.document_number,
-                "purchase_date": purchase.purchase_date.isoformat(),
-                "company_name": settings.company_name,
-                "company_address": settings.company_address,
-                "company_email": settings.company_email,
-                "company_vat_id": settings.company_vat_id,
-                "counterparty_name": purchase.counterparty_name,
-                "counterparty_address": purchase.counterparty_address,
-                "payment_source": purchase.payment_source.value,
-                "lines": lines,
-                "total_amount_eur": format_eur(purchase.total_amount_cents),
-            },
-            output_path=out_path,
-            css_paths=[templates_dir / "base.css"],
-        )
-        purchase.pdf_path = rel_path
+    This is intentionally separated from `create_purchase()` so purchases can be
+    recorded first and the document can be generated manually once all data is ready.
+    """
+    purchase = await session.get(Purchase, purchase_id)
+    if purchase is None:
+        raise ValueError("Purchase not found")
+    if purchase.kind != PurchaseKind.PRIVATE_DIFF:
+        raise ValueError("Only PRIVATE_DIFF purchases have an Eigenbeleg PDF")
 
-        await audit_log(
-            session,
-            actor=actor,
-            entity_type="purchase",
-            entity_id=purchase.id,
-            action="generate_pdf",
-            after={"pdf_path": purchase.pdf_path, "document_number": purchase.document_number},
+    if not purchase.document_number:
+        purchase.document_number = await next_document_number(
+            session, doc_type=DocumentType.PURCHASE_CREDIT_NOTE, issue_date=purchase.purchase_date
         )
 
+    mp_rows = (
+        await session.execute(
+            select(
+                PurchaseLine.master_product_id,
+                PurchaseLine.condition,
+                PurchaseLine.purchase_price_cents,
+                MasterProduct.title,
+                MasterProduct.platform,
+                MasterProduct.region,
+                MasterProduct.variant,
+            )
+            .select_from(PurchaseLine)
+            .join(MasterProduct, MasterProduct.id == PurchaseLine.master_product_id)
+            .where(PurchaseLine.purchase_id == purchase.id)
+        )
+    ).all()
+
+    lines_ctx = []
+    for r in mp_rows:
+        lines_ctx.append(
+            {
+                "title": r.title,
+                "platform": r.platform,
+                "region": r.region,
+                "variant": r.variant,
+                "condition": r.condition.value,
+                "purchase_price_eur": format_eur(r.purchase_price_cents),
+            }
+        )
+
+    settings = get_settings()
+    templates_dir = Path(__file__).resolve().parents[1] / "templates"
+    rel_path = f"pdfs/credit-notes/{purchase.document_number}.pdf"
+    out_path = settings.app_storage_dir / rel_path
+
+    render_pdf(
+        templates_dir=templates_dir,
+        template_name="purchase_credit_note.html",
+        context={
+            "document_number": purchase.document_number,
+            "purchase_date": purchase.purchase_date.strftime("%d.%m.%Y"),
+            "company_name": settings.company_name,
+            "company_address": settings.company_address,
+            "company_email": settings.company_email,
+            "company_vat_id": settings.company_vat_id,
+            "company_small_business_notice": settings.company_small_business_notice,
+            "counterparty_name": purchase.counterparty_name,
+            "counterparty_address": purchase.counterparty_address,
+            "payment_source": purchase.payment_source.value,
+            "lines": lines_ctx,
+            "total_amount_eur": format_eur(purchase.total_amount_cents),
+        },
+        output_path=out_path,
+        css_paths=[templates_dir / "base.css"],
+    )
+
+    purchase.pdf_path = rel_path
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="purchase",
+        entity_id=purchase.id,
+        action="generate_pdf",
+        after={"pdf_path": purchase.pdf_path, "document_number": purchase.document_number},
+    )
     return purchase

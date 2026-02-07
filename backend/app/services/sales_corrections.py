@@ -182,16 +182,49 @@ async def create_sales_correction(
         )
     )
 
-    # PDF
-    settings = get_settings()
-    templates_dir = Path(__file__).resolve().parents[1] / "templates"
-    rel_path = f"pdfs/corrections/{correction_number}.pdf"
-    out_path = settings.app_storage_dir / rel_path
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="sales_correction",
+        entity_id=correction.id,
+        action="create",
+        after={"correction_number": correction_number, "refund_gross_cents": correction.refund_gross_cents},
+    )
+
+    return correction
+
+
+async def generate_sales_correction_pdf(
+    session: AsyncSession,
+    *,
+    actor: str,
+    correction_id: uuid.UUID,
+) -> SalesCorrection:
+    """
+    Generate the correction/storno PDF for a sales correction.
+
+    Separated from `create_sales_correction()` so the document can be created manually
+    once all data is reviewed and complete.
+    """
+    correction = (
+        await session.execute(
+            select(SalesCorrection).where(SalesCorrection.id == correction_id).options(selectinload(SalesCorrection.lines))
+        )
+    ).scalar_one_or_none()
+    if correction is None:
+        raise ValueError("Sales correction not found")
+    if not correction.correction_number:
+        raise ValueError("Correction has no correction_number")
+
+    order = await session.get(SalesOrder, correction.order_id)
+    if order is None:
+        raise ValueError("Sales order not found")
+    if not order.invoice_number:
+        raise ValueError("Order has no invoice_number")
 
     mp_rows = (
         await session.execute(
             select(
-                SalesCorrectionLine.inventory_item_id,
                 SalesCorrectionLine.action,
                 SalesCorrectionLine.purchase_type,
                 SalesCorrectionLine.refund_gross_cents,
@@ -210,13 +243,9 @@ async def create_sales_correction(
     ).all()
 
     lines_ctx = []
-    has_diff_lines = False
-    has_regular_lines = False
+    has_diff_lines = any(r.purchase_type == PurchaseType.DIFF for r in mp_rows)
+    has_regular_lines = any(r.purchase_type == PurchaseType.REGULAR for r in mp_rows)
     for r in mp_rows:
-        if r.purchase_type == PurchaseType.DIFF:
-            has_diff_lines = True
-        else:
-            has_regular_lines = True
         lines_ctx.append(
             {
                 "title": r.title,
@@ -231,41 +260,47 @@ async def create_sales_correction(
             }
         )
 
-    regular_goods_gross = sum(r.refund_gross_cents for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
-    regular_goods_net = sum(r.refund_net_cents for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
-    regular_goods_tax = sum(r.refund_tax_cents for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
-    margin_goods_gross = sum(r.refund_gross_cents for r in mp_rows if r.purchase_type == PurchaseType.DIFF)
+    regular_goods_gross = sum(int(r.refund_gross_cents) for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    regular_goods_net = sum(int(r.refund_net_cents) for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    regular_goods_tax = sum(int(r.refund_tax_cents) for r in mp_rows if r.purchase_type == PurchaseType.REGULAR)
+    margin_goods_gross = sum(int(r.refund_gross_cents) for r in mp_rows if r.purchase_type == PurchaseType.DIFF)
 
-    regular_total_gross_cents = -(regular_goods_gross + correction.shipping_refund_regular_gross_cents)
-    regular_total_net_cents = -(regular_goods_net + correction.shipping_refund_regular_net_cents)
-    regular_total_tax_cents = -(regular_goods_tax + correction.shipping_refund_regular_tax_cents)
-    margin_total_gross_cents = -(margin_goods_gross + correction.shipping_refund_margin_gross_cents)
+    regular_total_gross_cents = -(regular_goods_gross + int(correction.shipping_refund_regular_gross_cents))
+    regular_total_net_cents = -(regular_goods_net + int(correction.shipping_refund_regular_net_cents))
+    regular_total_tax_cents = -(regular_goods_tax + int(correction.shipping_refund_regular_tax_cents))
+    margin_total_gross_cents = -(margin_goods_gross + int(correction.shipping_refund_margin_gross_cents))
     total_gross_cents = regular_total_gross_cents + margin_total_gross_cents
+
+    settings = get_settings()
+    templates_dir = Path(__file__).resolve().parents[1] / "templates"
+    rel_path = f"pdfs/corrections/{correction.correction_number}.pdf"
+    out_path = settings.app_storage_dir / rel_path
 
     render_pdf(
         templates_dir=templates_dir,
         template_name="sales_correction.html",
         context={
-            "correction_number": correction_number,
-            "correction_date": data.correction_date.isoformat(),
+            "correction_number": correction.correction_number,
+            "correction_date": correction.correction_date.strftime("%d.%m.%Y"),
             "invoice_number": order.invoice_number,
             "company_name": settings.company_name,
             "company_address": settings.company_address,
             "company_email": settings.company_email,
             "company_vat_id": settings.company_vat_id,
+            "company_small_business_notice": settings.company_small_business_notice,
             "buyer_name": order.buyer_name,
             "buyer_address": order.buyer_address,
             "channel": order.channel.value,
             "lines": lines_ctx,
             "has_diff_lines": has_diff_lines,
             "has_regular_lines": has_regular_lines,
-            "shipping_refund_gross_cents": data.shipping_refund_gross_cents,
-            "shipping_refund_regular_gross_cents": correction.shipping_refund_regular_gross_cents,
-            "shipping_refund_regular_gross_eur": format_eur(-correction.shipping_refund_regular_gross_cents),
-            "shipping_refund_regular_net_eur": format_eur(-correction.shipping_refund_regular_net_cents),
-            "shipping_refund_regular_tax_eur": format_eur(-correction.shipping_refund_regular_tax_cents),
-            "shipping_refund_margin_gross_cents": correction.shipping_refund_margin_gross_cents,
-            "shipping_refund_margin_gross_eur": format_eur(-correction.shipping_refund_margin_gross_cents),
+            "shipping_refund_gross_cents": int(correction.shipping_refund_gross_cents),
+            "shipping_refund_regular_gross_cents": int(correction.shipping_refund_regular_gross_cents),
+            "shipping_refund_regular_gross_eur": format_eur(-int(correction.shipping_refund_regular_gross_cents)),
+            "shipping_refund_regular_net_eur": format_eur(-int(correction.shipping_refund_regular_net_cents)),
+            "shipping_refund_regular_tax_eur": format_eur(-int(correction.shipping_refund_regular_tax_cents)),
+            "shipping_refund_margin_gross_cents": int(correction.shipping_refund_margin_gross_cents),
+            "shipping_refund_margin_gross_eur": format_eur(-int(correction.shipping_refund_margin_gross_cents)),
             "regular_total_gross_eur": format_eur(regular_total_gross_cents),
             "regular_total_net_eur": format_eur(regular_total_net_cents),
             "regular_total_tax_eur": format_eur(regular_total_tax_cents),
@@ -282,17 +317,7 @@ async def create_sales_correction(
         actor=actor,
         entity_type="sales_correction",
         entity_id=correction.id,
-        action="create",
-        after={"correction_number": correction_number, "refund_gross_cents": correction.refund_gross_cents},
-    )
-
-    await audit_log(
-        session,
-        actor=actor,
-        entity_type="sales_correction",
-        entity_id=correction.id,
         action="generate_pdf",
         after={"pdf_path": correction.pdf_path},
     )
-
     return correction

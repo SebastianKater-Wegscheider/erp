@@ -1,6 +1,6 @@
 @page {
   size: A4;
-  margin: 18mm 16mm;
+  margin: 18mm 16mm 34mm 16mm;
 }
 
 * {
@@ -67,3 +67,18 @@ th {
   height: 12px;
 }
 
+.doc-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6mm 16mm 8mm;
+  border-top: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.doc-footer strong {
+  color: #111827;
+}

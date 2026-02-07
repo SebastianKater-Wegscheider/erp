@@ -11,7 +11,7 @@ from app.core.db import get_session
 from app.core.security import require_basic_auth
 from app.models.purchase import Purchase
 from app.schemas.purchase import PurchaseCreate, PurchaseOut, PurchaseRefOut
-from app.services.purchases import create_purchase
+from app.services.purchases import create_purchase, generate_purchase_credit_note_pdf
 
 
 router = APIRouter()
@@ -58,3 +58,21 @@ async def get_purchase(purchase_id: uuid.UUID, session: AsyncSession = Depends(g
     if row is None:
         raise HTTPException(status_code=404, detail="Not found")
     return PurchaseOut.model_validate(row)
+
+
+@router.post("/{purchase_id}/generate-pdf", response_model=PurchaseOut)
+async def generate_purchase_pdf(
+    purchase_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> PurchaseOut:
+    try:
+        async with session.begin():
+            purchase = await generate_purchase_credit_note_pdf(session, actor=actor, purchase_id=purchase_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    purchase = (
+        await session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    return PurchaseOut.model_validate(purchase)

@@ -13,8 +13,8 @@ from app.models.sales import SalesOrder
 from app.models.sales_correction import SalesCorrection
 from app.schemas.sales import SalesOrderCreate, SalesOrderOut
 from app.schemas.sales_correction import SalesCorrectionCreate, SalesCorrectionOut
-from app.services.sales import cancel_sales_order, create_sales_order, finalize_sales_order
-from app.services.sales_corrections import create_sales_correction
+from app.services.sales import cancel_sales_order, create_sales_order, finalize_sales_order, generate_sales_invoice_pdf
+from app.services.sales_corrections import create_sales_correction, generate_sales_correction_pdf
 
 
 router = APIRouter()
@@ -65,6 +65,24 @@ async def finalize_sales_order_endpoint(
     try:
         async with session.begin():
             order = await finalize_sales_order(session, actor=actor, order_id=order_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    order = (
+        await session.execute(select(SalesOrder).where(SalesOrder.id == order.id).options(selectinload(SalesOrder.lines)))
+    ).scalar_one()
+    return SalesOrderOut.model_validate(order)
+
+
+@router.post("/{order_id}/generate-invoice-pdf", response_model=SalesOrderOut)
+async def generate_sales_invoice_pdf_endpoint(
+    order_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> SalesOrderOut:
+    try:
+        async with session.begin():
+            order = await generate_sales_invoice_pdf(session, actor=actor, order_id=order_id)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
@@ -125,3 +143,29 @@ async def list_returns(order_id: uuid.UUID, session: AsyncSession = Depends(get_
         )
     ).scalars().all()
     return [SalesCorrectionOut.model_validate(r) for r in rows]
+
+
+@router.post("/{order_id}/returns/{correction_id}/generate-pdf", response_model=SalesCorrectionOut)
+async def generate_return_pdf_endpoint(
+    order_id: uuid.UUID,
+    correction_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> SalesCorrectionOut:
+    try:
+        async with session.begin():
+            correction = await session.get(SalesCorrection, correction_id)
+            if correction is None or correction.order_id != order_id:
+                raise ValueError("Sales correction not found")
+            correction = await generate_sales_correction_pdf(session, actor=actor, correction_id=correction_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    correction = (
+        await session.execute(
+            select(SalesCorrection)
+            .where(SalesCorrection.id == correction.id)
+            .options(selectinload(SalesCorrection.lines))
+        )
+    ).scalar_one()
+    return SalesCorrectionOut.model_validate(correction)
