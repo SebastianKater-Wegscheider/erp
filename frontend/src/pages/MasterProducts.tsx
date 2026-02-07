@@ -1,5 +1,5 @@
-import { MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Image as ImageIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
@@ -84,6 +84,67 @@ function releaseYearOrNull(value: string): number | null {
   const n = Number(v);
   if (!Number.isInteger(n)) return NaN;
   return n;
+}
+
+function ReferenceImageThumb({
+  url,
+  alt,
+  size = 56,
+}: {
+  url?: string | null;
+  alt: string;
+  size?: number;
+}) {
+  const src = (url ?? "").trim();
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    setErrored(false);
+  }, [src]);
+
+  const hasSrc = !!src;
+
+  return (
+    <a
+      href={hasSrc ? src : undefined}
+      target={hasSrc ? "_blank" : undefined}
+      rel={hasSrc ? "noreferrer" : undefined}
+      aria-label={hasSrc ? "Referenzbild öffnen" : "Kein Referenzbild"}
+      className={[
+        "group relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm",
+        "dark:border-gray-800 dark:bg-gray-950/40",
+        hasSrc ? "cursor-pointer hover:ring-2 hover:ring-gray-900/10 dark:hover:ring-gray-100/10" : "cursor-default",
+      ].join(" ")}
+      style={{ width: size, height: size }}
+      onClick={(e) => {
+        if (!hasSrc) e.preventDefault();
+      }}
+    >
+      {hasSrc && !errored ? (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setErrored(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 text-gray-400 dark:bg-gray-900/40 dark:text-gray-500">
+          <ImageIcon className="h-4 w-4" />
+          <span className="text-[10px] font-medium uppercase tracking-wide">Bild</span>
+        </div>
+      )}
+
+      {hasSrc && (
+        <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-black/20" />
+          <div className="absolute bottom-1 right-1 rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            Öffnen
+          </div>
+        </div>
+      )}
+    </a>
+  );
 }
 
 export function MasterProductsPage() {
@@ -303,9 +364,12 @@ export function MasterProductsPage() {
                 Array.from({ length: 6 }).map((_, i) => (
                   <TableRow key={`skel-${i}`} className="animate-pulse">
                     <TableCell>
-                      <div className="space-y-2">
-                        <div className="h-4 w-64 rounded bg-gray-200 dark:bg-gray-800" />
-                        <div className="h-3 w-48 rounded bg-gray-100 dark:bg-gray-800" />
+                      <div className="flex items-start gap-3">
+                        <div className="h-14 w-14 rounded-md bg-gray-100 dark:bg-gray-800" />
+                        <div className="space-y-2 pt-1">
+                          <div className="h-4 w-64 rounded bg-gray-200 dark:bg-gray-800" />
+                          <div className="h-3 w-48 rounded bg-gray-100 dark:bg-gray-800" />
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -322,28 +386,32 @@ export function MasterProductsPage() {
                 rows.map((m) => (
                   <TableRow key={m.id}>
                     <TableCell>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="min-w-0 truncate font-medium">{m.title}</div>
-                          <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {m.platform} · {m.region}
-                          {m.variant ? ` · ${m.variant}` : ""}
-                        </div>
-                        {(m.manufacturer || m.model) && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {m.manufacturer ?? ""}
-                            {m.manufacturer && m.model ? " · " : ""}
-                            {m.model ?? ""}
+                      <div className="flex items-start gap-3">
+                        <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="min-w-0 truncate font-medium">{m.title}</div>
+                            <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
                           </div>
-                        )}
-                        {(m.genre || m.release_year) && (
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {m.genre ?? "—"}
-                            {m.release_year ? ` · ${m.release_year}` : ""}
+                            {m.platform} · {m.region}
+                            {m.variant ? ` · ${m.variant}` : ""}
                           </div>
-                        )}
+                          {(m.manufacturer || m.model) && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {m.manufacturer ?? ""}
+                              {m.manufacturer && m.model ? " · " : ""}
+                              {m.model ?? ""}
+                            </div>
+                          )}
+                          {(m.genre || m.release_year) && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {m.genre ?? "—"}
+                              {m.release_year ? ` · ${m.release_year}` : ""}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <div className="mt-2 text-xs font-mono text-gray-400 dark:text-gray-500">{m.sku}</div>
@@ -543,6 +611,28 @@ export function MasterProductsPage() {
                       placeholder="https://…"
                     />
                   </div>
+
+                  {form.reference_image_url.trim() && (
+                    <div className="md:col-span-6">
+                      <div className="flex items-start gap-4 rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/40">
+                        <ReferenceImageThumb url={form.reference_image_url} alt={form.title || "Referenzbild"} size={96} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Vorschau</div>
+                          <a
+                            href={form.reference_image_url.trim()}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 block break-all text-xs text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
+                          >
+                            {form.reference_image_url.trim()}
+                          </a>
+                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            Tipp: Klick auf das Bild öffnet die URL in einem neuen Tab.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
