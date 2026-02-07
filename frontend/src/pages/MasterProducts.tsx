@@ -221,7 +221,7 @@ export function MasterProductsPage() {
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="text-xl font-semibold">Produktstamm</div>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-gray-500 dark:text-gray-400">
             Masterdaten (SKU) für Produkte. Hier anlegen, pflegen und bei Bedarf löschen.
           </div>
         </div>
@@ -250,7 +250,7 @@ export function MasterProductsPage() {
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-1 items-center gap-2">
               <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                 <Input
                   placeholder="Suchen (SKU, Titel, EAN, ASIN, …)"
                   value={search}
@@ -283,7 +283,7 @@ export function MasterProductsPage() {
           </div>
 
           {list.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(list.error as Error).message}
             </div>
           )}
@@ -304,14 +304,14 @@ export function MasterProductsPage() {
                   <TableRow key={`skel-${i}`} className="animate-pulse">
                     <TableCell>
                       <div className="space-y-2">
-                        <div className="h-4 w-64 rounded bg-gray-200" />
-                        <div className="h-3 w-48 rounded bg-gray-100" />
+                        <div className="h-4 w-64 rounded bg-gray-200 dark:bg-gray-800" />
+                        <div className="h-3 w-48 rounded bg-gray-100 dark:bg-gray-800" />
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-2">
-                        <div className="h-3 w-40 rounded bg-gray-100" />
-                        <div className="h-3 w-32 rounded bg-gray-100" />
+                        <div className="h-3 w-40 rounded bg-gray-100 dark:bg-gray-800" />
+                        <div className="h-3 w-32 rounded bg-gray-100 dark:bg-gray-800" />
                       </div>
                     </TableCell>
                     <TableCell />
@@ -327,36 +327,38 @@ export function MasterProductsPage() {
                           <div className="min-w-0 truncate font-medium">{m.title}</div>
                           <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
                           {m.platform} · {m.region}
                           {m.variant ? ` · ${m.variant}` : ""}
                         </div>
                         {(m.manufacturer || m.model) && (
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
                             {m.manufacturer ?? ""}
                             {m.manufacturer && m.model ? " · " : ""}
                             {m.model ?? ""}
                           </div>
                         )}
                         {(m.genre || m.release_year) && (
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
                             {m.genre ?? "—"}
                             {m.release_year ? ` · ${m.release_year}` : ""}
                           </div>
                         )}
                       </div>
 
-                      <div className="mt-2 text-xs font-mono text-gray-400">{m.sku}</div>
+                      <div className="mt-2 text-xs font-mono text-gray-400 dark:text-gray-500">{m.sku}</div>
                     </TableCell>
 
                     <TableCell className="text-sm">
                       <div>
-                        <span className="text-gray-500">EAN:</span> <span className="font-mono">{m.ean ?? "—"}</span>
+                        <span className="text-gray-500 dark:text-gray-400">EAN:</span>{" "}
+                        <span className="font-mono">{m.ean ?? "—"}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">ASIN:</span> <span className="font-mono">{m.asin ?? "—"}</span>
+                        <span className="text-gray-500 dark:text-gray-400">ASIN:</span>{" "}
+                        <span className="font-mono">{m.asin ?? "—"}</span>
                       </div>
-                      <div className="mt-2 text-xs font-mono text-gray-300">{m.id}</div>
+                      <div className="mt-2 text-xs font-mono text-gray-300 dark:text-gray-600">{m.id}</div>
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
@@ -377,7 +379,7 @@ export function MasterProductsPage() {
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            className="text-red-700 focus:bg-red-50 focus:text-red-800"
+                            className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
                             onSelect={(e) => {
                               e.preventDefault();
                               requestDelete(m);
@@ -394,7 +396,7 @@ export function MasterProductsPage() {
 
               {!rows.length && (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-sm text-gray-500">
+                  <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
                     <div className="flex flex-col items-start gap-2 py-3">
                       <div>Keine Produkte gefunden.</div>
                       <div className="flex items-center gap-2">
@@ -424,7 +426,7 @@ export function MasterProductsPage() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>{editorMode === "create" ? "Produkt anlegen" : "Produkt bearbeiten"}</DialogTitle>
             <DialogDescription>
@@ -492,9 +494,9 @@ export function MasterProductsPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950/50">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium text-gray-900">Optionale Felder</div>
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Optionale Felder</div>
                 <Button type="button" variant="ghost" size="sm" onClick={() => setShowAdvanced((v) => !v)}>
                   {showAdvanced ? "Ausblenden" : "Anzeigen"}
                 </Button>
@@ -546,7 +548,7 @@ export function MasterProductsPage() {
             </div>
 
             {(create.isError || update.isError) && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
                 {((editorMode === "create" ? create.error : update.error) as Error).message}
               </div>
             )}
@@ -577,12 +579,12 @@ export function MasterProductsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="text-sm text-gray-700">
+          <div className="text-sm text-gray-700 dark:text-gray-300">
             Das Produkt wird dauerhaft gelöscht. Falls es bereits in Einkäufen oder Lagerbestand verwendet wird, ist das Löschen nicht möglich.
           </div>
 
           {remove.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(remove.error as Error).message}
             </div>
           )}

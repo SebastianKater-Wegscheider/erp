@@ -188,7 +188,7 @@ export function InventoryPage() {
       </Card>
 
       {(inv.isError || master.isError) && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
           {((inv.error ?? master.error) as Error).message}
         </div>
       )}
@@ -222,15 +222,19 @@ export function InventoryPage() {
                     <TableCell>
                       <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
                       {mp && (
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
                           {mp.platform} · {mp.region}
                           {mp.variant ? ` · ${mp.variant}` : ""}
                         </div>
                       )}
-                      {mp?.sku && <div className="text-xs text-gray-400 font-mono">{mp.sku}</div>}
-                      {it.serial_number && <div className="text-xs text-gray-500">SN: <span className="font-mono">{it.serial_number}</span></div>}
-                      {it.storage_location && <div className="text-xs text-gray-500">Lager: {it.storage_location}</div>}
-                      <div className="text-xs text-gray-400 font-mono">{it.id}</div>
+                      {mp?.sku && <div className="text-xs text-gray-400 font-mono dark:text-gray-500">{mp.sku}</div>}
+                      {it.serial_number && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          SN: <span className="font-mono">{it.serial_number}</span>
+                        </div>
+                      )}
+                      {it.storage_location && <div className="text-xs text-gray-500 dark:text-gray-400">Lager: {it.storage_location}</div>}
+                      <div className="text-xs text-gray-400 font-mono dark:text-gray-500">{it.id}</div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{inventoryStatusLabel(it.status)}</Badge>
@@ -260,7 +264,7 @@ export function InventoryPage() {
               })}
               {!rows.length && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-sm text-gray-500">
+                  <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
                     Keine Daten.
                   </TableCell>
                 </TableRow>
@@ -289,7 +293,7 @@ export function InventoryPage() {
           </div>
 
           {update.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(update.error as Error).message}
             </div>
           )}
@@ -308,12 +312,12 @@ export function InventoryPage() {
             </div>
 
             {(images.isError || upload.isError || removeImage.isError) && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
                 {((images.error ?? upload.error ?? removeImage.error) as Error).message}
               </div>
             )}
 
-            <div className="rounded-md border border-gray-200 bg-white">
+            <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -343,7 +347,7 @@ export function InventoryPage() {
                   ))}
                   {!images.data?.length && (
                     <TableRow>
-                      <TableCell colSpan={2} className="text-sm text-gray-500">
+                      <TableCell colSpan={2} className="text-sm text-gray-500 dark:text-gray-400">
                         Noch keine Bilder.
                       </TableCell>
                     </TableRow>

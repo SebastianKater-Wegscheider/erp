@@ -262,7 +262,7 @@ export function SalesPage() {
                 <Input placeholder="SKU/Titel/EAN/ASIN suchen…" value={searchInv} onChange={(e) => setSearchInv(e.target.value)} />
                 <Button variant="secondary" onClick={() => inv.refetch()}>Aktualisieren</Button>
               </div>
-              <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white">
+              <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -280,13 +280,13 @@ export function SalesPage() {
                           <TableCell>
                             <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
                             {mp && (
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
                                 {mp.platform} · {mp.region}
                                 {mp.variant ? ` · ${mp.variant}` : ""}
                               </div>
                             )}
-                            {mp?.sku && <div className="text-xs font-mono text-gray-400">{mp.sku}</div>}
-                            <div className="text-xs font-mono text-gray-400">{it.id}</div>
+                            {mp?.sku && <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{mp.sku}</div>}
+                            <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{it.id}</div>
                           </TableCell>
                           <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
                           <TableCell className="text-right">
@@ -303,7 +303,7 @@ export function SalesPage() {
                     })}
                     {!inv.data?.length && (
                       <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-gray-500">Keine verfügbaren Artikel.</TableCell>
+                        <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Keine verfügbaren Artikel.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -313,7 +313,7 @@ export function SalesPage() {
 
             <div className="space-y-2">
               <Label>Auftragspositionen</Label>
-              <div className="rounded-md border border-gray-200 bg-white">
+              <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -342,7 +342,7 @@ export function SalesPage() {
                     ))}
                     {!selectedLines.length && (
                       <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-gray-500">Noch keine Positionen.</TableCell>
+                        <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Noch keine Positionen.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -358,7 +358,7 @@ export function SalesPage() {
           </div>
 
           {create.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(create.error as Error).message}
             </div>
           )}
@@ -373,7 +373,7 @@ export function SalesPage() {
           <Button variant="secondary" onClick={() => orders.refetch()}>Aktualisieren</Button>
 
           {(orders.isError || inv.isError) && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {((orders.error ?? inv.error) as Error).message}
             </div>
           )}
@@ -400,7 +400,7 @@ export function SalesPage() {
                       <Badge variant={o.status === "FINALIZED" ? "success" : o.status === "DRAFT" ? "secondary" : "warning"}>
                         {orderStatusLabel(o.status)}
                       </Badge>
-                      {o.invoice_number && <div className="text-xs text-gray-500">#{o.invoice_number}</div>}
+                      {o.invoice_number && <div className="text-xs text-gray-500 dark:text-gray-400">#{o.invoice_number}</div>}
                     </TableCell>
                     <TableCell>{o.buyer_name}</TableCell>
                     <TableCell className="text-right">{formatEur(gross)} €</TableCell>
@@ -469,7 +469,7 @@ export function SalesPage() {
                                   </div>
                                 </div>
 
-                                <div className="max-h-64 overflow-auto rounded-md border border-gray-200">
+                                <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
                                   <Table>
                                     <TableHeader>
                                       <TableRow>
@@ -519,7 +519,7 @@ export function SalesPage() {
                                 </Button>
                               </DialogFooter>
                               {createReturn.isError && (
-                                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
                                   {(createReturn.error as Error).message}
                                 </div>
                               )}
@@ -533,7 +533,7 @@ export function SalesPage() {
               })}
               {!orders.data?.length && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-sm text-gray-500">
+                  <TableCell colSpan={6} className="text-sm text-gray-500 dark:text-gray-400">
                     Keine Aufträge.
                   </TableCell>
                 </TableRow>

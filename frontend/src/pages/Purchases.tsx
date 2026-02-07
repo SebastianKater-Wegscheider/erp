@@ -183,7 +183,7 @@ export function PurchasesPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 Einkaufstyp ist fest auf {PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType} gesetzt.
               </div>
             </div>
@@ -264,7 +264,7 @@ export function PurchasesPage() {
               <Badge variant={splitOk ? "success" : "warning"}>
                 Aufteilung: {sumLinesCents === null ? "ungültig" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
               </Badge>
-              {!splitOk && <div className="text-xs text-gray-500">Erstellen ist blockiert, bis die Summen übereinstimmen.</div>}
+              {!splitOk && <div className="text-xs text-gray-500 dark:text-gray-400">Erstellen ist blockiert, bis die Summen übereinstimmen.</div>}
             </div>
             <Button onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
               Erstellen
@@ -272,7 +272,7 @@ export function PurchasesPage() {
           </div>
 
           {create.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(create.error as Error).message}
             </div>
           )}
@@ -295,7 +295,7 @@ export function PurchasesPage() {
                 >
                   Position hinzufügen
                 </Button>
-                {!master.data?.length && <div className="text-xs text-gray-500">Erst Produktstamm anlegen.</div>}
+                {!master.data?.length && <div className="text-xs text-gray-500 dark:text-gray-400">Erst Produktstamm anlegen.</div>}
               </div>
 
               <Table>
@@ -365,7 +365,7 @@ export function PurchasesPage() {
                   ))}
                   {!lines.length && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-sm text-gray-500">
+                      <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
                         Noch keine Positionen.
                       </TableCell>
                     </TableRow>
@@ -387,7 +387,7 @@ export function PurchasesPage() {
           </Button>
 
           {list.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(list.error as Error).message}
             </div>
           )}
@@ -428,14 +428,14 @@ export function PurchasesPage() {
                         </DialogContent>
                       </Dialog>
                     ) : (
-                      <span className="text-xs text-gray-400">—</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
                     )}
                   </TableCell>
                 </TableRow>
               ))}
               {!list.data?.length && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-sm text-gray-500">
+                  <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
                     Keine Daten.
                   </TableCell>
                 </TableRow>

@@ -14,7 +14,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (credentials) return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-md px-4 py-16">
         <Card>
           <CardHeader>
@@ -42,7 +42,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             >
               Zugangsdaten speichern
             </Button>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               API-Basis-URL:{" "}
               <span className="font-mono">{import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1"}</span>
             </div>

@@ -15,7 +15,10 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/30 data-[state=open]:animate-in data-[state=closed]:animate-out", className)}
+    className={cn(
+      "fixed inset-0 z-50 bg-black/30 data-[state=open]:animate-in data-[state=closed]:animate-out dark:bg-black/70",
+      className,
+    )}
     {...props}
   />
 ));
@@ -30,13 +33,13 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-gray-200 bg-white p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out rounded-lg",
+        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-gray-200 bg-white p-6 text-gray-900 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none">
+      <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-gray-700">
         <X className="h-4 w-4" />
         <span className="sr-only">Schließen</span>
       </DialogClose>
@@ -67,7 +70,7 @@ const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn("text-sm text-gray-500", className)} {...props} />
+  <DialogPrimitive.Description ref={ref} className={cn("text-sm text-gray-500 dark:text-gray-400", className)} {...props} />
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 

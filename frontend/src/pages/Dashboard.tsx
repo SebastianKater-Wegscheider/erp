@@ -23,7 +23,7 @@ export function DashboardPage() {
       <div className="text-xl font-semibold">Übersicht</div>
 
       {q.isError && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
           {(q.error as Error).message}
         </div>
       )}
@@ -49,7 +49,7 @@ export function DashboardPage() {
             {data ? (
               Object.entries(data.cash_balance_cents).map(([k, v]) => (
                 <div key={k} className="flex items-center justify-between">
-                  <div className="text-gray-600">{k}</div>
+                  <div className="text-gray-600 dark:text-gray-300">{k}</div>
                   <div className="font-medium">{formatEur(v)} €</div>
                 </div>
               ))

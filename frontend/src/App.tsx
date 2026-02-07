@@ -15,7 +15,7 @@ import { VatPage } from "./pages/Vat";
 export function App() {
   return (
     <AuthGate>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <Topbar />
         <div className="mx-auto max-w-6xl px-4 py-6">
           <Routes>

@@ -58,7 +58,7 @@ export function VatPage() {
             </Button>
           </div>
           {data && (
-            <div className="flex items-end text-sm text-gray-600">
+            <div className="flex items-end text-sm text-gray-600 dark:text-gray-300">
               {data.period_start} → {data.period_end}
             </div>
           )}
@@ -66,7 +66,7 @@ export function VatPage() {
       </Card>
 
       {q.isError && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
           {(q.error as Error).message}
         </div>
       )}

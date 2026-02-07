@@ -143,7 +143,7 @@ export function CostAllocationsPage() {
           </div>
 
           {create.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(create.error as Error).message}
             </div>
           )}
@@ -189,7 +189,7 @@ export function CostAllocationsPage() {
                 ))}
                 {!lines.length && (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-sm text-gray-500">
+                    <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
                       Noch keine Positionen.
                     </TableCell>
                   </TableRow>
@@ -209,7 +209,7 @@ export function CostAllocationsPage() {
             Aktualisieren
           </Button>
           {list.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
               {(list.error as Error).message}
             </div>
           )}
@@ -231,7 +231,7 @@ export function CostAllocationsPage() {
               ))}
               {!list.data?.length && (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-sm text-gray-500">
+                  <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
                     Keine Daten.
                   </TableCell>
                 </TableRow>
