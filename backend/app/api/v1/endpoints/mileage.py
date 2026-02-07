@@ -6,6 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.db import get_session
@@ -25,10 +26,23 @@ async def create_mileage_endpoint(
     actor: str = Depends(require_basic_auth),
 ) -> MileageOut:
     settings = get_settings()
-    async with session.begin():
-        log = await create_mileage_log(session, actor=actor, data=data, rate_cents_per_km=settings.mileage_rate_cents_per_km)
-    await session.refresh(log)
-    return MileageOut.model_validate(log)
+    try:
+        async with session.begin():
+            log = await create_mileage_log(
+                session,
+                actor=actor,
+                data=data,
+                rate_cents_per_km=settings.mileage_rate_cents_per_km,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    row = (
+        await session.execute(
+            select(MileageLog).where(MileageLog.id == log.id).options(selectinload(MileageLog.purchases))
+        )
+    ).scalar_one()
+    return MileageOut.model_validate(row)
 
 
 @router.get("", response_model=list[MileageOut])
@@ -37,7 +51,7 @@ async def list_mileage(
     to_date: date | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> list[MileageOut]:
-    stmt = select(MileageLog).order_by(MileageLog.log_date.desc())
+    stmt = select(MileageLog).order_by(MileageLog.log_date.desc()).options(selectinload(MileageLog.purchases))
     if from_date:
         stmt = stmt.where(MileageLog.log_date >= from_date)
     if to_date:
@@ -48,8 +62,11 @@ async def list_mileage(
 
 @router.get("/{log_id}", response_model=MileageOut)
 async def get_mileage(log_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> MileageOut:
-    log = await session.get(MileageLog, log_id)
-    if log is None:
+    row = (
+        await session.execute(
+            select(MileageLog).where(MileageLog.id == log_id).options(selectinload(MileageLog.purchases))
+        )
+    ).scalar_one_or_none()
+    if row is None:
         raise HTTPException(status_code=404, detail="Not found")
-    return MileageOut.model_validate(log)
-
+    return MileageOut.model_validate(row)

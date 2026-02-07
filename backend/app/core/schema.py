@@ -56,9 +56,36 @@ async def ensure_schema(conn: AsyncConnection) -> None:
         # cost_allocation_lines
         "ALTER TABLE cost_allocation_lines ADD COLUMN IF NOT EXISTS amount_net_cents INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE cost_allocation_lines ADD COLUMN IF NOT EXISTS amount_tax_cents INTEGER NOT NULL DEFAULT 0",
+        # mileage_logs
+        "ALTER TABLE mileage_logs ADD COLUMN IF NOT EXISTS purpose_text VARCHAR(300)",
     ]
     for stmt in stmts:
         await conn.execute(text(stmt))
+
+    # mileage_log_purchases (join table)
+    await conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS mileage_log_purchases ("
+            "mileage_log_id UUID NOT NULL REFERENCES mileage_logs(id) ON DELETE CASCADE, "
+            "purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE, "
+            "PRIMARY KEY (mileage_log_id, purchase_id)"
+            ")"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_mileage_log_purchases_purchase_id "
+            "ON mileage_log_purchases (purchase_id)"
+        )
+    )
+    # Migrate legacy single-link data.
+    await conn.execute(
+        text(
+            "INSERT INTO mileage_log_purchases (mileage_log_id, purchase_id) "
+            "SELECT id, purchase_id FROM mileage_logs WHERE purchase_id IS NOT NULL "
+            "ON CONFLICT DO NOTHING"
+        )
+    )
 
     # inventory_items
     await conn.execute(text("ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS serial_number VARCHAR(120)"))

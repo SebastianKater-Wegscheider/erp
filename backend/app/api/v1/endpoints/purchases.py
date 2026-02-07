@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.db import get_session
 from app.core.security import require_basic_auth
 from app.models.purchase import Purchase
-from app.schemas.purchase import PurchaseCreate, PurchaseOut
+from app.schemas.purchase import PurchaseCreate, PurchaseOut, PurchaseRefOut
 from app.services.purchases import create_purchase
 
 
@@ -44,6 +44,12 @@ async def list_purchases(session: AsyncSession = Depends(get_session)) -> list[P
     return [PurchaseOut.model_validate(r) for r in rows]
 
 
+@router.get("/refs", response_model=list[PurchaseRefOut])
+async def list_purchase_refs(session: AsyncSession = Depends(get_session)) -> list[PurchaseRefOut]:
+    rows = (await session.execute(select(Purchase).order_by(Purchase.purchase_date.desc()))).scalars().all()
+    return [PurchaseRefOut.model_validate(r) for r in rows]
+
+
 @router.get("/{purchase_id}", response_model=PurchaseOut)
 async def get_purchase(purchase_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> PurchaseOut:
     row = (
@@ -52,4 +58,3 @@ async def get_purchase(purchase_id: uuid.UUID, session: AsyncSession = Depends(g
     if row is None:
         raise HTTPException(status_code=404, detail="Not found")
     return PurchaseOut.model_validate(row)
-

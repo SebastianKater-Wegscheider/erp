@@ -88,3 +88,13 @@ class PurchaseOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     lines: list[PurchaseLineOut]
+
+
+class PurchaseRefOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    purchase_date: date
+    counterparty_name: str
+    total_amount_cents: int
+    document_number: str | None
