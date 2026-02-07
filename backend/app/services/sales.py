@@ -13,7 +13,7 @@ from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.sales import SalesOrder, SalesOrderLine
-from app.schemas.sales import SalesOrderCreate
+from app.schemas.sales import SalesOrderCreate, SalesOrderUpdate
 from app.services.audit import audit_log
 from app.services.documents import next_document_number
 from app.services.inventory import transition_status
@@ -330,6 +330,196 @@ async def generate_sales_invoice_pdf(
         entity_id=order.id,
         action="generate_invoice_pdf",
         after={"invoice_number": order.invoice_number, "invoice_pdf_path": order.invoice_pdf_path},
+    )
+
+    return order
+
+
+async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uuid.UUID, data: SalesOrderUpdate) -> SalesOrder:
+    result = await session.execute(
+        select(SalesOrder).where(SalesOrder.id == order_id).options(selectinload(SalesOrder.lines))
+    )
+    order = result.scalar_one_or_none()
+    if order is None:
+        raise ValueError("Sales order not found")
+    if order.invoice_pdf_path:
+        raise ValueError("Sales order is locked (invoice PDF already generated)")
+    if order.status == OrderStatus.CANCELLED:
+        raise ValueError("Cancelled orders cannot be edited")
+
+    inv_ids = [l.inventory_item_id for l in data.lines]
+    if len(set(inv_ids)) != len(inv_ids):
+        raise ValueError("Duplicate inventory_item_id in lines")
+
+    before = {
+        "order_date": order.order_date,
+        "channel": order.channel,
+        "buyer_name": order.buyer_name,
+        "shipping_gross_cents": order.shipping_gross_cents,
+        "payment_source": order.payment_source,
+        "status": order.status,
+        "lines_count": len(order.lines),
+    }
+
+    line_by_item: dict[uuid.UUID, SalesOrderLine] = {l.inventory_item_id: l for l in order.lines}
+    existing_item_ids = set(line_by_item.keys())
+    new_item_ids = set(inv_ids)
+
+    order.order_date = data.order_date
+    order.channel = data.channel
+    order.buyer_name = data.buyer_name
+    order.buyer_address = data.buyer_address
+    order.shipping_gross_cents = data.shipping_gross_cents
+    order.payment_source = data.payment_source
+
+    if order.status == OrderStatus.DRAFT:
+        # Remove lines/items that are no longer present.
+        for item_id in sorted(existing_item_ids - new_item_ids, key=lambda x: str(x)):
+            sol = line_by_item.get(item_id)
+            if sol is not None:
+                await session.delete(sol)
+            item = await session.get(InventoryItem, item_id)
+            if item is None:
+                continue
+            if item.status != InventoryStatus.RESERVED:
+                raise ValueError(f"Inventory item not RESERVED: {item.id} (status={item.status})")
+            await transition_status(session, actor=actor, item=item, new_status=InventoryStatus.AVAILABLE)
+
+        # Upsert requested lines.
+        for req in data.lines:
+            item = await session.get(InventoryItem, req.inventory_item_id)
+            if item is None:
+                raise ValueError(f"Inventory item not found: {req.inventory_item_id}")
+
+            if req.inventory_item_id in line_by_item:
+                if item.status != InventoryStatus.RESERVED:
+                    raise ValueError(f"Inventory item not RESERVED: {item.id} (status={item.status})")
+                sol = line_by_item[req.inventory_item_id]
+            else:
+                if item.status != InventoryStatus.AVAILABLE:
+                    raise ValueError(f"Inventory item not AVAILABLE: {item.id} (status={item.status})")
+                await transition_status(session, actor=actor, item=item, new_status=InventoryStatus.RESERVED)
+                sol = SalesOrderLine(order_id=order.id, inventory_item_id=item.id, purchase_type=item.purchase_type)
+                session.add(sol)
+                line_by_item[item.id] = sol
+
+            sol.purchase_type = item.purchase_type
+            tax_rate_bp = 0 if item.purchase_type == PurchaseType.DIFF else VAT_RATE_BP_STANDARD
+            net, tax = split_gross_to_net_and_tax(gross_cents=req.sale_gross_cents, tax_rate_bp=tax_rate_bp)
+            sol.sale_gross_cents = req.sale_gross_cents
+            sol.sale_net_cents = net
+            sol.sale_tax_cents = tax
+            sol.tax_rate_bp = tax_rate_bp
+
+        # DRAFT orders have no internal split fields yet.
+        order.shipping_regular_gross_cents = 0
+        order.shipping_regular_net_cents = 0
+        order.shipping_regular_tax_cents = 0
+        order.shipping_margin_gross_cents = 0
+
+    elif order.status == OrderStatus.FINALIZED:
+        if new_item_ids != existing_item_ids:
+            raise ValueError("FINALIZED orders cannot change their items (only amounts/metadata)")
+
+        # Update amounts on existing lines.
+        for req in data.lines:
+            sol = line_by_item.get(req.inventory_item_id)
+            if sol is None:
+                raise ValueError("Sales order line not found")
+
+            tax_rate_bp = 0 if sol.purchase_type == PurchaseType.DIFF else VAT_RATE_BP_STANDARD
+            net, tax = split_gross_to_net_and_tax(gross_cents=req.sale_gross_cents, tax_rate_bp=tax_rate_bp)
+            sol.sale_gross_cents = req.sale_gross_cents
+            sol.sale_net_cents = net
+            sol.sale_tax_cents = tax
+            sol.tax_rate_bp = tax_rate_bp
+
+        # Recompute shipping allocation + margin fields (same logic as finalization).
+        item_ids_sorted = sorted(existing_item_ids, key=lambda x: str(x))
+        weights = [int(line_by_item[i].sale_gross_cents) for i in item_ids_sorted]
+        shipping_allocs = allocate_proportional(total_cents=order.shipping_gross_cents, weights=weights)
+
+        inv_rows = (
+            await session.execute(
+                select(InventoryItem.id, InventoryItem.purchase_price_cents, InventoryItem.allocated_costs_cents).where(
+                    InventoryItem.id.in_(item_ids_sorted)
+                )
+            )
+        ).all()
+        inv_by_id = {r.id: r for r in inv_rows}
+
+        shipping_margin_gross_cents = 0
+        for item_id, ship_alloc in zip(item_ids_sorted, shipping_allocs, strict=True):
+            inv = inv_by_id.get(item_id)
+            if inv is None:
+                raise ValueError(f"Inventory item not found: {item_id}")
+
+            sol = line_by_item[item_id]
+            cost_basis_cents = int(inv.purchase_price_cents) + int(inv.allocated_costs_cents)
+            sol.shipping_allocated_cents = int(ship_alloc)
+            sol.cost_basis_cents = int(cost_basis_cents)
+
+            if sol.purchase_type == PurchaseType.DIFF:
+                shipping_margin_gross_cents += int(ship_alloc)
+                mc = margin_components(
+                    consideration_gross_cents=int(sol.sale_gross_cents) + int(ship_alloc),
+                    cost_cents=cost_basis_cents,
+                    tax_rate_bp=VAT_RATE_BP_STANDARD,
+                )
+                sol.margin_gross_cents = mc.margin_gross_cents
+                sol.margin_net_cents = mc.margin_net_cents
+                sol.margin_tax_cents = mc.margin_tax_cents
+            else:
+                sol.margin_gross_cents = 0
+                sol.margin_net_cents = 0
+                sol.margin_tax_cents = 0
+
+        shipping_regular_gross_cents = int(order.shipping_gross_cents) - int(shipping_margin_gross_cents)
+        shipping_regular_net_cents, shipping_regular_tax_cents = split_gross_to_net_and_tax(
+            gross_cents=shipping_regular_gross_cents,
+            tax_rate_bp=VAT_RATE_BP_STANDARD if shipping_regular_gross_cents else 0,
+        )
+        order.shipping_regular_gross_cents = shipping_regular_gross_cents
+        order.shipping_regular_net_cents = shipping_regular_net_cents
+        order.shipping_regular_tax_cents = shipping_regular_tax_cents
+        order.shipping_margin_gross_cents = int(shipping_margin_gross_cents)
+
+        # Update the ledger entry (create if missing).
+        total_gross_cents = sum(int(line_by_item[i].sale_gross_cents) for i in item_ids_sorted) + int(order.shipping_gross_cents)
+        entry = (
+            (await session.execute(
+                select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order.id)
+            ))
+            .scalars()
+            .first()
+        )
+        if entry is None:
+            entry = LedgerEntry(entity_type="sale", entity_id=order.id, memo=order.invoice_number)
+            session.add(entry)
+        entry.entry_date = order.order_date
+        entry.account = order.payment_source
+        entry.amount_cents = total_gross_cents
+        entry.memo = order.invoice_number
+
+    else:
+        raise ValueError("Unsupported order status")
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="sale",
+        entity_id=order.id,
+        action="update",
+        before=before,
+        after={
+            "order_date": order.order_date,
+            "channel": order.channel,
+            "buyer_name": order.buyer_name,
+            "shipping_gross_cents": order.shipping_gross_cents,
+            "payment_source": order.payment_source,
+            "status": order.status,
+            "lines_count": len(data.lines),
+        },
     )
 
     return order

@@ -23,6 +23,10 @@ class SalesOrderCreate(BaseModel):
     lines: list[SalesOrderLineCreate] = Field(min_length=1)
 
 
+class SalesOrderUpdate(SalesOrderCreate):
+    pass
+
+
 class SalesOrderLineOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -11,9 +11,15 @@ from app.core.db import get_session
 from app.core.security import require_basic_auth
 from app.models.sales import SalesOrder
 from app.models.sales_correction import SalesCorrection
-from app.schemas.sales import SalesOrderCreate, SalesOrderOut
+from app.schemas.sales import SalesOrderCreate, SalesOrderOut, SalesOrderUpdate
 from app.schemas.sales_correction import SalesCorrectionCreate, SalesCorrectionOut
-from app.services.sales import cancel_sales_order, create_sales_order, finalize_sales_order, generate_sales_invoice_pdf
+from app.services.sales import (
+    cancel_sales_order,
+    create_sales_order,
+    finalize_sales_order,
+    generate_sales_invoice_pdf,
+    update_sales_order,
+)
 from app.services.sales_corrections import create_sales_correction, generate_sales_correction_pdf
 
 
@@ -53,6 +59,25 @@ async def get_sales_order(order_id: uuid.UUID, session: AsyncSession = Depends(g
     ).scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=404, detail="Not found")
+    return SalesOrderOut.model_validate(order)
+
+
+@router.put("/{order_id}", response_model=SalesOrderOut)
+async def update_sales_order_endpoint(
+    order_id: uuid.UUID,
+    data: SalesOrderUpdate,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> SalesOrderOut:
+    try:
+        async with session.begin():
+            order = await update_sales_order(session, actor=actor, order_id=order_id, data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    order = (
+        await session.execute(select(SalesOrder).where(SalesOrder.id == order.id).options(selectinload(SalesOrder.lines)))
+    ).scalar_one()
     return SalesOrderOut.model_validate(order)
 
 

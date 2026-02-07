@@ -27,6 +27,7 @@ type SalesOrder = {
   channel: string;
   status: string;
   buyer_name: string;
+  buyer_address?: string | null;
   shipping_gross_cents: number;
   payment_source: string;
   invoice_number?: string | null;
@@ -109,6 +110,7 @@ export function SalesPage() {
   const [searchInv, setSearchInv] = useState("");
 
   const [selectedLines, setSelectedLines] = useState<Array<{ inventory_item_id: string; sale_gross: string }>>([]);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   const inv = useQuery({
     queryKey: ["inventory-available", searchInv],
@@ -122,6 +124,12 @@ export function SalesPage() {
     queryKey: ["sales"],
     queryFn: () => api.request<SalesOrder[]>("/sales"),
   });
+
+  const editingOrder = useMemo(() => {
+    if (!editingOrderId) return null;
+    return (orders.data ?? []).find((o) => o.id === editingOrderId) ?? null;
+  }, [orders.data, editingOrderId]);
+  const editingIsFinalized = editingOrder?.status === "FINALIZED";
 
   const create = useMutation({
     mutationFn: () =>
@@ -141,6 +149,37 @@ export function SalesPage() {
         },
       }),
     onSuccess: async () => {
+      setBuyerName("");
+      setBuyerAddress("");
+      setShippingGross("0,00");
+      setSelectedLines([]);
+      setEditingOrderId(null);
+      await qc.invalidateQueries({ queryKey: ["sales"] });
+      await qc.invalidateQueries({ queryKey: ["inventory-available"] });
+    },
+  });
+
+  const update = useMutation({
+    mutationFn: () => {
+      if (!editingOrderId) throw new Error("Kein Auftrag ausgewählt");
+      return api.request<SalesOrder>(`/sales/${editingOrderId}`, {
+        method: "PUT",
+        json: {
+          order_date: orderDate,
+          channel,
+          buyer_name: buyerName,
+          buyer_address: buyerAddress || null,
+          shipping_gross_cents: parseEurToCents(shippingGross),
+          payment_source: paymentSource,
+          lines: selectedLines.map((l) => ({
+            inventory_item_id: l.inventory_item_id,
+            sale_gross_cents: parseEurToCents(l.sale_gross),
+          })),
+        },
+      });
+    },
+    onSuccess: async () => {
+      setEditingOrderId(null);
       setBuyerName("");
       setBuyerAddress("");
       setShippingGross("0,00");
@@ -225,13 +264,40 @@ export function SalesPage() {
 
   const canCreateOrder = buyerName.trim() && selectedLines.length > 0 && selectedLines.every((l) => l.sale_gross.trim());
 
+  function startEdit(o: SalesOrder) {
+    setEditingOrderId(o.id);
+    setOrderDate(o.order_date);
+    setChannel(o.channel);
+    setBuyerName(o.buyer_name);
+    setBuyerAddress(o.buyer_address ?? "");
+    setShippingGross(formatEur(o.shipping_gross_cents));
+    setPaymentSource(o.payment_source);
+    setSelectedLines(o.lines.map((l) => ({ inventory_item_id: l.inventory_item_id, sale_gross: formatEur(l.sale_gross_cents) })));
+    create.reset();
+    update.reset();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelEdit() {
+    setEditingOrderId(null);
+    setOrderDate(new Date().toISOString().slice(0, 10));
+    setChannel("EBAY");
+    setBuyerName("");
+    setBuyerAddress("");
+    setShippingGross("0,00");
+    setPaymentSource("BANK");
+    setSelectedLines([]);
+    create.reset();
+    update.reset();
+  }
+
   return (
     <div className="space-y-4">
       <div className="text-xl font-semibold">Verkäufe</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Auftrag erstellen</CardTitle>
+          <CardTitle>{editingOrderId ? "Auftrag bearbeiten" : "Auftrag erstellen"}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
@@ -282,60 +348,74 @@ export function SalesPage() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Verfügbarer Bestand (Status=AVAILABLE)</Label>
-              <div className="flex items-center gap-2">
-                <Input placeholder="SKU/Titel/EAN/ASIN suchen…" value={searchInv} onChange={(e) => setSearchInv(e.target.value)} />
-                <Button variant="secondary" onClick={() => inv.refetch()}>Aktualisieren</Button>
+            {editingIsFinalized ? (
+              <div className="space-y-2">
+                <Label>Hinweis</Label>
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+                  Positionen können nach Abschluss nicht mehr verändert werden. Solange noch keine PDF erzeugt wurde,
+                  kannst du Käuferdaten, Datum, Versand und Preise anpassen.
+                </div>
               </div>
-              <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Artikel</TableHead>
-                      <TableHead>Typ</TableHead>
-                      <TableHead className="text-right"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(inv.data ?? []).map((it) => {
-                      const mp = mpById.get(it.master_product_id);
-                      const already = selectedLines.some((l) => l.inventory_item_id === it.id);
-                      return (
-                        <TableRow key={it.id}>
-                          <TableCell>
-                            <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
-                            {mp && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {mp.platform} · {mp.region}
-                                {mp.variant ? ` · ${mp.variant}` : ""}
-                              </div>
-                            )}
-                            {mp?.sku && <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{mp.sku}</div>}
-                            <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{it.id}</div>
-                          </TableCell>
-                          <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant={already ? "secondary" : "outline"}
-                              disabled={already}
-                              onClick={() => setSelectedLines((s) => [...s, { inventory_item_id: it.id, sale_gross: "" }])}
-                            >
-                              Hinzufügen
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {!inv.data?.length && (
+            ) : (
+              <div className="space-y-2">
+                <Label>Verfügbarer Bestand (Status=AVAILABLE)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="SKU/Titel/EAN/ASIN suchen…"
+                    value={searchInv}
+                    onChange={(e) => setSearchInv(e.target.value)}
+                  />
+                  <Button variant="secondary" onClick={() => inv.refetch()}>Aktualisieren</Button>
+                </div>
+                <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Keine verfügbaren Artikel.</TableCell>
+                        <TableHead>Artikel</TableHead>
+                        <TableHead>Typ</TableHead>
+                        <TableHead className="text-right"></TableHead>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {(inv.data ?? []).map((it) => {
+                        const mp = mpById.get(it.master_product_id);
+                        const already = selectedLines.some((l) => l.inventory_item_id === it.id);
+                        return (
+                          <TableRow key={it.id}>
+                            <TableCell>
+                              <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
+                              {mp && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {mp.platform} · {mp.region}
+                                  {mp.variant ? ` · ${mp.variant}` : ""}
+                                </div>
+                              )}
+                              {mp?.sku && <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{mp.sku}</div>}
+                              <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{it.id}</div>
+                            </TableCell>
+                            <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant={already ? "secondary" : "outline"}
+                                disabled={already}
+                                onClick={() => setSelectedLines((s) => [...s, { inventory_item_id: it.id, sale_gross: "" }])}
+                              >
+                                Hinzufügen
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {!inv.data?.length && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Keine verfügbaren Artikel.</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-2">
               <Label>Auftragspositionen</Label>
@@ -356,13 +436,19 @@ export function SalesPage() {
                           <Input
                             className="text-right"
                             value={l.sale_gross}
-                            onChange={(e) => setSelectedLines((s) => s.map((x, i) => (i === idx ? { ...x, sale_gross: e.target.value } : x)))}
+                            onChange={(e) =>
+                              setSelectedLines((s) => s.map((x, i) => (i === idx ? { ...x, sale_gross: e.target.value } : x)))
+                            }
                           />
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" onClick={() => setSelectedLines((s) => s.filter((_, i) => i !== idx))}>
-                            Entfernen
-                          </Button>
+                          {editingIsFinalized ? (
+                            <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                          ) : (
+                            <Button variant="ghost" onClick={() => setSelectedLines((s) => s.filter((_, i) => i !== idx))}>
+                              Entfernen
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -378,14 +464,22 @@ export function SalesPage() {
           </div>
 
           <div className="flex items-center justify-end gap-2">
-            <Button onClick={() => create.mutate()} disabled={!canCreateOrder || create.isPending}>
-              Auftrag erstellen (ENTWURF)
+            {editingOrderId && (
+              <Button type="button" variant="secondary" onClick={cancelEdit} disabled={create.isPending || update.isPending}>
+                Abbrechen
+              </Button>
+            )}
+            <Button
+              onClick={() => (editingOrderId ? update.mutate() : create.mutate())}
+              disabled={!canCreateOrder || create.isPending || update.isPending}
+            >
+              {editingOrderId ? "Änderungen speichern" : "Auftrag erstellen (ENTWURF)"}
             </Button>
           </div>
 
-          {create.isError && (
+          {(create.isError || update.isError) && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-              {(create.error as Error).message}
+              {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
             </div>
           )}
         </CardContent>
@@ -430,9 +524,12 @@ export function SalesPage() {
                     </TableCell>
                     <TableCell>{o.buyer_name}</TableCell>
                     <TableCell className="text-right">{formatEur(gross)} €</TableCell>
-                    <TableCell className="text-right space-x-2">
+                      <TableCell className="text-right space-x-2">
                       {o.status === "DRAFT" && (
                         <>
+                          <Button variant="secondary" onClick={() => startEdit(o)} disabled={create.isPending || update.isPending}>
+                            Bearbeiten
+                          </Button>
                           <Button variant="outline" onClick={() => finalize.mutate(o.id)} disabled={finalize.isPending}>
                             Abschließen
                           </Button>
@@ -453,9 +550,14 @@ export function SalesPage() {
                               </Button>
                             </>
                           ) : (
-                            <Button variant="outline" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
-                              Rechnung erstellen
-                            </Button>
+                            <>
+                              <Button variant="outline" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
+                                Rechnung erstellen
+                              </Button>
+                              <Button variant="secondary" onClick={() => startEdit(o)} disabled={create.isPending || update.isPending}>
+                                Bearbeiten
+                              </Button>
+                            </>
                           )}
 
                           <Dialog>
