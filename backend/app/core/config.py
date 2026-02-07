@@ -152,6 +152,15 @@ class Settings(BaseSettings):
     def upload_dir(self) -> Path:
         return self.app_storage_dir / "uploads"
 
+    @property
+    def vat_enabled(self) -> bool:
+        """
+        Feature flag for full VAT handling (regular + margin scheme).
+
+        If the Kleinunternehmerregelung notice is set, VAT is treated as disabled across the app.
+        """
+        return self.company_small_business_notice is None
+
 
 @lru_cache
 def get_settings() -> Settings:

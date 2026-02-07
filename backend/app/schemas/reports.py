@@ -85,3 +85,8 @@ class VatReportOut(BaseModel):
     output_vat_adjustments_margin_cents: int
     input_vat_cents: int
     vat_payable_cents: int
+
+
+class TaxProfileOut(BaseModel):
+    vat_enabled: bool
+    small_business_notice: str | None

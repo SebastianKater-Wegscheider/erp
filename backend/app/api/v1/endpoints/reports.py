@@ -7,7 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.schemas.reports import DashboardOut, MonthlyCloseParams, ResellerDashboardOut, VatReportOut, VatReportParams
+from app.schemas.reports import (
+    DashboardOut,
+    MonthlyCloseParams,
+    ResellerDashboardOut,
+    TaxProfileOut,
+    VatReportOut,
+    VatReportParams,
+)
 from app.services.reports import dashboard, monthly_close_zip, reseller_dashboard, vat_report
 
 
@@ -47,3 +54,9 @@ async def month_close_export(params: MonthlyCloseParams, session: AsyncSession =
 async def vat_report_endpoint(params: VatReportParams, session: AsyncSession = Depends(get_session)) -> VatReportOut:
     data = await vat_report(session, year=params.year, month=params.month)
     return VatReportOut(**data)
+
+
+@router.get("/tax-profile", response_model=TaxProfileOut)
+async def tax_profile_endpoint() -> TaxProfileOut:
+    settings = get_settings()
+    return TaxProfileOut(vat_enabled=settings.vat_enabled, small_business_notice=settings.company_small_business_notice)
