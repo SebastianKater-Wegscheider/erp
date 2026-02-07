@@ -444,9 +444,14 @@ export function SalesPage() {
                       {o.status === "FINALIZED" && (
                         <>
                           {o.invoice_pdf_path ? (
-                            <Button variant="outline" onClick={() => api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)}>
-                              Rechnung (PDF)
-                            </Button>
+                            <>
+                              <Button variant="outline" onClick={() => api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)}>
+                                Rechnung (PDF)
+                              </Button>
+                              <Button variant="ghost" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
+                                Neu erstellen
+                              </Button>
+                            </>
                           ) : (
                             <Button variant="outline" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
                               Rechnung erstellen
