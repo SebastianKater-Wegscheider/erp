@@ -31,6 +31,9 @@ async def create_sales_correction(
     order_id: uuid.UUID,
     data: SalesCorrectionCreate,
 ) -> SalesCorrection:
+    settings = get_settings()
+    regular_vat_rate_bp = VAT_RATE_BP_STANDARD if settings.vat_enabled else 0
+
     result = await session.execute(
         select(SalesOrder).where(SalesOrder.id == order_id).options(selectinload(SalesOrder.lines))
     )
@@ -73,12 +76,8 @@ async def create_sales_correction(
 
         weights.append(int(ol.shipping_allocated_cents) if ol.shipping_allocated_cents > 0 else int(ol.sale_gross_cents))
 
-        if ol.purchase_type == PurchaseType.DIFF:
-            tax_rate_bp = 0
-            refund_net, refund_tax = refund_gross, 0
-        else:
-            tax_rate_bp = VAT_RATE_BP_STANDARD
-            refund_net, refund_tax = split_gross_to_net_and_tax(gross_cents=refund_gross, tax_rate_bp=tax_rate_bp)
+        tax_rate_bp = 0 if ol.purchase_type == PurchaseType.DIFF else regular_vat_rate_bp
+        refund_net, refund_tax = split_gross_to_net_and_tax(gross_cents=refund_gross, tax_rate_bp=tax_rate_bp)
 
         refund_total_gross += refund_gross
         refund_lines.append(
@@ -112,7 +111,7 @@ async def create_sales_correction(
     shipping_refund_regular_gross_cents = int(data.shipping_refund_gross_cents) - int(shipping_refund_margin_gross_cents)
     ship_net, ship_tax = split_gross_to_net_and_tax(
         gross_cents=shipping_refund_regular_gross_cents,
-        tax_rate_bp=VAT_RATE_BP_STANDARD if shipping_refund_regular_gross_cents else 0,
+        tax_rate_bp=regular_vat_rate_bp if shipping_refund_regular_gross_cents else 0,
     )
     correction.shipping_refund_regular_gross_cents = shipping_refund_regular_gross_cents
     correction.shipping_refund_regular_net_cents = ship_net
@@ -131,7 +130,7 @@ async def create_sales_correction(
         if item.status != InventoryStatus.SOLD:
             raise ValueError(f"Inventory item not SOLD: {item.id} (status={item.status})")
 
-        if rl.purchase_type == PurchaseType.DIFF:
+        if settings.vat_enabled and rl.purchase_type == PurchaseType.DIFF:
             original_consideration_gross = int(order_line_by_item[rl.inventory_item_id].sale_gross_cents) + int(
                 order_line_by_item[rl.inventory_item_id].shipping_allocated_cents
             )
@@ -141,7 +140,7 @@ async def create_sales_correction(
             orig = margin_components(
                 consideration_gross_cents=original_consideration_gross,
                 cost_cents=cost_basis_cents,
-                tax_rate_bp=VAT_RATE_BP_STANDARD,
+                tax_rate_bp=regular_vat_rate_bp,
             )
             new_consideration = original_consideration_gross - int(rl.refund_gross_cents) - int(
                 rl.shipping_refund_allocated_cents
@@ -149,7 +148,7 @@ async def create_sales_correction(
             new = margin_components(
                 consideration_gross_cents=new_consideration,
                 cost_cents=cost_basis_cents,
-                tax_rate_bp=VAT_RATE_BP_STANDARD,
+                tax_rate_bp=regular_vat_rate_bp,
             )
             rl.margin_vat_adjustment_cents = max(0, int(orig.margin_tax_cents) - int(new.margin_tax_cents))
 

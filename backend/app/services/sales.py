@@ -26,6 +26,9 @@ VAT_RATE_BP_STANDARD = 2000
 
 
 async def create_sales_order(session: AsyncSession, *, actor: str, data: SalesOrderCreate) -> SalesOrder:
+    settings = get_settings()
+    regular_vat_rate_bp = VAT_RATE_BP_STANDARD if settings.vat_enabled else 0
+
     order = SalesOrder(
         order_date=data.order_date,
         channel=data.channel,
@@ -47,10 +50,7 @@ async def create_sales_order(session: AsyncSession, *, actor: str, data: SalesOr
 
         await transition_status(session, actor=actor, item=item, new_status=InventoryStatus.RESERVED)
 
-        if item.purchase_type == PurchaseType.DIFF:
-            tax_rate_bp = 0
-        else:
-            tax_rate_bp = VAT_RATE_BP_STANDARD
+        tax_rate_bp = 0 if item.purchase_type == PurchaseType.DIFF else regular_vat_rate_bp
 
         net, tax = split_gross_to_net_and_tax(gross_cents=line.sale_gross_cents, tax_rate_bp=tax_rate_bp)
 
@@ -98,6 +98,9 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
     order.invoice_number = invoice_number
     order.status = OrderStatus.FINALIZED
 
+    settings = get_settings()
+    regular_vat_rate_bp = VAT_RATE_BP_STANDARD if settings.vat_enabled else 0
+
     mp_rows = (
         await session.execute(
             select(
@@ -136,7 +139,7 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
             mc = margin_components(
                 consideration_gross_cents=int(r.sale_gross_cents) + int(ship_alloc),
                 cost_cents=cost_basis_cents,
-                tax_rate_bp=VAT_RATE_BP_STANDARD,
+                tax_rate_bp=regular_vat_rate_bp,
             )
             sol.margin_gross_cents = mc.margin_gross_cents
             sol.margin_net_cents = mc.margin_net_cents
@@ -149,7 +152,7 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
     shipping_regular_gross_cents = int(order.shipping_gross_cents) - int(shipping_margin_gross_cents)
     shipping_regular_net_cents, shipping_regular_tax_cents = split_gross_to_net_and_tax(
         gross_cents=shipping_regular_gross_cents,
-        tax_rate_bp=VAT_RATE_BP_STANDARD if shipping_regular_gross_cents else 0,
+        tax_rate_bp=regular_vat_rate_bp if shipping_regular_gross_cents else 0,
     )
     order.shipping_regular_gross_cents = shipping_regular_gross_cents
     order.shipping_regular_net_cents = shipping_regular_net_cents
@@ -351,6 +354,9 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
     if len(set(inv_ids)) != len(inv_ids):
         raise ValueError("Duplicate inventory_item_id in lines")
 
+    settings = get_settings()
+    regular_vat_rate_bp = VAT_RATE_BP_STANDARD if settings.vat_enabled else 0
+
     before = {
         "order_date": order.order_date,
         "channel": order.channel,
@@ -404,7 +410,7 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
                 line_by_item[item.id] = sol
 
             sol.purchase_type = item.purchase_type
-            tax_rate_bp = 0 if item.purchase_type == PurchaseType.DIFF else VAT_RATE_BP_STANDARD
+            tax_rate_bp = 0 if item.purchase_type == PurchaseType.DIFF else regular_vat_rate_bp
             net, tax = split_gross_to_net_and_tax(gross_cents=req.sale_gross_cents, tax_rate_bp=tax_rate_bp)
             sol.sale_gross_cents = req.sale_gross_cents
             sol.sale_net_cents = net
@@ -427,7 +433,7 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
             if sol is None:
                 raise ValueError("Sales order line not found")
 
-            tax_rate_bp = 0 if sol.purchase_type == PurchaseType.DIFF else VAT_RATE_BP_STANDARD
+            tax_rate_bp = 0 if sol.purchase_type == PurchaseType.DIFF else regular_vat_rate_bp
             net, tax = split_gross_to_net_and_tax(gross_cents=req.sale_gross_cents, tax_rate_bp=tax_rate_bp)
             sol.sale_gross_cents = req.sale_gross_cents
             sol.sale_net_cents = net
@@ -464,7 +470,7 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
                 mc = margin_components(
                     consideration_gross_cents=int(sol.sale_gross_cents) + int(ship_alloc),
                     cost_cents=cost_basis_cents,
-                    tax_rate_bp=VAT_RATE_BP_STANDARD,
+                    tax_rate_bp=regular_vat_rate_bp,
                 )
                 sol.margin_gross_cents = mc.margin_gross_cents
                 sol.margin_net_cents = mc.margin_net_cents
@@ -477,7 +483,7 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
         shipping_regular_gross_cents = int(order.shipping_gross_cents) - int(shipping_margin_gross_cents)
         shipping_regular_net_cents, shipping_regular_tax_cents = split_gross_to_net_and_tax(
             gross_cents=shipping_regular_gross_cents,
-            tax_rate_bp=VAT_RATE_BP_STANDARD if shipping_regular_gross_cents else 0,
+            tax_rate_bp=regular_vat_rate_bp if shipping_regular_gross_cents else 0,
         )
         order.shipping_regular_gross_cents = shipping_regular_gross_cents
         order.shipping_regular_net_cents = shipping_regular_net_cents

@@ -24,6 +24,9 @@ from app.services.pdf import render_pdf
 
 
 async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCreate) -> Purchase:
+    settings = get_settings()
+    vat_enabled = settings.vat_enabled
+
     if sum(line.purchase_price_cents for line in data.lines) != data.total_amount_cents:
         raise ValueError("Sum(lines.purchase_price_cents) must equal total_amount_cents")
 
@@ -31,7 +34,11 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
     if any(line.purchase_type != expected_type for line in data.lines):
         raise ValueError(f"All lines.purchase_type must be {expected_type} for {data.kind}")
 
-    tax_rate_bp = 0 if data.kind == PurchaseKind.PRIVATE_DIFF else (data.tax_rate_bp or 0)
+    tax_rate_bp = 0 if data.kind == PurchaseKind.PRIVATE_DIFF else int(data.tax_rate_bp or 0)
+    if not vat_enabled:
+        tax_rate_bp = 0
+    elif data.kind == PurchaseKind.COMMERCIAL_REGULAR and tax_rate_bp <= 0:
+        raise ValueError("tax_rate_bp must be > 0 for COMMERCIAL_REGULAR purchases when VAT is enabled")
 
     line_splits: list[tuple[int, int]] = []
     total_net = 0
@@ -170,7 +177,13 @@ async def update_purchase(
     if any(line.purchase_type != expected_type for line in data.lines):
         raise ValueError(f"All lines.purchase_type must be {expected_type} for {data.kind}")
 
-    tax_rate_bp = 0 if data.kind == PurchaseKind.PRIVATE_DIFF else (data.tax_rate_bp or 0)
+    settings = get_settings()
+    vat_enabled = settings.vat_enabled
+    tax_rate_bp = 0 if data.kind == PurchaseKind.PRIVATE_DIFF else int(data.tax_rate_bp or 0)
+    if not vat_enabled:
+        tax_rate_bp = 0
+    elif data.kind == PurchaseKind.COMMERCIAL_REGULAR and tax_rate_bp <= 0:
+        raise ValueError("tax_rate_bp must be > 0 for COMMERCIAL_REGULAR purchases when VAT is enabled")
 
     before = {
         "purchase_date": purchase.purchase_date,

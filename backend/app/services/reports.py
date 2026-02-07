@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.enums import InventoryStatus, OrderStatus, PurchaseKind, PurchaseType
 from app.models.cost_allocation import CostAllocation
 from app.models.inventory_item import InventoryItem
@@ -552,7 +553,20 @@ async def vat_report(session: AsyncSession, *, year: int, month: int) -> dict:
       SalesCorrection.shipping_refund_regular_tax_cents.
     - Input VAT is from COMMERCIAL_REGULAR purchases + OpEx + Cost Allocations (when deductible).
     """
+    settings = get_settings()
     mr = month_range(year=year, month=month)
+
+    if not settings.vat_enabled:
+        return {
+            "period_start": mr.start.isoformat(),
+            "period_end": mr.end.isoformat(),
+            "output_vat_regular_cents": 0,
+            "output_vat_margin_cents": 0,
+            "output_vat_adjustments_regular_cents": 0,
+            "output_vat_adjustments_margin_cents": 0,
+            "input_vat_cents": 0,
+            "vat_payable_cents": 0,
+        }
 
     output_vat_regular_sales_stmt = (
         select(func.coalesce(func.sum(SalesOrderLine.sale_tax_cents), 0))

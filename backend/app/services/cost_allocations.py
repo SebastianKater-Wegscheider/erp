@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import InventoryStatus
+from app.core.config import get_settings
 from app.models.cost_allocation import CostAllocation, CostAllocationLine
 from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
@@ -15,11 +16,15 @@ async def create_cost_allocation(session: AsyncSession, *, actor: str, data: Cos
     if sum(line.amount_cents for line in data.lines) != data.amount_cents:
         raise ValueError("Sum(lines.amount_cents) must equal amount_cents")
 
+    settings = get_settings()
+    tax_rate_bp = data.tax_rate_bp if settings.vat_enabled else 0
+    input_tax_deductible = data.input_tax_deductible if settings.vat_enabled else False
+
     line_splits: list[tuple[int, int]] = []
     total_net = 0
     total_tax = 0
     for line in data.lines:
-        net, tax = split_gross_to_net_and_tax(gross_cents=line.amount_cents, tax_rate_bp=data.tax_rate_bp)
+        net, tax = split_gross_to_net_and_tax(gross_cents=line.amount_cents, tax_rate_bp=tax_rate_bp)
         line_splits.append((net, tax))
         total_net += net
         total_tax += tax
@@ -30,8 +35,8 @@ async def create_cost_allocation(session: AsyncSession, *, actor: str, data: Cos
         amount_cents=data.amount_cents,
         amount_net_cents=total_net,
         amount_tax_cents=total_tax,
-        tax_rate_bp=data.tax_rate_bp,
-        input_tax_deductible=data.input_tax_deductible,
+        tax_rate_bp=tax_rate_bp,
+        input_tax_deductible=input_tax_deductible,
         payment_source=data.payment_source,
         receipt_upload_path=data.receipt_upload_path,
     )
@@ -55,7 +60,7 @@ async def create_cost_allocation(session: AsyncSession, *, actor: str, data: Cos
             )
         )
 
-        cost_increment = line_net if data.input_tax_deductible else line.amount_cents
+        cost_increment = line_net if input_tax_deductible else line.amount_cents
         before = {"allocated_costs_cents": item.allocated_costs_cents}
         item.allocated_costs_cents += cost_increment
         await audit_log(

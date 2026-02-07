@@ -47,8 +47,6 @@ class PurchaseCreate(BaseModel):
         if self.kind == PurchaseKind.COMMERCIAL_REGULAR:
             if self.tax_rate_bp is None:
                 self.tax_rate_bp = 2000
-            if self.tax_rate_bp <= 0:
-                raise ValueError("tax_rate_bp must be > 0 for COMMERCIAL_REGULAR purchases")
             if not self.external_invoice_number:
                 raise ValueError("external_invoice_number is required for COMMERCIAL_REGULAR purchases")
             if not self.receipt_upload_path:
@@ -85,8 +83,6 @@ class PurchaseUpdate(BaseModel):
         if self.kind == PurchaseKind.COMMERCIAL_REGULAR:
             if self.tax_rate_bp is None:
                 self.tax_rate_bp = 2000
-            if self.tax_rate_bp <= 0:
-                raise ValueError("tax_rate_bp must be > 0 for COMMERCIAL_REGULAR purchases")
             if not self.external_invoice_number:
                 raise ValueError("external_invoice_number is required for COMMERCIAL_REGULAR purchases")
             if not self.receipt_upload_path:
