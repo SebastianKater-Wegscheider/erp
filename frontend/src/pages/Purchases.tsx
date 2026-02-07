@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
@@ -156,9 +157,21 @@ function MasterProductCombobox({
   onCreateNew?: (seedTitle: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const selected = useMemo(() => options.find((m) => m.id === value) ?? null, [options, value]);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState<string>(() => (selected ? masterProductLabel(selected) : ""));
+  const [menuPos, setMenuPos] = useState<
+    | {
+        left: number;
+        width: number;
+        top?: number;
+        bottom?: number;
+        maxHeight: number;
+      }
+    | null
+  >(null);
 
   useEffect(() => {
     if (!open) setQ(selected ? masterProductLabel(selected) : "");
@@ -166,14 +179,51 @@ function MasterProductCombobox({
 
   useEffect(() => {
     function onPointerDown(ev: PointerEvent) {
-      const el = rootRef.current;
-      if (!el) return;
-      if (ev.target instanceof Node && el.contains(ev.target)) return;
+      if (!(ev.target instanceof Node)) return;
+      const root = rootRef.current;
+      const menu = menuRef.current;
+      if (root && root.contains(ev.target)) return;
+      if (menu && menu.contains(ev.target)) return;
       setOpen(false);
     }
     window.addEventListener("pointerdown", onPointerDown);
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, []);
+
+  useEffect(() => {
+    if (!open) {
+      setMenuPos(null);
+      return;
+    }
+
+    const scrollOpts = { capture: true } as const;
+
+    function compute() {
+      const el = inputRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const margin = 6;
+
+      const below = Math.max(0, window.innerHeight - rect.bottom - margin);
+      const above = Math.max(0, rect.top - margin);
+      const placeBelow = below >= 220 || below >= above;
+      const maxHeight = Math.max(160, Math.min(320, placeBelow ? below : above));
+
+      if (placeBelow) {
+        setMenuPos({ left: rect.left, top: rect.bottom + margin, width: rect.width, maxHeight });
+      } else {
+        setMenuPos({ left: rect.left, bottom: window.innerHeight - rect.top + margin, width: rect.width, maxHeight });
+      }
+    }
+
+    compute();
+    window.addEventListener("resize", compute);
+    window.addEventListener("scroll", compute, scrollOpts);
+    return () => {
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("scroll", compute, scrollOpts);
+    };
+  }, [open]);
 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -192,6 +242,7 @@ function MasterProductCombobox({
   return (
     <div ref={rootRef} className="relative">
       <Input
+        ref={inputRef}
         value={q}
         disabled={disabled}
         placeholder={placeholder}
@@ -217,89 +268,102 @@ function MasterProductCombobox({
         }}
       />
 
-      {open && (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-950">
-          <div className="max-h-64 overflow-auto p-1">
-            {loading && (
-              <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">Lade Produkte…</div>
-            )}
+      {open &&
+        menuPos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="z-[45] overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-950"
+            style={{
+              position: "fixed",
+              left: menuPos.left,
+              width: menuPos.width,
+              top: menuPos.top,
+              bottom: menuPos.bottom,
+            }}
+          >
+            <div className="overflow-auto p-1" style={{ maxHeight: menuPos.maxHeight }}>
+              {loading && (
+                <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">Lade Produkte…</div>
+              )}
 
-            {!loading && !results.length && (
-              <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">Keine Treffer.</div>
-            )}
+              {!loading && !results.length && (
+                <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">Keine Treffer.</div>
+              )}
 
-            {!loading &&
-              results.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={[
-                    "w-full rounded px-2 py-2 text-left text-sm",
-                    "hover:bg-gray-50 dark:hover:bg-gray-900/50",
-                    value === m.id ? "bg-gray-50 dark:bg-gray-900/40" : "",
-                  ].join(" ")}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    onValueChange(m.id);
-                    setOpen(false);
-                  }}
-                >
-                  <div className="font-medium">{m.title}</div>
-                  <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                    <span className="font-mono">{m.sku}</span> · {m.platform} · {m.region}
-                    {m.variant ? ` · ${m.variant}` : ""}
-                  </div>
-                  {(m.ean || m.asin) && (
+              {!loading &&
+                results.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={[
+                      "w-full rounded px-2 py-2 text-left text-sm",
+                      "hover:bg-gray-50 dark:hover:bg-gray-900/50",
+                      value === m.id ? "bg-gray-50 dark:bg-gray-900/40" : "",
+                    ].join(" ")}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      onValueChange(m.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <div className="font-medium">{m.title}</div>
                     <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      <span className="text-gray-500 dark:text-gray-500">EAN:</span>{" "}
-                      <span className="font-mono">{m.ean ?? "—"}</span>{" "}
-                      <span className="text-gray-500 dark:text-gray-500">ASIN:</span>{" "}
-                      <span className="font-mono">{m.asin ?? "—"}</span>
+                      <span className="font-mono">{m.sku}</span> · {m.platform} · {m.region}
+                      {m.variant ? ` · ${m.variant}` : ""}
                     </div>
-                  )}
-                  {(m.manufacturer || m.model) && (
-                    <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {m.manufacturer ?? ""}
-                      {m.manufacturer && m.model ? " · " : ""}
-                      {m.model ?? ""}
-                    </div>
-                  )}
-                </button>
-              ))}
+                    {(m.ean || m.asin) && (
+                      <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        <span className="text-gray-500 dark:text-gray-500">EAN:</span>{" "}
+                        <span className="font-mono">{m.ean ?? "—"}</span>{" "}
+                        <span className="text-gray-500 dark:text-gray-500">ASIN:</span>{" "}
+                        <span className="font-mono">{m.asin ?? "—"}</span>
+                      </div>
+                    )}
+                    {(m.manufacturer || m.model) && (
+                      <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        {m.manufacturer ?? ""}
+                        {m.manufacturer && m.model ? " · " : ""}
+                        {m.model ?? ""}
+                      </div>
+                    )}
+                  </button>
+                ))}
 
-            <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+              <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
 
-            <button
-              type="button"
-              className="w-full rounded px-2 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-900/50"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                onValueChange("");
-                setOpen(false);
-              }}
-            >
-              Auswahl entfernen
-            </button>
+              <button
+                type="button"
+                className="w-full rounded px-2 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onValueChange("");
+                  setOpen(false);
+                }}
+              >
+                Auswahl entfernen
+              </button>
 
-            <button
-              type="button"
-              disabled={!canCreate}
-              className={[
-                "w-full rounded px-2 py-2 text-left text-sm",
-                canCreate ? "hover:bg-gray-50 dark:hover:bg-gray-900/50" : "cursor-not-allowed opacity-50",
-              ].join(" ")}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                if (!onCreateNew) return;
-                onCreateNew(q.trim());
-                setOpen(false);
-              }}
-            >
-              Neues Produkt anlegen{q.trim() ? `: “${q.trim()}”` : ""}
-            </button>
-          </div>
-        </div>
-      )}
+              <button
+                type="button"
+                disabled={!canCreate}
+                className={[
+                  "w-full rounded px-2 py-2 text-left text-sm",
+                  canCreate ? "hover:bg-gray-50 dark:hover:bg-gray-900/50" : "cursor-not-allowed opacity-50",
+                ].join(" ")}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (!onCreateNew) return;
+                  onCreateNew(q.trim());
+                  setOpen(false);
+                }}
+              >
+                Neues Produkt anlegen{q.trim() ? `: “${q.trim()}”` : ""}
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
