@@ -1,11 +1,13 @@
+import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
+import { formatDateEuFromIso } from "../lib/dates";
 import { formatEur } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -59,7 +61,7 @@ function accountLabel(a: BankAccountOut): string {
 
 function purchaseLabel(p: PurchaseRefOut): string {
   const doc = p.document_number ? `${p.document_number} · ` : "";
-  return `${doc}${p.purchase_date} · ${p.counterparty_name} · ${formatEur(p.total_amount_cents)}`;
+  return `${doc}${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name} · ${formatEur(p.total_amount_cents)}`;
 }
 
 export function BankPage() {
@@ -133,116 +135,165 @@ export function BankPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xl font-semibold">Banktransaktionen</div>
-        <Button type="button" onClick={() => sync.mutate()} disabled={sync.isPending}>
-          Sync
-        </Button>
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-xl font-semibold">Banktransaktionen</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Sync aus dem Bank-Provider und Zuordnung zu Einkäufen.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              void accounts.refetch();
+              void purchases.refetch();
+              void transactions.refetch();
+            }}
+            disabled={accounts.isFetching || purchases.isFetching || transactions.isFetching}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Aktualisieren
+          </Button>
+          <Button type="button" onClick={() => sync.mutate()} disabled={sync.isPending}>
+            Sync
+          </Button>
+        </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Filter</CardTitle>
+        <CardHeader className="space-y-2">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Transaktionen</CardTitle>
+            <CardDescription>
+              {transactions.isPending ? "Lade..." : `${(transactions.data ?? []).length} Transaktionen (max. 300)`}
+            </CardDescription>
+          </div>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label>Konto</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accountSelectItems.map((it) => (
-                  <SelectItem key={it.value} value={it.value}>
-                    {it.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Konto</Label>
+              <Select value={accountId} onValueChange={setAccountId}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountSelectItems.map((it) => (
+                    <SelectItem key={it.value} value={it.value}>
+                      {it.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Zuordnung</Label>
+              <Select value={scope} onValueChange={(v) => setScope(v as "ALL" | "UNLINKED")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Alle</SelectItem>
+                  <SelectItem value="UNLINKED">Nur unzugeordnet</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Suche</Label>
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Gegenpartei oder Verwendungszweck..." />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Zuordnung</Label>
-            <Select value={scope} onValueChange={(v) => setScope(v as "ALL" | "UNLINKED")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Alle</SelectItem>
-                <SelectItem value="UNLINKED">Nur unzugeordnet</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Suche</Label>
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Gegenpartei oder Verwendungszweck..." />
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Liste</CardTitle>
-        </CardHeader>
-        <CardContent>
+          {(accounts.isError || purchases.isError || transactions.isError) && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+              {(((transactions.error ?? accounts.error ?? purchases.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+            </div>
+          )}
+
           {transactions.isLoading ? (
-            <div className="text-sm text-gray-500">Lade...</div>
-          ) : transactions.error ? (
-            <div className="text-sm text-red-600">Fehler: {(transactions.error as any)?.message ?? "Unbekannt"}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">Lade...</div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Datum</TableHead>
-                  <TableHead>Betrag</TableHead>
-                  <TableHead>Gegenpartei</TableHead>
-                  <TableHead>Verwendungszweck</TableHead>
+                  <TableHead className="text-right">Betrag</TableHead>
+                  <TableHead>Details</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Zuordnung</TableHead>
+                  <TableHead className="text-right">Zuordnung</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(transactions.data ?? []).map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="whitespace-nowrap">{t.booked_date}</TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">{formatEur(t.amount_cents)}</TableCell>
-                    <TableCell className="max-w-[220px] truncate">{t.counterparty_name ?? ""}</TableCell>
-                    <TableCell className="max-w-[420px] truncate">{t.remittance_information ?? ""}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {t.is_pending ? <Badge variant="secondary">Pending</Badge> : <Badge>Booked</Badge>}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        {t.purchase_ids.length ? (
-                          <Badge variant="secondary">{t.purchase_ids.length} Einkauf(e)</Badge>
-                        ) : (
-                          <Badge variant="outline">Kein</Badge>
-                        )}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setLinkTxId(t.id);
-                            setLinkOpen(true);
-                          }}
-                        >
-                          Zuordnen
-                        </Button>
-                        {t.purchase_ids.length ? (
+                {(transactions.data ?? []).map((t) => {
+                  const amountClass =
+                    t.amount_cents < 0
+                      ? "text-red-700 dark:text-red-300"
+                      : t.amount_cents > 0
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : "";
+                  const date = formatDateEuFromIso(t.booked_date);
+                  const valueDate =
+                    t.value_date && t.value_date !== t.booked_date ? formatDateEuFromIso(t.value_date) : null;
+
+                  return (
+                    <TableRow key={t.id}>
+                      <TableCell className="whitespace-nowrap">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{date}</div>
+                        {valueDate && <div className="text-xs text-gray-500 dark:text-gray-400">Valuta: {valueDate}</div>}
+                      </TableCell>
+                      <TableCell className={["whitespace-nowrap text-right font-medium", amountClass].join(" ")}>
+                        {formatEur(t.amount_cents)} {t.currency}
+                      </TableCell>
+                      <TableCell className="max-w-[520px]">
+                        <div className="truncate font-medium text-gray-900 dark:text-gray-100">{t.counterparty_name ?? ""}</div>
+                        <div className="truncate text-xs text-gray-500 dark:text-gray-400">{t.remittance_information ?? ""}</div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {t.is_pending ? <Badge variant="secondary">Pending</Badge> : <Badge variant="outline">Booked</Badge>}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {t.purchase_ids.length ? (
+                            <Badge variant="secondary">{t.purchase_ids.length} Einkauf(e)</Badge>
+                          ) : (
+                            <Badge variant="outline">Kein</Badge>
+                          )}
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            onClick={() => link.mutate({ txId: t.id, purchaseIds: [] })}
-                            disabled={link.isPending}
+                            onClick={() => {
+                              setLinkTxId(t.id);
+                              setLinkOpen(true);
+                            }}
                           >
-                            Entfernen
+                            Zuordnen
                           </Button>
-                        ) : null}
-                      </div>
+                          {t.purchase_ids.length ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => link.mutate({ txId: t.id, purchaseIds: [] })}
+                              disabled={link.isPending}
+                            >
+                              Entfernen
+                            </Button>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {!transactions.data?.length && !transactions.isPending && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Daten.
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           )}
@@ -289,4 +340,3 @@ export function BankPage() {
     </div>
   );
 }
-

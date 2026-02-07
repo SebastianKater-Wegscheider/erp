@@ -1,10 +1,11 @@
+import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatEur } from "../lib/money";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 
@@ -22,46 +23,83 @@ type VatReportOut = {
 export function VatPage() {
   const api = useApi();
   const today = useMemo(() => new Date(), []);
-  const [year, setYear] = useState(String(today.getFullYear()));
-  const [month, setMonth] = useState(String(today.getMonth() + 1).padStart(2, "0"));
+  const [yearInput, setYearInput] = useState(String(today.getFullYear()));
+  const [monthInput, setMonthInput] = useState(String(today.getMonth() + 1).padStart(2, "0"));
+  const [year, setYear] = useState<number>(today.getFullYear());
+  const [month, setMonth] = useState<number>(today.getMonth() + 1);
 
   const q = useQuery({
     queryKey: ["vat-report", year, month],
     queryFn: () =>
       api.request<VatReportOut>("/reports/vat", {
         method: "POST",
-        json: { year: Number(year), month: Number(month) },
+        json: { year, month },
       }),
   });
 
   const data = q.data;
+  const parsedYear = Number(yearInput);
+  const parsedMonth = Number(monthInput);
+  const periodValid =
+    Number.isInteger(parsedYear) &&
+    Number.isInteger(parsedMonth) &&
+    parsedYear >= 1900 &&
+    parsedYear <= 2100 &&
+    parsedMonth >= 1 &&
+    parsedMonth <= 12;
+
+  function applyPeriod() {
+    if (!periodValid) return;
+    const changed = parsedYear !== year || parsedMonth !== month;
+    setYear(parsedYear);
+    setMonth(parsedMonth);
+    if (!changed) void q.refetch();
+  }
+
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Umsatzsteuer</div>
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-xl font-semibold">Umsatzsteuer</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Monatsauswertung für Regelbesteuerung und Differenzbesteuerung.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={applyPeriod} disabled={!periodValid || q.isFetching}>
+            <RefreshCw className="h-4 w-4" />
+            Berechnen
+          </Button>
+        </div>
+      </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Zeitraum</CardTitle>
+        <CardHeader className="space-y-2">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Zeitraum</CardTitle>
+            <CardDescription>
+              {data ? `${data.period_start} → ${data.period_end}` : "Wählen Sie Jahr und Monat."}
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
             <Label>Jahr</Label>
-            <Input value={year} onChange={(e) => setYear(e.target.value)} />
+            <Input inputMode="numeric" value={yearInput} onChange={(e) => setYearInput(e.target.value)} placeholder="YYYY" />
           </div>
           <div className="space-y-2">
             <Label>Monat</Label>
-            <Input value={month} onChange={(e) => setMonth(e.target.value)} />
+            <Input inputMode="numeric" value={monthInput} onChange={(e) => setMonthInput(e.target.value)} placeholder="1-12" />
           </div>
-          <div className="flex items-end">
-            <Button variant="secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
-              Aktualisieren
-            </Button>
+          <div className="flex items-end text-sm text-gray-600 dark:text-gray-300">
+            {periodValid ? (
+              <span>
+                Aktiv: {String(month).padStart(2, "0")}.{year}
+              </span>
+            ) : (
+              <span className="text-red-700 dark:text-red-300">Ungültiger Zeitraum</span>
+            )}
           </div>
-          {data && (
-            <div className="flex items-end text-sm text-gray-600 dark:text-gray-300">
-              {data.period_start} → {data.period_end}
-            </div>
-          )}
         </CardContent>
       </Card>
 
