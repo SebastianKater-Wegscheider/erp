@@ -80,7 +80,7 @@
                 <div><strong>{{ line.title }}</strong></div>
                 <div class="muted small">
                   {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
-                  {% if line.purchase_type == "DIFF" %} · Differenzbesteuerung{% endif %}
+                  {% if line.purchase_type == "DIFF" and not company_small_business_notice %} · Differenzbesteuerung{% endif %}
                 </div>
               </td>
               <td class="right col-qty">1</td>
@@ -171,7 +171,7 @@
                 <div><strong>{{ line.title }}</strong></div>
                 <div class="muted small">
                   {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
-                  {% if line.purchase_type == "DIFF" %} · Differenzbesteuerung{% endif %}
+                  {% if line.purchase_type == "DIFF" and not company_small_business_notice %} · Differenzbesteuerung{% endif %}
                 </div>
               </td>
               <td class="right col-qty">1</td>
@@ -209,7 +209,7 @@
       {% if company_small_business_notice %}
         <div>{{ company_small_business_notice }}</div>
       {% endif %}
-      {% if has_diff_lines %}
+      {% if has_diff_lines and not company_small_business_notice %}
         <div>Hinweis: Differenzbesteuerung gem. § 24 UStG – keine Umsatzsteuer-Ausweisung für differenzbesteuerte Positionen.</div>
       {% endif %}
     </footer>

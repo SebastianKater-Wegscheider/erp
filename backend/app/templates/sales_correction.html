@@ -5,6 +5,7 @@
     <title>Rechnungskorrektur {{ correction_number }}</title>
   </head>
   <body>
+    {% set show_vat = has_regular_lines and company_vat_id and not company_small_business_notice %}
     <h1>Rechnungskorrektur / Storno</h1>
     <div class="muted">
       Korrektur-Nr.: {{ correction_number }} · Datum: {{ correction_date }} · Bezug: Rechnung {{ invoice_number }}
@@ -31,7 +32,7 @@
 
     <div class="spacer"></div>
 
-    {% if has_regular_lines %}
+    {% if show_vat %}
       <table>
         <thead>
           <tr>
@@ -123,7 +124,9 @@
               <div class="muted">
                 {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
               </div>
-              <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
+              {% if company_vat_id and not company_small_business_notice %}
+                <div class="muted">Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung)</div>
+              {% endif %}
               <div class="muted">Retourenentscheidung: {{ line.action }}</div>
             </td>
             <td class="right">{{ line.gross_eur }}</td>
@@ -154,7 +157,7 @@
       {% if company_small_business_notice %}
         <div>{{ company_small_business_notice }}</div>
       {% endif %}
-      {% if has_diff_lines %}
+      {% if has_diff_lines and company_vat_id and not company_small_business_notice %}
         <div>Hinweis: Differenzbesteuerung gem. § 24 UStG – keine Umsatzsteuer-Ausweisung für differenzbesteuerte Positionen.</div>
       {% endif %}
       <div>Hinweis: Dieser Beleg korrigiert die oben genannte Rechnung. Beträge sind als Korrektur (negativ) ausgewiesen.</div>
