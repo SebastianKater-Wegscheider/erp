@@ -8,7 +8,12 @@
     <script>
       (() => {
         const STORAGE_KEY = "reseller-erp-theme";
-        const stored = localStorage.getItem(STORAGE_KEY);
+        let stored = null;
+        try {
+          stored = localStorage.getItem(STORAGE_KEY);
+        } catch {
+          // Ignore if storage is unavailable (e.g., restricted browser context).
+        }
         const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
         const theme = stored === "dark" || stored === "light" ? stored : prefersDark ? "dark" : "light";
         document.documentElement.classList.toggle("dark", theme === "dark");

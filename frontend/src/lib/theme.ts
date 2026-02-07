@@ -11,7 +11,11 @@ export function applyTheme(theme: Theme): void {
 }
 
 export function setTheme(theme: Theme): void {
-  localStorage.setItem(STORAGE_KEY, theme);
+  try {
+    localStorage.setItem(STORAGE_KEY, theme);
+  } catch {
+    // Ignore if storage is unavailable (e.g., restricted browser context).
+  }
   applyTheme(theme);
 }
 
@@ -20,4 +24,3 @@ export function toggleTheme(): Theme {
   setTheme(next);
   return next;
 }
-
