@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatDateEuFromIso } from "../lib/dates";
+import { useTaxProfile } from "../lib/taxProfile";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -31,6 +32,8 @@ const PAYMENT_SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
 export function CostAllocationsPage() {
   const api = useApi();
   const qc = useQueryClient();
+  const taxProfile = useTaxProfile();
+  const vatEnabled = taxProfile.data?.vat_enabled ?? true;
   const formRef = useRef<HTMLDivElement | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [allocationDate, setAllocationDate] = useState(new Date().toISOString().slice(0, 10));
@@ -62,7 +65,7 @@ export function CostAllocationsPage() {
           allocation_date: allocationDate,
           description,
           amount_cents: sumCents,
-          tax_rate_bp: Number(taxRateBp),
+          tax_rate_bp: vatEnabled ? Number(taxRateBp) : 0,
           payment_source: paymentSource,
           receipt_upload_path: null,
           lines: lines
@@ -202,17 +205,28 @@ export function CostAllocationsPage() {
                   <Input type="date" value={allocationDate} onChange={(e) => setAllocationDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>USt-Satz</Label>
-                  <Select value={taxRateBp} onValueChange={setTaxRateBp}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">0%</SelectItem>
-                      <SelectItem value="1000">10%</SelectItem>
-                      <SelectItem value="2000">20%</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {vatEnabled ? (
+                    <>
+                      <Label>USt-Satz</Label>
+                      <Select value={taxRateBp} onValueChange={setTaxRateBp}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">0%</SelectItem>
+                          <SelectItem value="1000">10%</SelectItem>
+                          <SelectItem value="2000">20%</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </>
+                  ) : (
+                    <>
+                      <Label>Umsatzsteuer</Label>
+                      <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-200">
+                        Kleinunternehmerregelung aktiv: keine USt-Berechnung.
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Zahlungsquelle</Label>

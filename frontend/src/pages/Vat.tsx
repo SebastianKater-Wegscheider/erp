@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
+import { useTaxProfile } from "../lib/taxProfile";
 import { formatEur } from "../lib/money";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -22,6 +23,8 @@ type VatReportOut = {
 
 export function VatPage() {
   const api = useApi();
+  const taxProfile = useTaxProfile();
+  const vatEnabled = taxProfile.data?.vat_enabled ?? true;
   const today = useMemo(() => new Date(), []);
   const [yearInput, setYearInput] = useState(String(today.getFullYear()));
   const [monthInput, setMonthInput] = useState(String(today.getMonth() + 1).padStart(2, "0"));
@@ -103,42 +106,66 @@ export function VatPage() {
         </CardContent>
       </Card>
 
+      {!vatEnabled && (
+        <Card>
+          <CardHeader className="space-y-2">
+            <div className="flex flex-col gap-1">
+              <CardTitle>Kleinunternehmerregelung aktiv</CardTitle>
+              <CardDescription>
+                Umsatzsteuer/Vorsteuer wird aktuell nicht berechnet.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="text-sm text-gray-700 dark:text-gray-200">
+            {taxProfile.data?.small_business_notice ? (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-gray-800 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-100">
+                {taxProfile.data.small_business_notice}
+              </div>
+            ) : (
+              <div className="text-gray-600 dark:text-gray-300">Hinweis: Kleinunternehmerregelung ist aktiv.</div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {q.isError && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
           {(q.error as Error).message}
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>USt (Regelbesteuerung)</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {data ? `${formatEur(data.output_vat_regular_cents - data.output_vat_adjustments_regular_cents)} €` : "…"}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>USt (Differenzbesteuerung)</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">
-            {data ? `${formatEur(data.output_vat_margin_cents - data.output_vat_adjustments_margin_cents)} €` : "…"}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Vorsteuer</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.input_vat_cents)} €` : "…"}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Zahllast</CardTitle>
-          </CardHeader>
-          <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.vat_payable_cents)} €` : "…"}</CardContent>
-        </Card>
-      </div>
+      {vatEnabled && (
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>USt (Regelbesteuerung)</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">
+              {data ? `${formatEur(data.output_vat_regular_cents - data.output_vat_adjustments_regular_cents)} €` : "…"}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>USt (Differenzbesteuerung)</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">
+              {data ? `${formatEur(data.output_vat_margin_cents - data.output_vat_adjustments_margin_cents)} €` : "…"}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Vorsteuer</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.input_vat_cents)} €` : "…"}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Zahllast</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">{data ? `${formatEur(data.vat_payable_cents)} €` : "…"}</CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

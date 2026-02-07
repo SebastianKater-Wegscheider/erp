@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
+import { useTaxProfile } from "../lib/taxProfile";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -385,6 +386,8 @@ function MasterProductCombobox({
 export function PurchasesPage() {
   const api = useApi();
   const qc = useQueryClient();
+  const taxProfile = useTaxProfile();
+  const vatEnabled = taxProfile.data?.vat_enabled ?? true;
   const formRef = useRef<HTMLDivElement | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
@@ -483,7 +486,7 @@ export function PurchasesPage() {
         counterparty_id_number:
           kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
         total_amount_cents: totalCents,
-        tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? Number(taxRateBp) : 0,
+        tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? (vatEnabled ? Number(taxRateBp) : 0) : 0,
         payment_source: paymentSource,
         external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
         receipt_upload_path: kind === "COMMERCIAL_REGULAR" ? receiptUploadPath : null,
@@ -529,7 +532,7 @@ export function PurchasesPage() {
         counterparty_id_number:
           kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
         total_amount_cents: totalCents,
-        tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? Number(taxRateBp) : 0,
+        tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? (vatEnabled ? Number(taxRateBp) : 0) : 0,
         payment_source: paymentSource,
         external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
         receipt_upload_path: kind === "COMMERCIAL_REGULAR" ? receiptUploadPath : null,
@@ -879,18 +882,27 @@ export function PurchasesPage() {
                   <Label>Externe Rechnungsnummer</Label>
                   <Input value={externalInvoiceNumber} onChange={(e) => setExternalInvoiceNumber(e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                  <Label>USt-Satz</Label>
-                  <Select value={taxRateBp} onValueChange={setTaxRateBp}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1000">10%</SelectItem>
-                      <SelectItem value="2000">20%</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {vatEnabled ? (
+                  <div className="space-y-2">
+                    <Label>USt-Satz</Label>
+                    <Select value={taxRateBp} onValueChange={setTaxRateBp}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1000">10%</SelectItem>
+                        <SelectItem value="2000">20%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>Umsatzsteuer</Label>
+                    <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-200">
+                      Kleinunternehmerregelung aktiv: keine USt-Berechnung.
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2 md:col-span-2">
                   <Label>Beleg-Upload</Label>
                   <div className="flex items-center gap-2">

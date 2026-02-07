@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
+import { useTaxProfile } from "../lib/taxProfile";
 import { getActiveTheme, type Theme, toggleTheme } from "../lib/theme";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -39,15 +40,23 @@ const NAV_SECTIONS = [
   },
 ] satisfies NavSection[];
 
-const ALL_NAV_ITEMS: NavItem[] = [NAV_PRIMARY, ...NAV_SECTIONS.flatMap((s) => s.items)];
-
 export function Topbar() {
   const { clearCredentials } = useAuth();
+  const taxProfile = useTaxProfile();
+  const vatEnabled = taxProfile.data?.vat_enabled ?? true;
   const loc = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => getActiveTheme());
 
-  const activeItem = useMemo(() => ALL_NAV_ITEMS.find((n) => n.to === loc.pathname), [loc.pathname]);
+  const navSections = useMemo(() => {
+    if (vatEnabled) return NAV_SECTIONS;
+    return NAV_SECTIONS.map((s) =>
+      s.label === "Finanzen" ? { ...s, items: s.items.filter((i) => i.to !== "/vat") } : s,
+    );
+  }, [vatEnabled]);
+
+  const allNavItems = useMemo(() => [NAV_PRIMARY, ...navSections.flatMap((s) => s.items)], [navSections]);
+  const activeItem = useMemo(() => allNavItems.find((n) => n.to === loc.pathname), [allNavItems, loc.pathname]);
   const isActive = (to: string) => loc.pathname === to;
   const isSectionActive = (items: NavItem[]) => items.some((i) => isActive(i.to));
 
@@ -79,7 +88,7 @@ export function Topbar() {
               {NAV_PRIMARY.label}
             </Link>
 
-            {NAV_SECTIONS.map((section) => (
+            {navSections.map((section) => (
               <DropdownMenu key={section.label}>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -159,7 +168,7 @@ export function Topbar() {
                     {NAV_PRIMARY.label}
                   </Link>
 
-                  {NAV_SECTIONS.map((section) => (
+                  {navSections.map((section) => (
                     <div key={section.label} className="mt-4">
                       <div className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         {section.label}
