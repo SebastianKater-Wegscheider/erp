@@ -1,4 +1,4 @@
-import { Image as ImageIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { ExternalLink, Image as ImageIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -87,6 +87,19 @@ function releaseYearOrNull(value: string): number | null {
   return n;
 }
 
+function shortUrlLabel(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.host.replace(/^www\./, "");
+    const parts = u.pathname.split("/").filter(Boolean);
+    const last = parts.at(-1);
+    if (last && last.length <= 28) return `${host} · ${last}`;
+    return host;
+  } catch {
+    return url.length > 32 ? `${url.slice(0, 29)}…` : url;
+  }
+}
+
 function ReferenceImageThumb({
   url,
   alt,
@@ -145,6 +158,29 @@ function ReferenceImageThumb({
         </div>
       )}
     </a>
+  );
+}
+
+function IdPill({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+      <span className="text-gray-500 dark:text-gray-400">{label}:</span>
+      <span className="font-mono">{value}</span>
+    </span>
+  );
+}
+
+function MetaPill({ children }: { children: string | number }) {
+  return (
+    <span className="inline-flex max-w-[18rem] items-center truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
+      {children}
+    </span>
   );
 }
 
@@ -416,40 +452,57 @@ export function MasterProductsPage() {
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="min-w-0 truncate font-medium">{m.title}</div>
                             <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
+                            <Badge variant="outline" className="font-mono text-[11px]">
+                              {m.sku}
+                            </Badge>
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {m.platform} · {m.region}
-                            {m.variant ? ` · ${m.variant}` : ""}
+
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                            <span>{m.platform}</span>
+                            <span className="text-gray-300 dark:text-gray-700">•</span>
+                            <span>{m.region}</span>
+                            {m.variant ? (
+                              <>
+                                <span className="text-gray-300 dark:text-gray-700">•</span>
+                                <span className="truncate">{m.variant}</span>
+                              </>
+                            ) : null}
                           </div>
-                          {(m.manufacturer || m.model) && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {m.manufacturer ?? ""}
-                              {m.manufacturer && m.model ? " · " : ""}
-                              {m.model ?? ""}
+
+                          {(m.manufacturer || m.model || m.genre || m.release_year) && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {m.manufacturer ? <MetaPill>{m.manufacturer}</MetaPill> : null}
+                              {m.model ? <MetaPill>{m.model}</MetaPill> : null}
+                              {m.genre ? <MetaPill>{m.genre}</MetaPill> : null}
+                              {m.release_year ? <MetaPill>{m.release_year}</MetaPill> : null}
                             </div>
                           )}
-                          {(m.genre || m.release_year) && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {m.genre ?? "—"}
-                              {m.release_year ? ` · ${m.release_year}` : ""}
-                            </div>
-                          )}
+
+                          {m.reference_image_url?.trim() ? (
+                            <a
+                              href={m.reference_image_url.trim()}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                              title={m.reference_image_url.trim()}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              {shortUrlLabel(m.reference_image_url.trim())}
+                            </a>
+                          ) : null}
                         </div>
                       </div>
-
-                      <div className="mt-2 text-xs font-mono text-gray-400 dark:text-gray-500">{m.sku}</div>
                     </TableCell>
 
                     <TableCell className="text-sm">
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">EAN:</span>{" "}
-                        <span className="font-mono">{m.ean ?? "—"}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {m.ean ? <IdPill label="EAN" value={m.ean} /> : <IdPill label="EAN" value="—" />}
+                        {m.asin ? <IdPill label="ASIN" value={m.asin} /> : <IdPill label="ASIN" value="—" />}
                       </div>
-                      <div>
-                        <span className="text-gray-500 dark:text-gray-400">ASIN:</span>{" "}
-                        <span className="font-mono">{m.asin ?? "—"}</span>
+
+                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        UUID: <span className="font-mono text-gray-400 dark:text-gray-500">{m.id}</span>
                       </div>
-                      <div className="mt-2 text-xs font-mono text-gray-300 dark:text-gray-600">{m.id}</div>
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
