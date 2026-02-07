@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
@@ -12,7 +12,21 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
-type MasterProduct = { id: string; sku?: string; kind?: string; title: string; platform: string; region: string; variant?: string };
+type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
+
+type MasterProduct = {
+  id: string;
+  sku: string;
+  kind: MasterProductKind;
+  title: string;
+  platform: string;
+  region: string;
+  variant: string;
+  ean?: string | null;
+  asin?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+};
 
 type PurchaseOut = {
   id: string;
@@ -29,6 +43,7 @@ type PurchaseOut = {
 type UploadOut = { upload_path: string };
 
 type Line = {
+  id: string;
   master_product_id: string;
   condition: string;
   purchase_price: string;
@@ -57,8 +72,236 @@ const PURCHASE_TYPE_LABEL: Record<string, string> = {
   REGULAR: "Regulär",
 };
 
+const MASTER_KIND_OPTIONS: Array<{ value: MasterProductKind; label: string }> = [
+  { value: "GAME", label: "Spiel" },
+  { value: "CONSOLE", label: "Konsole" },
+  { value: "ACCESSORY", label: "Zubehör" },
+  { value: "OTHER", label: "Sonstiges" },
+];
+
 function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
   return options.find((o) => o.value === value)?.label ?? value;
+}
+
+function todayIsoLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatDateEuFromIso(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((iso ?? "").trim());
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+function parseDateEuToIso(input: string): string | null {
+  const raw = (input ?? "").trim();
+  if (!raw) return null;
+
+  // Allow already-ISO values (useful for copy/paste).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const m = /^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})$/.exec(raw);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return null;
+  if (year < 1900 || year > 2100) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function newLineId(): string {
+  try {
+    // Available in modern browsers; fine fallback below for older envs.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function masterProductLabel(m: MasterProduct): string {
+  return `${m.sku} · ${m.title} · ${m.platform} · ${m.region}${m.variant ? ` · ${m.variant}` : ""}`;
+}
+
+function masterProductSearchKey(m: MasterProduct): string {
+  return `${m.sku} ${m.title} ${m.platform} ${m.region} ${m.variant} ${m.ean ?? ""} ${m.asin ?? ""} ${m.manufacturer ?? ""} ${m.model ?? ""}`.toLowerCase();
+}
+
+function MasterProductCombobox({
+  value,
+  options,
+  placeholder,
+  disabled,
+  loading,
+  onValueChange,
+  onCreateNew,
+}: {
+  value: string;
+  options: MasterProduct[];
+  placeholder?: string;
+  disabled?: boolean;
+  loading?: boolean;
+  onValueChange: (id: string) => void;
+  onCreateNew?: (seedTitle: string) => void;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selected = useMemo(() => options.find((m) => m.id === value) ?? null, [options, value]);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState<string>(() => (selected ? masterProductLabel(selected) : ""));
+
+  useEffect(() => {
+    if (!open) setQ(selected ? masterProductLabel(selected) : "");
+  }, [open, selected]);
+
+  useEffect(() => {
+    function onPointerDown(ev: PointerEvent) {
+      const el = rootRef.current;
+      if (!el) return;
+      if (ev.target instanceof Node && el.contains(ev.target)) return;
+      setOpen(false);
+    }
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, []);
+
+  const results = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    const all = options ?? [];
+    if (!query) return all.slice(0, 12);
+    const out: MasterProduct[] = [];
+    for (const m of all) {
+      if (masterProductSearchKey(m).includes(query)) out.push(m);
+      if (out.length >= 12) break;
+    }
+    return out;
+  }, [options, q]);
+
+  const canCreate = !!onCreateNew;
+
+  return (
+    <div ref={rootRef} className="relative">
+      <Input
+        value={q}
+        disabled={disabled}
+        placeholder={placeholder}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            setOpen(false);
+          }
+          if (e.key === "Enter") {
+            // Keep Enter from submitting the purchase form accidentally.
+            e.preventDefault();
+            if (open && results.length) {
+              onValueChange(results[0].id);
+              setOpen(false);
+              return;
+            }
+          }
+        }}
+      />
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-950">
+          <div className="max-h-64 overflow-auto p-1">
+            {loading && (
+              <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">Lade Produkte…</div>
+            )}
+
+            {!loading && !results.length && (
+              <div className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">Keine Treffer.</div>
+            )}
+
+            {!loading &&
+              results.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={[
+                    "w-full rounded px-2 py-2 text-left text-sm",
+                    "hover:bg-gray-50 dark:hover:bg-gray-900/50",
+                    value === m.id ? "bg-gray-50 dark:bg-gray-900/40" : "",
+                  ].join(" ")}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onValueChange(m.id);
+                    setOpen(false);
+                  }}
+                >
+                  <div className="font-medium">{m.title}</div>
+                  <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="font-mono">{m.sku}</span> · {m.platform} · {m.region}
+                    {m.variant ? ` · ${m.variant}` : ""}
+                  </div>
+                  {(m.ean || m.asin) && (
+                    <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      <span className="text-gray-500 dark:text-gray-500">EAN:</span>{" "}
+                      <span className="font-mono">{m.ean ?? "—"}</span>{" "}
+                      <span className="text-gray-500 dark:text-gray-500">ASIN:</span>{" "}
+                      <span className="font-mono">{m.asin ?? "—"}</span>
+                    </div>
+                  )}
+                  {(m.manufacturer || m.model) && (
+                    <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {m.manufacturer ?? ""}
+                      {m.manufacturer && m.model ? " · " : ""}
+                      {m.model ?? ""}
+                    </div>
+                  )}
+                </button>
+              ))}
+
+            <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+
+            <button
+              type="button"
+              className="w-full rounded px-2 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-900/50"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onValueChange("");
+                setOpen(false);
+              }}
+            >
+              Auswahl entfernen
+            </button>
+
+            <button
+              type="button"
+              disabled={!canCreate}
+              className={[
+                "w-full rounded px-2 py-2 text-left text-sm",
+                canCreate ? "hover:bg-gray-50 dark:hover:bg-gray-900/50" : "cursor-not-allowed opacity-50",
+              ].join(" ")}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (!onCreateNew) return;
+                onCreateNew(q.trim());
+                setOpen(false);
+              }}
+            >
+              Neues Produkt anlegen{q.trim() ? `: “${q.trim()}”` : ""}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function PurchasesPage() {
@@ -76,7 +319,7 @@ export function PurchasesPage() {
   });
 
   const [kind, setKind] = useState<string>("PRIVATE_DIFF");
-  const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [purchaseDate, setPurchaseDate] = useState<string>(() => formatDateEuFromIso(todayIsoLocal()));
   const [counterpartyName, setCounterpartyName] = useState("");
   const [counterpartyAddress, setCounterpartyAddress] = useState("");
   const [paymentSource, setPaymentSource] = useState<string>("CASH");
@@ -88,7 +331,18 @@ export function PurchasesPage() {
 
   const [lines, setLines] = useState<Line[]>([]);
 
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreateTargetLineId, setQuickCreateTargetLineId] = useState<string | null>(null);
+  const [quickCreateKind, setQuickCreateKind] = useState<MasterProductKind>("GAME");
+  const [quickCreateTitle, setQuickCreateTitle] = useState("");
+  const [quickCreatePlatform, setQuickCreatePlatform] = useState("");
+  const [quickCreateRegion, setQuickCreateRegion] = useState("EU");
+  const [quickCreateVariant, setQuickCreateVariant] = useState("");
+
   const purchaseType = kind === "PRIVATE_DIFF" ? "DIFF" : "REGULAR";
+
+  const purchaseDateIso = useMemo(() => parseDateEuToIso(purchaseDate), [purchaseDate]);
+  const purchaseDateValid = !!purchaseDateIso;
 
   const totalCents = useMemo(() => {
     try {
@@ -111,6 +365,7 @@ export function PurchasesPage() {
   }, [lines]);
 
   const splitOk = sumLinesCents !== null && sumLinesCents === totalCents;
+  const allLinesHaveProduct = lines.every((l) => !!l.master_product_id.trim());
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -123,9 +378,11 @@ export function PurchasesPage() {
 
   const create = useMutation({
     mutationFn: async () => {
+      const purchase_date_iso = parseDateEuToIso(purchaseDate);
+      if (!purchase_date_iso) throw new Error("Datum muss im Format TT.MM.JJJJ sein");
       const payload = {
         kind,
-        purchase_date: purchaseDate,
+        purchase_date: purchase_date_iso,
         counterparty_name: counterpartyName,
         counterparty_address: counterpartyAddress || null,
         total_amount_cents: totalCents,
@@ -153,11 +410,70 @@ export function PurchasesPage() {
     },
   });
 
+  const quickCreate = useMutation({
+    mutationFn: async () => {
+      if (!quickCreateTitle.trim()) throw new Error("Titel fehlt");
+      if (!quickCreatePlatform.trim()) throw new Error("Plattform fehlt");
+      if (!quickCreateRegion.trim()) throw new Error("Region fehlt");
+      return api.request<MasterProduct>("/master-products", {
+        method: "POST",
+        json: {
+          kind: quickCreateKind,
+          title: quickCreateTitle.trim(),
+          platform: quickCreatePlatform.trim(),
+          region: quickCreateRegion.trim(),
+          variant: quickCreateVariant.trim(),
+        },
+      });
+    },
+    onSuccess: async (mp) => {
+      qc.setQueryData<MasterProduct[]>(["master-products"], (old) => {
+        const prev = old ?? [];
+        if (prev.some((x) => x.id === mp.id)) return prev;
+        return [...prev, mp];
+      });
+      await qc.invalidateQueries({ queryKey: ["master-products"] });
+      setQuickCreateOpen(false);
+      if (quickCreateTargetLineId) {
+        setLines((s) => s.map((l) => (l.id === quickCreateTargetLineId ? { ...l, master_product_id: mp.id } : l)));
+      }
+      setQuickCreateTargetLineId(null);
+      setQuickCreateTitle("");
+      setQuickCreateVariant("");
+    },
+  });
+
   const canSubmit =
+    purchaseDateValid &&
     counterpartyName.trim() &&
     lines.length > 0 &&
+    allLinesHaveProduct &&
     splitOk &&
     (kind === "PRIVATE_DIFF" || (externalInvoiceNumber.trim() && receiptUploadPath.trim()));
+
+  const platformOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of master.data ?? []) {
+      if (m.platform?.trim()) set.add(m.platform.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [master.data]);
+
+  function openQuickCreate(lineId: string, seedTitle: string) {
+    const lastSelected = [...lines]
+      .reverse()
+      .map((l) => master.data?.find((m) => m.id === l.master_product_id) ?? null)
+      .find((m) => m !== null);
+
+    setQuickCreateTargetLineId(lineId);
+    setQuickCreateKind(lastSelected?.kind ?? "GAME");
+    setQuickCreateTitle(seedTitle.trim());
+    setQuickCreatePlatform(lastSelected?.platform ?? "");
+    setQuickCreateRegion(lastSelected?.region ?? "EU");
+    setQuickCreateVariant("");
+    quickCreate.reset();
+    setQuickCreateOpen(true);
+  }
 
   return (
     <div className="space-y-4">
@@ -189,7 +505,13 @@ export function PurchasesPage() {
             </div>
             <div className="space-y-2">
               <Label>Datum</Label>
-              <Input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
+              <Input
+                value={purchaseDate}
+                onChange={(e) => setPurchaseDate(e.target.value)}
+                placeholder="TT.MM.JJJJ"
+                inputMode="numeric"
+              />
+              {!purchaseDateValid && <div className="text-xs text-red-700 dark:text-red-300">Format: TT.MM.JJJJ</div>}
             </div>
             <div className="space-y-2">
               <Label>Zahlungsquelle</Label>
@@ -226,7 +548,7 @@ export function PurchasesPage() {
                 <Input value={externalInvoiceNumber} onChange={(e) => setExternalInvoiceNumber(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>VAT rate</Label>
+                <Label>USt-Satz</Label>
                 <Select value={taxRateBp} onValueChange={setTaxRateBp}>
                   <SelectTrigger>
                     <SelectValue />
@@ -265,6 +587,7 @@ export function PurchasesPage() {
                 Aufteilung: {sumLinesCents === null ? "ungültig" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
               </Badge>
               {!splitOk && <div className="text-xs text-gray-500 dark:text-gray-400">Erstellen ist blockiert, bis die Summen übereinstimmen.</div>}
+              {splitOk && !allLinesHaveProduct && <div className="text-xs text-gray-500 dark:text-gray-400">Jede Position braucht ein Produkt.</div>}
             </div>
             <Button onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
               Erstellen
@@ -288,14 +611,16 @@ export function PurchasesPage() {
                   onClick={() =>
                     setLines((s) => [
                       ...s,
-                      { master_product_id: master.data?.[0]?.id ?? "", condition: "GOOD", purchase_price: "0,00" },
+                      { id: newLineId(), master_product_id: "", condition: "GOOD", purchase_price: "0,00" },
                     ])
                   }
-                  disabled={!master.data?.length}
                 >
                   Position hinzufügen
                 </Button>
-                {!master.data?.length && <div className="text-xs text-gray-500 dark:text-gray-400">Erst Produktstamm anlegen.</div>}
+                {master.isPending && <div className="text-xs text-gray-500 dark:text-gray-400">Produktstamm wird geladen…</div>}
+                {!master.isPending && !master.data?.length && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Noch kein Produktstamm. Lege Produkte direkt in der Position an.</div>
+                )}
               </div>
 
               <Table>
@@ -308,32 +633,22 @@ export function PurchasesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lines.map((l, idx) => (
-                    <TableRow key={idx}>
+                  {lines.map((l) => (
+                    <TableRow key={l.id}>
                       <TableCell>
-                        <Select
+                        <MasterProductCombobox
                           value={l.master_product_id}
-                          onValueChange={(v) =>
-                            setLines((s) => s.map((x, i) => (i === idx ? { ...x, master_product_id: v } : x)))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Auswählen…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(master.data ?? []).map((m) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {m.sku ? `${m.sku} · ` : ""}{m.title} · {m.platform} · {m.region}
-                                {m.variant ? ` · ${m.variant}` : ""}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          options={master.data ?? []}
+                          loading={master.isPending}
+                          placeholder="Suchen (SKU, Titel, EAN, …) oder neu anlegen…"
+                          onValueChange={(v) => setLines((s) => s.map((x) => (x.id === l.id ? { ...x, master_product_id: v } : x)))}
+                          onCreateNew={(seed) => openQuickCreate(l.id, seed)}
+                        />
                       </TableCell>
                       <TableCell>
                         <Select
                           value={l.condition}
-                          onValueChange={(v) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, condition: v } : x)))}
+                          onValueChange={(v) => setLines((s) => s.map((x) => (x.id === l.id ? { ...x, condition: v } : x)))}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -352,12 +667,12 @@ export function PurchasesPage() {
                           className="text-right"
                           value={l.purchase_price}
                           onChange={(e) =>
-                            setLines((s) => s.map((x, i) => (i === idx ? { ...x, purchase_price: e.target.value } : x)))
+                            setLines((s) => s.map((x) => (x.id === l.id ? { ...x, purchase_price: e.target.value } : x)))
                           }
                         />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" onClick={() => setLines((s) => s.filter((_, i) => i !== idx))}>
+                        <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.id !== l.id))}>
                           Entfernen
                         </Button>
                       </TableCell>
@@ -405,7 +720,7 @@ export function PurchasesPage() {
             <TableBody>
               {(list.data ?? []).map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell>{p.purchase_date}</TableCell>
+                  <TableCell>{formatDateEuFromIso(p.purchase_date)}</TableCell>
                   <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
                   <TableCell>{p.counterparty_name}</TableCell>
                   <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
@@ -444,6 +759,110 @@ export function PurchasesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={quickCreateOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setQuickCreateOpen(false);
+            setQuickCreateTargetLineId(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Neues Produkt anlegen</DialogTitle>
+            <DialogDescription>
+              Schnellanlage für den Einkauf. Details (EAN/ASIN/Hersteller/…) können später im Produktstamm ergänzt werden.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              quickCreate.mutate();
+            }}
+            className="space-y-4"
+          >
+            <div className="grid gap-4 md:grid-cols-6">
+              <div className="space-y-2 md:col-span-4">
+                <Label>Titel</Label>
+                <Input value={quickCreateTitle} onChange={(e) => setQuickCreateTitle(e.target.value)} autoFocus />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Typ</Label>
+                <Select value={quickCreateKind} onValueChange={(v) => setQuickCreateKind(v as MasterProductKind)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MASTER_KIND_OPTIONS.map((k) => (
+                      <SelectItem key={k.value} value={k.value}>
+                        {k.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 md:col-span-3">
+                <Label>Plattform</Label>
+                <Input
+                  value={quickCreatePlatform}
+                  onChange={(e) => setQuickCreatePlatform(e.target.value)}
+                  placeholder="z.B. Nintendo Gamecube"
+                  list="platform-options"
+                />
+                <datalist id="platform-options">
+                  {platformOptions.map((p) => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="space-y-2 md:col-span-3">
+                <Label>Region</Label>
+                <Input
+                  value={quickCreateRegion}
+                  onChange={(e) => setQuickCreateRegion(e.target.value)}
+                  placeholder="EU, US, JP, N/A"
+                  list="region-options"
+                />
+                <datalist id="region-options">
+                  <option value="EU" />
+                  <option value="US" />
+                  <option value="JP" />
+                  <option value="N/A" />
+                </datalist>
+              </div>
+
+              <div className="space-y-2 md:col-span-6">
+                <Label>Variante (optional)</Label>
+                <Input
+                  value={quickCreateVariant}
+                  onChange={(e) => setQuickCreateVariant(e.target.value)}
+                  placeholder="z.B. Player's Choice, Farbe, Bundle…"
+                />
+              </div>
+            </div>
+
+            {quickCreate.isError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                {(quickCreate.error as Error).message}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={() => setQuickCreateOpen(false)} disabled={quickCreate.isPending}>
+                Abbrechen
+              </Button>
+              <Button type="submit" disabled={quickCreate.isPending}>
+                Anlegen
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
