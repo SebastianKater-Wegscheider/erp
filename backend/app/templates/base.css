@@ -3,15 +3,6 @@
   margin: 18mm 16mm 34mm 16mm;
 }
 
-:root {
-  --brand: #0f4c81;
-  --brand-wash: #eef6ff;
-  --brand-border: #cfe6ff;
-  --ink: #111827;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -19,7 +10,7 @@
 body {
   font-family: "Inter", "Roboto", "Open Sans", DejaVu Sans, sans-serif;
   font-size: 11px;
-  color: var(--ink);
+  color: #111827;
 }
 
 h1 {
@@ -28,7 +19,7 @@ h1 {
 }
 
 .muted {
-  color: var(--muted);
+  color: #6b7280;
 }
 
 .row {
@@ -41,7 +32,7 @@ h1 {
 }
 
 .box {
-  border: 1px solid var(--line);
+  border: 1px solid #e5e7eb;
   padding: 10px;
   border-radius: 6px;
 }
@@ -53,14 +44,14 @@ table {
 
 th, td {
   padding: 6px 8px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid #e5e7eb;
   vertical-align: top;
 }
 
 th {
   text-align: left;
   font-weight: 600;
-  background: var(--brand-wash);
+  background: #eef6ff;
 }
 
 .right {
@@ -82,8 +73,8 @@ th {
   right: 0;
   bottom: 0;
   padding: 6mm 16mm 8mm;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
+  border-top: 1px solid #e5e7eb;
+  color: #6b7280;
   font-size: 9px;
   line-height: 1.35;
 }
@@ -110,7 +101,7 @@ th {
   justify-content: space-between;
   gap: 16px;
   padding-bottom: 6mm;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .letterhead .lh-left {
@@ -200,12 +191,12 @@ table.items {
 }
 
 table.items th {
-  background: var(--brand-wash);
-  border-bottom: 1px solid var(--brand-border);
+  background: #eef6ff;
+  border-bottom: 1px solid #cfe6ff;
 }
 
 table.items td {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .col-pos {
@@ -258,14 +249,14 @@ table.items td {
 
 .grand-total-box {
   min-width: 70mm;
-  background: var(--brand-wash);
-  border: 1px solid var(--brand-border);
+  background: #eef6ff;
+  border: 1px solid #cfe6ff;
   border-radius: 6px;
   padding: 4mm 5mm;
 }
 
 .grand-total-label {
-  color: var(--muted);
+  color: #6b7280;
   font-size: 9px;
   letter-spacing: 0.6px;
   text-transform: uppercase;
@@ -282,7 +273,7 @@ table.items td {
 .signature {
   margin-top: 10mm;
   padding-top: 4mm;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid #e5e7eb;
 }
 
 .signature-copy {
@@ -302,12 +293,12 @@ table.items td {
 
 .sig-line {
   height: 12mm;
-  border-bottom: 1px solid var(--ink);
+  border-bottom: 1px solid #111827;
 }
 
 .sig-label {
   margin-top: 1.5mm;
-  color: var(--muted);
+  color: #6b7280;
   font-size: 9px;
   letter-spacing: 0.6px;
   text-transform: uppercase;
