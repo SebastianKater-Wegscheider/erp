@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.mileage_log import MileageLog
+from app.models.mileage_log import MileageLog, _mileage_log_purchases
 from app.models.purchase import Purchase
 from app.schemas.mileage import MileageCreate
 from app.services.audit import audit_log
@@ -39,8 +39,10 @@ async def create_mileage_log(
     await session.flush()
 
     if purchases:
-        log.purchases = purchases
-        await session.flush()
+        await session.execute(
+            insert(_mileage_log_purchases),
+            [{"mileage_log_id": log.id, "purchase_id": p.id} for p in purchases],
+        )
 
     await audit_log(
         session,
