@@ -396,9 +396,10 @@ async def generate_purchase_credit_note_pdf(
     mp_rows = (
         await session.execute(
             select(
-                PurchaseLine.master_product_id,
+                PurchaseLine.id,
                 PurchaseLine.condition,
                 PurchaseLine.purchase_price_cents,
+                InventoryItem.serial_number,
                 MasterProduct.title,
                 MasterProduct.platform,
                 MasterProduct.region,
@@ -406,19 +407,30 @@ async def generate_purchase_credit_note_pdf(
             )
             .select_from(PurchaseLine)
             .join(MasterProduct, MasterProduct.id == PurchaseLine.master_product_id)
+            .outerjoin(InventoryItem, InventoryItem.purchase_line_id == PurchaseLine.id)
             .where(PurchaseLine.purchase_id == purchase.id)
+            .order_by(PurchaseLine.id.asc())
         )
     ).all()
 
     lines_ctx = []
     for r in mp_rows:
+        cond = r.condition.value
+        condition_label = {
+            "NEW": "Neu",
+            "LIKE_NEW": "A-Ware (wie neu)",
+            "GOOD": "B-Ware (gut)",
+            "ACCEPTABLE": "C-Ware (Gebrauchsspuren)",
+            "DEFECT": "Defekt",
+        }.get(cond, cond)
         lines_ctx.append(
             {
                 "title": r.title,
                 "platform": r.platform,
                 "region": r.region,
                 "variant": r.variant,
-                "condition": r.condition.value,
+                "condition": condition_label,
+                "serial_number": r.serial_number,
                 "purchase_price_eur": format_eur(r.purchase_price_cents),
             }
         )
@@ -438,10 +450,13 @@ async def generate_purchase_credit_note_pdf(
             "company_address": settings.company_address,
             "company_email": settings.company_email,
             "company_vat_id": settings.company_vat_id,
+            "company_logo_path": settings.company_logo_path,
             "company_small_business_notice": settings.company_small_business_notice,
             "counterparty_name": purchase.counterparty_name,
             "counterparty_address": purchase.counterparty_address,
-            "payment_source": purchase.payment_source.value,
+            "counterparty_birthdate": purchase.counterparty_birthdate.strftime("%d.%m.%Y") if purchase.counterparty_birthdate else None,
+            "counterparty_id_number": purchase.counterparty_id_number,
+            "payment_source": {"CASH": "Bar", "BANK": "Bank"}.get(purchase.payment_source.value, purchase.payment_source.value),
             "lines": lines_ctx,
             "total_amount_eur": format_eur(purchase.total_amount_cents),
         },

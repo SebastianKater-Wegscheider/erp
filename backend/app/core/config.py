@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_COMPANY_NAME = "Sebastian Kater-Wegscheider"
 DEFAULT_COMPANY_ADDRESS = "Im Gütle 8\n6921 Kennelbach\nÖsterreich"
 DEFAULT_COMPANY_EMAIL = "business@kater.cloud"
-DEFAULT_SMALL_BUSINESS_NOTICE = "Gemäß § 6 Abs. 1 Z 27 UStG wird keine Umsatzsteuer berechnet."
+DEFAULT_SMALL_BUSINESS_NOTICE = "Steuerfrei gemäß § 6 Abs. 1 Z 27 UStG (Kleinunternehmerregelung)."
 
 _PLACEHOLDER_COMPANY_NAME = "Your Company Name"
 _PLACEHOLDER_COMPANY_ADDRESS = "Street 1\n1010 Wien\nAustria"
@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     company_address: str = Field(DEFAULT_COMPANY_ADDRESS, alias="COMPANY_ADDRESS")
     company_email: str | None = Field(DEFAULT_COMPANY_EMAIL, alias="COMPANY_EMAIL")
     company_vat_id: str | None = Field(None, alias="COMPANY_VAT_ID")
+    company_logo_path: str | None = Field(None, alias="COMPANY_LOGO_PATH")
     company_small_business_notice: str | None = Field(
         DEFAULT_SMALL_BUSINESS_NOTICE,
         alias="COMPANY_SMALL_BUSINESS_NOTICE",
@@ -109,6 +110,21 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             vat = v.strip()
             return vat or None
+        return v
+
+    @field_validator("company_logo_path", mode="before")
+    @classmethod
+    def _normalize_company_logo_path(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            path = v.strip()
+            if not path:
+                return None
+            # WeasyPrint expects URLs; for absolute filesystem paths, prefix `file://`.
+            if path.startswith("/") and "://" not in path:
+                return f"file://{path}"
+            return path
         return v
 
     @field_validator("company_small_business_notice", mode="before")

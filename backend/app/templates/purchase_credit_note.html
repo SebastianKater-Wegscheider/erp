@@ -4,75 +4,128 @@
     <meta charset="utf-8" />
     <title>Gutschrift {{ document_number }}</title>
   </head>
-  <body>
-    <h1>Gutschrift (Eigenbeleg) – Ankauf</h1>
-    <div class="muted">Dokument-Nr.: {{ document_number }} · Datum: {{ purchase_date }}</div>
-
-    <div class="spacer"></div>
-
-    <div class="row">
-      <div class="col box">
-        <div class="muted">Aussteller</div>
-        <div><strong>{{ company_name }}</strong></div>
-        <div style="white-space: pre-line;">{{ company_address }}</div>
+  <body class="purchase">
+    <header class="letterhead">
+      <div class="lh-left">
+        <div class="lh-name">{{ company_name }}</div>
+        <div class="lh-address preline">{{ company_address }}</div>
+      </div>
+      <div class="lh-right">
+        {% if company_logo_path %}<img class="lh-logo" src="{{ company_logo_path }}" alt="Logo" />{% endif %}
         {% if company_email %}<div>{{ company_email }}</div>{% endif %}
         {% if company_vat_id %}<div>UID: {{ company_vat_id }}</div>{% endif %}
       </div>
+    </header>
 
-      <div class="col box">
-        <div class="muted">Verkäufer</div>
-        <div><strong>{{ counterparty_name }}</strong></div>
-        {% if counterparty_address %}<div style="white-space: pre-line;">{{ counterparty_address }}</div>{% endif %}
+    <div class="letter-grid">
+      <div class="recipient">
+        <div class="small muted">Verkäufer</div>
+        <div class="recipient-name">{{ counterparty_name }}</div>
+        <div class="recipient-address preline">{{ counterparty_address or "" }}</div>
+
+        <div class="spacer"></div>
+
+        <div class="small muted">Identifikation</div>
+        <table class="meta-table">
+          <tr>
+            <td>Geburtsdatum</td>
+            <td class="right">{{ counterparty_birthdate or "" }}</td>
+          </tr>
+          <tr>
+            <td>Ausweisnr.</td>
+            <td class="right mono">{{ counterparty_id_number or "" }}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="meta">
+        <table class="meta-table">
+          <tr>
+            <td>Dokument-Nr.</td>
+            <td class="right mono">{{ document_number }}</td>
+          </tr>
+          <tr>
+            <td>Datum</td>
+            <td class="right">{{ purchase_date }}</td>
+          </tr>
+          <tr>
+            <td>Zahlungsart</td>
+            <td class="right">{{ payment_source }}</td>
+          </tr>
+        </table>
       </div>
     </div>
 
-    <div class="spacer"></div>
-
-    <div class="box">
-      <div><strong>Zahlungsart:</strong> {{ payment_source }}</div>
-      <div class="muted">Differenzbesteuerter Ankauf (Privatankauf).</div>
+    <div class="subject">Gutschrift (Eigenbeleg) – Ankauf</div>
+    <div class="subline">
+      Ankauf von Gebrauchtwaren von einer Privatperson. Bitte prüfen Sie die Angaben und unterschreiben Sie unten.
     </div>
 
-    <div class="spacer"></div>
-
-    <table>
+    <table class="items">
       <thead>
         <tr>
+          <th class="col-pos">Pos</th>
           <th>Artikel</th>
+          <th>SN/IMEI</th>
           <th>Zustand</th>
-          <th class="right">EK (EUR)</th>
+          <th class="right col-money">EK (EUR)</th>
         </tr>
       </thead>
       <tbody>
         {% for line in lines %}
-        <tr>
-          <td>
-            <div><strong>{{ line.title }}</strong></div>
-            <div class="muted">
-              {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
-            </div>
-          </td>
-          <td>{{ line.condition }}</td>
-          <td class="right">{{ line.purchase_price_eur }}</td>
-        </tr>
+          <tr>
+            <td class="col-pos">{{ loop.index }}</td>
+            <td>
+              <div><strong>{{ line.title }}</strong></div>
+              <div class="muted small">
+                {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
+              </div>
+            </td>
+            <td class="mono">{{ line.serial_number or "" }}</td>
+            <td>{{ line.condition }}</td>
+            <td class="right col-money">{{ line.purchase_price_eur }}</td>
+          </tr>
         {% endfor %}
-        <tr>
-          <td colspan="2" class="right total">Gesamtsumme</td>
-          <td class="right total">{{ total_amount_eur }}</td>
-        </tr>
       </tbody>
     </table>
 
+    <div class="grand-total-wrap">
+      <div class="grand-total-box">
+        <div class="grand-total-label">Gesamtsumme</div>
+        <div class="grand-total-value mono">{{ total_amount_eur }} €</div>
+      </div>
+    </div>
+
+    <div class="signature">
+      <div class="signature-copy">
+        <div>Der Verkäufer versichert, dass die Ware frei von Rechten Dritter ist.</div>
+        <div>Hiermit bestätige ich den Erhalt des Betrags und das rechtmäßige Eigentum an der Ware.</div>
+      </div>
+
+      <div class="signature-grid">
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Ort / Datum</div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-line"></div>
+          <div class="sig-label">Unterschrift Verkäufer</div>
+        </div>
+      </div>
+    </div>
+
     <footer class="doc-footer">
       <div>
-        <strong>Impressum</strong>: {{ company_name }} · <span style="white-space: pre-line;">{{ company_address }}</span>
+        <strong>Impressum</strong>: {{ company_name }} · <span class="preline">{{ company_address }}</span>
         {% if company_email %} · {{ company_email }}{% endif %}
         {% if company_vat_id %} · UID: {{ company_vat_id }}{% endif %}
       </div>
       {% if company_small_business_notice %}
         <div>{{ company_small_business_notice }}</div>
+      {% else %}
+        <div>Hinweis: Privatankauf zur Differenzbesteuerung gem. § 24 UStG (keine USt-Ausweisung).</div>
       {% endif %}
-      <div>Differenzbesteuerter Privatankauf (Eigenbeleg / Gutschrift).</div>
     </footer>
   </body>
 </html>
+
