@@ -4,16 +4,17 @@ import csv
 import io
 import zipfile
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import InventoryStatus, OrderStatus, PurchaseKind, PurchaseType
 from app.models.cost_allocation import CostAllocation
 from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
+from app.models.master_product import MasterProduct
 from app.models.mileage_log import MileageLog
 from app.models.opex_expense import OpexExpense
 from app.models.purchase import Purchase
@@ -99,6 +100,234 @@ async def dashboard(session: AsyncSession, *, today: date) -> dict:
         "inventory_value_cents": inventory_value_cents,
         "cash_balance_cents": cash_balance_cents,
         "gross_profit_month_cents": gross_profit_month_cents,
+    }
+
+
+async def reseller_dashboard(session: AsyncSession, *, today: date, days: int = 90) -> dict:
+    base = await dashboard(session, today=today)
+
+    start_90 = today - timedelta(days=days - 1)
+    start_30 = today - timedelta(days=29)
+
+    revenue_expr = SalesOrderLine.sale_gross_cents + SalesOrderLine.shipping_allocated_cents
+    profit_expr = revenue_expr - SalesOrderLine.cost_basis_cents
+
+    sales_30d_stmt = (
+        select(
+            func.coalesce(func.sum(revenue_expr), 0),
+            func.coalesce(func.sum(profit_expr), 0),
+        )
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+        .where(
+            and_(
+                SalesOrder.status == OrderStatus.FINALIZED,
+                SalesOrder.order_date >= start_30,
+                SalesOrder.order_date <= today,
+            )
+        )
+    )
+    sales_revenue_30d_cents, gross_profit_30d_cents = (await session.execute(sales_30d_stmt)).one()
+    sales_revenue_30d_cents = int(sales_revenue_30d_cents)
+    gross_profit_30d_cents = int(gross_profit_30d_cents)
+
+    series_stmt = (
+        select(
+            SalesOrder.order_date,
+            func.coalesce(func.sum(revenue_expr), 0).label("revenue_cents"),
+            func.coalesce(func.sum(profit_expr), 0).label("profit_cents"),
+            func.count(func.distinct(SalesOrder.id)).label("orders_count"),
+        )
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+        .where(
+            and_(
+                SalesOrder.status == OrderStatus.FINALIZED,
+                SalesOrder.order_date >= start_90,
+                SalesOrder.order_date <= today,
+            )
+        )
+        .group_by(SalesOrder.order_date)
+        .order_by(SalesOrder.order_date.asc())
+    )
+    series_rows = (await session.execute(series_stmt)).all()
+    series_by_date = {r.order_date: r for r in series_rows}
+
+    sales_timeseries = []
+    for i in range(days):
+        d = start_90 + timedelta(days=i)
+        r = series_by_date.get(d)
+        sales_timeseries.append(
+            {
+                "date": d.isoformat(),
+                "revenue_cents": int(r.revenue_cents) if r else 0,
+                "profit_cents": int(r.profit_cents) if r else 0,
+                "orders_count": int(r.orders_count) if r else 0,
+            }
+        )
+
+    channel_stmt = (
+        select(SalesOrder.channel, func.coalesce(func.sum(revenue_expr), 0))
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+        .where(
+            and_(
+                SalesOrder.status == OrderStatus.FINALIZED,
+                SalesOrder.order_date >= start_30,
+                SalesOrder.order_date <= today,
+            )
+        )
+        .group_by(SalesOrder.channel)
+    )
+    channel_rows = (await session.execute(channel_stmt)).all()
+    revenue_by_channel_30d_cents = {channel.value: int(total) for channel, total in channel_rows}
+
+    inventory_status_stmt = select(InventoryItem.status, func.count(InventoryItem.id)).group_by(InventoryItem.status)
+    inventory_status_rows = (await session.execute(inventory_status_stmt)).all()
+    inventory_status_counts = {status.value: int(count) for status, count in inventory_status_rows}
+
+    in_stock_statuses = [
+        InventoryStatus.DRAFT,
+        InventoryStatus.AVAILABLE,
+        InventoryStatus.RESERVED,
+        InventoryStatus.RETURNED,
+    ]
+    inv_age_rows = (
+        await session.execute(
+            select(
+                InventoryItem.purchase_price_cents,
+                InventoryItem.allocated_costs_cents,
+                InventoryItem.acquired_date,
+                InventoryItem.created_at,
+            ).where(InventoryItem.status.in_(in_stock_statuses))
+        )
+    ).all()
+
+    buckets = [
+        {"label": "0-30T", "days_min": 0, "days_max": 30, "count": 0, "value_cents": 0},
+        {"label": "31-90T", "days_min": 31, "days_max": 90, "count": 0, "value_cents": 0},
+        {"label": ">90T", "days_min": 91, "days_max": None, "count": 0, "value_cents": 0},
+    ]
+    for r in inv_age_rows:
+        basis_cents = int(r.purchase_price_cents) + int(r.allocated_costs_cents)
+        effective_date = r.acquired_date or r.created_at.date()
+        age_days = (today - effective_date).days
+        for b in buckets:
+            if age_days < b["days_min"]:
+                continue
+            if b["days_max"] is not None and age_days > b["days_max"]:
+                continue
+            b["count"] += 1
+            b["value_cents"] += basis_cents
+            break
+
+    inventory_aging = [{"label": b["label"], "count": b["count"], "value_cents": b["value_cents"]} for b in buckets]
+
+    sales_orders_draft_count_stmt = select(func.count(SalesOrder.id)).where(SalesOrder.status == OrderStatus.DRAFT)
+    sales_orders_draft_count = int((await session.execute(sales_orders_draft_count_stmt)).scalar_one())
+
+    finalized_missing_pdf_stmt = select(func.count(SalesOrder.id)).where(
+        and_(
+            SalesOrder.status == OrderStatus.FINALIZED,
+            or_(SalesOrder.invoice_pdf_path.is_(None), SalesOrder.invoice_pdf_path == ""),
+        )
+    )
+    finalized_orders_missing_invoice_pdf_count = int((await session.execute(finalized_missing_pdf_stmt)).scalar_one())
+
+    negative_profit_orders_stmt = (
+        select(SalesOrder.id.label("order_id"))
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+        .where(
+            and_(
+                SalesOrder.status == OrderStatus.FINALIZED,
+                SalesOrder.order_date >= start_30,
+                SalesOrder.order_date <= today,
+            )
+        )
+        .group_by(SalesOrder.id)
+        .having(func.sum(profit_expr) < 0)
+    ).subquery()
+    negative_profit_orders_30d_count = int((await session.execute(select(func.count()).select_from(negative_profit_orders_stmt))).scalar_one())
+
+    master_products_missing_asin_stmt = select(func.count(MasterProduct.id)).where(
+        or_(MasterProduct.asin.is_(None), MasterProduct.asin == "")
+    )
+    master_products_missing_asin_count = int((await session.execute(master_products_missing_asin_stmt)).scalar_one())
+
+    product_base_stmt = (
+        select(
+            MasterProduct.id,
+            MasterProduct.sku,
+            MasterProduct.title,
+            MasterProduct.platform,
+            MasterProduct.region,
+            MasterProduct.variant,
+            func.count(SalesOrderLine.id).label("units_sold"),
+            func.coalesce(func.sum(revenue_expr), 0).label("revenue_cents"),
+            func.coalesce(func.sum(profit_expr), 0).label("profit_cents"),
+        )
+        .select_from(SalesOrderLine)
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+        .join(InventoryItem, InventoryItem.id == SalesOrderLine.inventory_item_id)
+        .join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id)
+        .where(
+            and_(
+                SalesOrder.status == OrderStatus.FINALIZED,
+                SalesOrder.order_date >= start_30,
+                SalesOrder.order_date <= today,
+            )
+        )
+        .group_by(
+            MasterProduct.id,
+            MasterProduct.sku,
+            MasterProduct.title,
+            MasterProduct.platform,
+            MasterProduct.region,
+            MasterProduct.variant,
+        )
+    )
+    top_products_rows = (
+        await session.execute(
+            product_base_stmt.order_by(func.sum(profit_expr).desc(), func.sum(revenue_expr).desc()).limit(5)
+        )
+    ).all()
+    worst_products_rows = (
+        await session.execute(
+            product_base_stmt.order_by(func.sum(profit_expr).asc(), func.sum(revenue_expr).desc()).limit(5)
+        )
+    ).all()
+
+    def _product_row_to_dict(r) -> dict:
+        return {
+            "master_product_id": str(r.id),
+            "sku": r.sku,
+            "title": r.title,
+            "platform": r.platform,
+            "region": r.region,
+            "variant": r.variant,
+            "units_sold": int(r.units_sold),
+            "revenue_cents": int(r.revenue_cents),
+            "profit_cents": int(r.profit_cents),
+        }
+
+    return {
+        **base,
+        "sales_revenue_30d_cents": sales_revenue_30d_cents,
+        "gross_profit_30d_cents": gross_profit_30d_cents,
+        "sales_timeseries": sales_timeseries,
+        "revenue_by_channel_30d_cents": revenue_by_channel_30d_cents,
+        "inventory_status_counts": inventory_status_counts,
+        "inventory_aging": inventory_aging,
+        "sales_orders_draft_count": sales_orders_draft_count,
+        "finalized_orders_missing_invoice_pdf_count": finalized_orders_missing_invoice_pdf_count,
+        "inventory_draft_count": int(inventory_status_counts.get(InventoryStatus.DRAFT.value, 0)),
+        "inventory_reserved_count": int(inventory_status_counts.get(InventoryStatus.RESERVED.value, 0)),
+        "inventory_returned_count": int(inventory_status_counts.get(InventoryStatus.RETURNED.value, 0)),
+        "negative_profit_orders_30d_count": negative_profit_orders_30d_count,
+        "master_products_missing_asin_count": master_products_missing_asin_count,
+        "top_products_30d": [_product_row_to_dict(r) for r in top_products_rows],
+        "worst_products_30d": [_product_row_to_dict(r) for r in worst_products_rows],
     }
 
 

@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.schemas.reports import DashboardOut, MonthlyCloseParams, VatReportOut, VatReportParams
-from app.services.reports import dashboard, monthly_close_zip, vat_report
+from app.schemas.reports import DashboardOut, MonthlyCloseParams, ResellerDashboardOut, VatReportOut, VatReportParams
+from app.services.reports import dashboard, monthly_close_zip, reseller_dashboard, vat_report
 
 
 router = APIRouter()
@@ -22,6 +22,12 @@ async def get_dashboard(session: AsyncSession = Depends(get_session)) -> Dashboa
         cash_balance_cents=data["cash_balance_cents"],
         gross_profit_month_cents=data["gross_profit_month_cents"],
     )
+
+
+@router.get("/reseller-dashboard", response_model=ResellerDashboardOut)
+async def get_reseller_dashboard(session: AsyncSession = Depends(get_session)) -> ResellerDashboardOut:
+    data = await reseller_dashboard(session, today=date.today())
+    return ResellerDashboardOut(**data)
 
 
 @router.post("/month-close")
