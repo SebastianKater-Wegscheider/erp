@@ -23,8 +23,14 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://erp:erp@db:5432/erp}
       APP_STORAGE_DIR: ${APP_STORAGE_DIR:-/data}
+      # Reliable reload on Docker Desktop file sharing (Mac/Windows).
+      WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ./data:/data
+      # Keep backend in sync with local code (prevents stale images during dev).
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       db:
         condition: service_healthy
