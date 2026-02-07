@@ -11,4 +11,4 @@ pydantic-settings==2.7.1
 python-multipart==0.0.9
 Jinja2==3.1.5
 weasyprint==62.3
-
+pydyf==0.11.0

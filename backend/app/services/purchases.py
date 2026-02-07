@@ -87,6 +87,8 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
             acquired_date=data.purchase_date,
         )
         session.add(item)
+        # Ensure PK is assigned before referencing it in audit logs.
+        await session.flush()
 
         await audit_log(
             session,
