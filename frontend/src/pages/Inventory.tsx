@@ -1,4 +1,4 @@
-import { Image as ImageIcon } from "lucide-react";
+import { Image as ImageIcon, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -7,7 +7,7 @@ import { useApi } from "../lib/api";
 import { formatEur } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -359,34 +359,27 @@ export function InventoryPage() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xl font-semibold">Lagerbestand</div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Suche</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center">
-          <Input placeholder="SKU/Titel/EAN/ASIN oder Produktstamm-UUID…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="w-full md:w-56">
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Alle</SelectItem>
-                {INVENTORY_STATUS_OPTIONS.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-xl font-semibold">Lagerbestand</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Lagerartikel durchsuchen, filtern und Details (SN, Lagerplatz, Bilder) pflegen.
           </div>
-          <Button variant="secondary" onClick={() => inv.refetch()}>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void master.refetch();
+              void inv.refetch();
+            }}
+            disabled={master.isFetching || inv.isFetching}
+          >
+            <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {(inv.isError || master.isError) && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
@@ -395,10 +388,52 @@ export function InventoryPage() {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Artikel</CardTitle>
+        <CardHeader className="space-y-2">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Artikel</CardTitle>
+            <CardDescription>
+              {inv.isPending
+                ? "Lade…"
+                : `${rows.length}${rows.length >= 50 ? "+" : ""} Artikel`}
+            </CardDescription>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-1 items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                <Input
+                  placeholder="SKU/Titel/EAN/ASIN oder Produktstamm-UUID…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              {q.trim() && (
+                <Button type="button" variant="ghost" size="icon" onClick={() => setQ("")} aria-label="Suche löschen">
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[190px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Alle Status</SelectItem>
+                  {INVENTORY_STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <Table>
             <TableHeader>
               <TableRow>
