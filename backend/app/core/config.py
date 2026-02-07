@@ -4,8 +4,18 @@ from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DEFAULT_COMPANY_NAME = "Sebastian Kater-Wegscheider"
+DEFAULT_COMPANY_ADDRESS = "Im Gütle 8\n6921 Kennelbach\nÖsterreich"
+DEFAULT_COMPANY_EMAIL = "business@kater.cloud"
+DEFAULT_SMALL_BUSINESS_NOTICE = "Gemäß § 6 Abs. 1 Z 27 UStG wird keine Umsatzsteuer berechnet."
+
+_PLACEHOLDER_COMPANY_NAME = "Your Company Name"
+_PLACEHOLDER_COMPANY_ADDRESS = "Street 1\n1010 Wien\nAustria"
+_PLACEHOLDER_COMPANY_EMAIL = "you@example.com"
 
 
 class Settings(BaseSettings):
@@ -23,12 +33,13 @@ class Settings(BaseSettings):
 
     mileage_rate_cents_per_km: int = Field(42, alias="MILEAGE_RATE_CENTS_PER_KM")
 
-    company_name: str = Field("Sebastian Kater-Wegscheider", alias="COMPANY_NAME")
-    company_address: str = Field("Im Gütle 8\n6921 Kennelbach\nÖsterreich", alias="COMPANY_ADDRESS")
-    company_email: str | None = Field("business@kater.cloud", alias="COMPANY_EMAIL")
+    # Defaults are hard-coded to the real business data (per repo requirements).
+    company_name: str = Field(DEFAULT_COMPANY_NAME, alias="COMPANY_NAME")
+    company_address: str = Field(DEFAULT_COMPANY_ADDRESS, alias="COMPANY_ADDRESS")
+    company_email: str | None = Field(DEFAULT_COMPANY_EMAIL, alias="COMPANY_EMAIL")
     company_vat_id: str | None = Field(None, alias="COMPANY_VAT_ID")
     company_small_business_notice: str | None = Field(
-        "Gemäß § 6 Abs. 1 Z 27 UStG wird keine Umsatzsteuer berechnet.",
+        DEFAULT_SMALL_BUSINESS_NOTICE,
         alias="COMPANY_SMALL_BUSINESS_NOTICE",
     )
 
@@ -55,13 +66,67 @@ class Settings(BaseSettings):
     gocardless_bank_data_access_token: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_ACCESS_TOKEN")
     gocardless_bank_data_requisition_ids: str | None = Field(None, alias="GOCARDLESS_BANK_DATA_REQUISITION_IDS")
 
+    @field_validator("company_name", mode="before")
+    @classmethod
+    def _normalize_company_name(cls, v: object) -> object:
+        if isinstance(v, str):
+            name = v.strip()
+            if name == _PLACEHOLDER_COMPANY_NAME:
+                return DEFAULT_COMPANY_NAME
+            return name
+        return v
+
     @field_validator("company_address", mode="before")
     @classmethod
     def _normalize_company_address(cls, v: object) -> object:
         # `.env.example` uses "\n" escapes; convert them to real newlines so PDFs render nicely.
         if isinstance(v, str):
-            return v.replace("\\n", "\n").replace("\r\n", "\n")
+            normalized = v.replace("\\n", "\n").replace("\r\n", "\n").strip()
+            if normalized == _PLACEHOLDER_COMPANY_ADDRESS:
+                return DEFAULT_COMPANY_ADDRESS
+            return normalized
         return v
+
+    @field_validator("company_email", mode="before")
+    @classmethod
+    def _normalize_company_email(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            email = v.strip()
+            if not email:
+                return None
+            if email == _PLACEHOLDER_COMPANY_EMAIL:
+                return DEFAULT_COMPANY_EMAIL
+            return email
+        return v
+
+    @field_validator("company_vat_id", mode="before")
+    @classmethod
+    def _normalize_company_vat_id(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            vat = v.strip()
+            return vat or None
+        return v
+
+    @field_validator("company_small_business_notice", mode="before")
+    @classmethod
+    def _normalize_company_small_business_notice(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            notice = v.strip()
+            return notice or None
+        return v
+
+    @model_validator(mode="after")
+    def _ensure_legal_defaults(self) -> "Settings":
+        # If VAT ID is not set, assume Kleinunternehmer unless explicitly overridden.
+        if not self.company_vat_id and not self.company_small_business_notice:
+            self.company_small_business_notice = DEFAULT_SMALL_BUSINESS_NOTICE
+        return self
 
     @property
     def pdf_dir(self) -> Path:

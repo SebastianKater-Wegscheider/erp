@@ -33,5 +33,14 @@ async def download_file(file_path: str) -> FileResponse:
     if not abs_path.is_file():
         raise HTTPException(status_code=404, detail="Not found")
 
-    return FileResponse(path=str(abs_path), filename=Path(rel).name)
-
+    # PDFs are frequently regenerated with the same path; disable caching so the browser
+    # always fetches the latest bytes.
+    return FileResponse(
+        path=str(abs_path),
+        filename=Path(rel).name,
+        headers={
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )

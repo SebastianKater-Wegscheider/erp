@@ -57,7 +57,10 @@ export function useApi() {
     if (credentials) {
       headers.set("Authorization", basicAuthHeader(credentials.username, credentials.password));
     }
-    const res = await fetch(`${API_BASE_URL}/files/${relPath.replace(/^\/+/, "")}`, { headers });
+    const safeRel = relPath.replace(/^\/+/, "");
+    // Cache-bust because PDFs may be regenerated but keep the same path.
+    const url = `${API_BASE_URL}/files/${safeRel}?t=${Date.now()}`;
+    const res = await fetch(url, { headers, cache: "no-store" });
     if (!res.ok) throw new ApiError("Download fehlgeschlagen", res.status);
     return await res.blob();
   }
