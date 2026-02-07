@@ -66,6 +66,7 @@
           <tr>
             <th class="col-pos">Pos</th>
             <th>Artikel</th>
+            <th class="right col-qty">Menge</th>
             <th class="right col-money">Netto (EUR)</th>
             <th class="right col-money">USt (EUR)</th>
             <th class="right col-money">Brutto (EUR)</th>
@@ -82,6 +83,7 @@
                   {% if line.purchase_type == "DIFF" %} · Differenzbesteuerung{% endif %}
                 </div>
               </td>
+              <td class="right col-qty">1</td>
               <td class="right col-money">{{ line.net_eur or "" }}</td>
               <td class="right col-money">{{ line.tax_eur or "" }}</td>
               <td class="right col-money">{{ line.gross_eur }}</td>
@@ -92,6 +94,7 @@
             <tr>
               <td class="col-pos"></td>
               <td>Versand</td>
+              <td class="right col-qty"></td>
               <td class="right col-money">{{ shipping_regular_net_eur }}</td>
               <td class="right col-money">{{ shipping_regular_tax_eur }}</td>
               <td class="right col-money">{{ shipping_regular_gross_eur }}</td>
@@ -102,6 +105,7 @@
             <tr>
               <td class="col-pos"></td>
               <td>Versand (Differenzbesteuerung)</td>
+              <td class="right col-qty"></td>
               <td class="right col-money"></td>
               <td class="right col-money"></td>
               <td class="right col-money">{{ shipping_margin_gross_eur }}</td>
@@ -118,7 +122,7 @@
               <td class="right mono">{{ regular_total_net_eur }}</td>
             </tr>
             <tr>
-              <td class="label">Umsatzsteuer</td>
+              <td class="label">Umsatzsteuer (20%)</td>
               <td class="right mono">{{ regular_total_tax_eur }}</td>
             </tr>
             <tr>
@@ -139,7 +143,7 @@
               <td class="right mono">{{ regular_total_net_eur }}</td>
             </tr>
             <tr>
-              <td class="label">Umsatzsteuer</td>
+              <td class="label">Umsatzsteuer (20%)</td>
               <td class="right mono">{{ regular_total_tax_eur }}</td>
             </tr>
             <tr class="total-row">
@@ -155,6 +159,7 @@
           <tr>
             <th class="col-pos">Pos</th>
             <th>Artikel</th>
+            <th class="right col-qty">Menge</th>
             <th class="right col-money">Brutto (EUR)</th>
           </tr>
         </thead>
@@ -169,6 +174,7 @@
                   {% if line.purchase_type == "DIFF" %} · Differenzbesteuerung{% endif %}
                 </div>
               </td>
+              <td class="right col-qty">1</td>
               <td class="right col-money">{{ line.gross_eur }}</td>
             </tr>
           {% endfor %}
@@ -177,6 +183,7 @@
             <tr>
               <td class="col-pos"></td>
               <td>Versand</td>
+              <td class="right col-qty"></td>
               <td class="right col-money">{{ shipping_gross_eur }}</td>
             </tr>
           {% endif %}
