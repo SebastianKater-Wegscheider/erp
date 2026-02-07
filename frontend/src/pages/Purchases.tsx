@@ -34,17 +34,28 @@ type PurchaseOut = {
   kind: string;
   purchase_date: string;
   counterparty_name: string;
+  counterparty_address?: string | null;
   total_amount_cents: number;
+  tax_rate_bp?: number;
   payment_source: string;
   document_number?: string | null;
   pdf_path?: string | null;
+  external_invoice_number?: string | null;
   receipt_upload_path?: string | null;
+  lines: Array<{
+    id: string;
+    master_product_id: string;
+    condition: string;
+    purchase_type: string;
+    purchase_price_cents: number;
+  }>;
 };
 
 type UploadOut = { upload_path: string };
 
 type Line = {
-  id: string;
+  ui_id: string;
+  purchase_line_id?: string;
   master_product_id: string;
   condition: string;
   purchase_price: string;
@@ -389,6 +400,7 @@ export function PurchasesPage() {
     },
   });
 
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [kind, setKind] = useState<string>("PRIVATE_DIFF");
   const [purchaseDate, setPurchaseDate] = useState<string>(() => formatDateEuFromIso(todayIsoLocal()));
   const [counterpartyName, setCounterpartyName] = useState("");
@@ -471,6 +483,44 @@ export function PurchasesPage() {
       return api.request<PurchaseOut>("/purchases", { method: "POST", json: payload });
     },
     onSuccess: async () => {
+      setEditingPurchaseId(null);
+      setCounterpartyName("");
+      setCounterpartyAddress("");
+      setExternalInvoiceNumber("");
+      setReceiptUploadPath("");
+      setTotalAmount("0,00");
+      setLines([]);
+      await qc.invalidateQueries({ queryKey: ["purchases"] });
+    },
+  });
+
+  const update = useMutation({
+    mutationFn: async () => {
+      if (!editingPurchaseId) throw new Error("Kein Einkauf ausgewählt");
+      const purchase_date_iso = parseDateEuToIso(purchaseDate);
+      if (!purchase_date_iso) throw new Error("Datum muss im Format TT.MM.JJJJ sein");
+      const payload = {
+        kind,
+        purchase_date: purchase_date_iso,
+        counterparty_name: counterpartyName,
+        counterparty_address: counterpartyAddress || null,
+        total_amount_cents: totalCents,
+        tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? Number(taxRateBp) : 0,
+        payment_source: paymentSource,
+        external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
+        receipt_upload_path: kind === "COMMERCIAL_REGULAR" ? receiptUploadPath : null,
+        lines: lines.map((l) => ({
+          id: l.purchase_line_id ?? null,
+          master_product_id: l.master_product_id,
+          condition: l.condition,
+          purchase_type: purchaseType,
+          purchase_price_cents: parseEurToCents(l.purchase_price),
+        })),
+      };
+      return api.request<PurchaseOut>(`/purchases/${editingPurchaseId}`, { method: "PUT", json: payload });
+    },
+    onSuccess: async () => {
+      setEditingPurchaseId(null);
       setCounterpartyName("");
       setCounterpartyAddress("");
       setExternalInvoiceNumber("");
@@ -506,7 +556,7 @@ export function PurchasesPage() {
       await qc.invalidateQueries({ queryKey: ["master-products"] });
       setQuickCreateOpen(false);
       if (quickCreateTargetLineId) {
-        setLines((s) => s.map((l) => (l.id === quickCreateTargetLineId ? { ...l, master_product_id: mp.id } : l)));
+        setLines((s) => s.map((l) => (l.ui_id === quickCreateTargetLineId ? { ...l, master_product_id: mp.id } : l)));
       }
       setQuickCreateTargetLineId(null);
       setQuickCreateTitle("");
@@ -546,19 +596,60 @@ export function PurchasesPage() {
     setQuickCreateOpen(true);
   }
 
+  function startEdit(p: PurchaseOut) {
+    setEditingPurchaseId(p.id);
+    setKind(p.kind);
+    setPurchaseDate(formatDateEuFromIso(p.purchase_date));
+    setCounterpartyName(p.counterparty_name);
+    setCounterpartyAddress(p.counterparty_address ?? "");
+    setPaymentSource(p.payment_source);
+    setTotalAmount(formatEur(p.total_amount_cents));
+    setExternalInvoiceNumber(p.external_invoice_number ?? "");
+    setReceiptUploadPath(p.receipt_upload_path ?? "");
+    setTaxRateBp(String(p.tax_rate_bp ?? 2000));
+    setLines(
+      (p.lines ?? []).map((pl) => ({
+        ui_id: pl.id,
+        purchase_line_id: pl.id,
+        master_product_id: pl.master_product_id,
+        condition: pl.condition,
+        purchase_price: formatEur(pl.purchase_price_cents),
+      })),
+    );
+    create.reset();
+    update.reset();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelEdit() {
+    setEditingPurchaseId(null);
+    setKind("PRIVATE_DIFF");
+    setPurchaseDate(formatDateEuFromIso(todayIsoLocal()));
+    setCounterpartyName("");
+    setCounterpartyAddress("");
+    setPaymentSource("CASH");
+    setTotalAmount("0,00");
+    setExternalInvoiceNumber("");
+    setReceiptUploadPath("");
+    setTaxRateBp("2000");
+    setLines([]);
+    create.reset();
+    update.reset();
+  }
+
   return (
     <div className="space-y-4">
       <div className="text-xl font-semibold">Einkäufe</div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Einkauf erfassen</CardTitle>
+          <CardTitle>{editingPurchaseId ? "Einkauf bearbeiten" : "Einkauf erfassen"}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Art</Label>
-              <Select value={kind} onValueChange={setKind}>
+              <Select value={kind} onValueChange={setKind} disabled={!!editingPurchaseId}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -657,17 +748,31 @@ export function PurchasesPage() {
               <Badge variant={splitOk ? "success" : "warning"}>
                 Aufteilung: {sumLinesCents === null ? "ungültig" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
               </Badge>
-              {!splitOk && <div className="text-xs text-gray-500 dark:text-gray-400">Erstellen ist blockiert, bis die Summen übereinstimmen.</div>}
+              {!splitOk && (
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {editingPurchaseId ? "Speichern" : "Erstellen"} ist blockiert, bis die Summen übereinstimmen.
+                </div>
+              )}
               {splitOk && !allLinesHaveProduct && <div className="text-xs text-gray-500 dark:text-gray-400">Jede Position braucht ein Produkt.</div>}
             </div>
-            <Button onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
-              Erstellen
-            </Button>
+            <div className="flex items-center gap-2">
+              {editingPurchaseId && (
+                <Button type="button" variant="secondary" onClick={cancelEdit} disabled={create.isPending || update.isPending}>
+                  Abbrechen
+                </Button>
+              )}
+              <Button
+                onClick={() => (editingPurchaseId ? update.mutate() : create.mutate())}
+                disabled={!canSubmit || create.isPending || update.isPending}
+              >
+                {editingPurchaseId ? "Änderungen speichern" : "Erstellen"}
+              </Button>
+            </div>
           </div>
 
-          {create.isError && (
+          {(create.isError || update.isError) && (
             <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-              {(create.error as Error).message}
+              {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
             </div>
           )}
 
@@ -682,7 +787,7 @@ export function PurchasesPage() {
                   onClick={() =>
                     setLines((s) => [
                       ...s,
-                      { id: newLineId(), master_product_id: "", condition: "GOOD", purchase_price: "0,00" },
+                      { ui_id: newLineId(), master_product_id: "", condition: "GOOD", purchase_price: "0,00" },
                     ])
                   }
                 >
@@ -705,21 +810,21 @@ export function PurchasesPage() {
                 </TableHeader>
                 <TableBody>
                   {lines.map((l) => (
-                    <TableRow key={l.id}>
+                    <TableRow key={l.ui_id}>
                       <TableCell>
                         <MasterProductCombobox
                           value={l.master_product_id}
                           options={master.data ?? []}
                           loading={master.isPending}
                           placeholder="Suchen (SKU, Titel, EAN, …) oder neu anlegen…"
-                          onValueChange={(v) => setLines((s) => s.map((x) => (x.id === l.id ? { ...x, master_product_id: v } : x)))}
-                          onCreateNew={(seed) => openQuickCreate(l.id, seed)}
+                          onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, master_product_id: v } : x)))}
+                          onCreateNew={(seed) => openQuickCreate(l.ui_id, seed)}
                         />
                       </TableCell>
                       <TableCell>
                         <Select
                           value={l.condition}
-                          onValueChange={(v) => setLines((s) => s.map((x) => (x.id === l.id ? { ...x, condition: v } : x)))}
+                          onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, condition: v } : x)))}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -738,12 +843,14 @@ export function PurchasesPage() {
                           className="text-right"
                           value={l.purchase_price}
                           onChange={(e) =>
-                            setLines((s) => s.map((x) => (x.id === l.id ? { ...x, purchase_price: e.target.value } : x)))
+                            setLines((s) =>
+                              s.map((x) => (x.ui_id === l.ui_id ? { ...x, purchase_price: e.target.value } : x)),
+                            )
                           }
                         />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.id !== l.id))}>
+                        <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.ui_id !== l.ui_id))}>
                           Entfernen
                         </Button>
                       </TableCell>
@@ -796,35 +903,43 @@ export function PurchasesPage() {
                   <TableCell>{p.counterparty_name}</TableCell>
                   <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
                   <TableCell className="text-right">
-                    {p.pdf_path ? (
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline">PDF</Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Einkauf (PDF)</DialogTitle>
-                            <DialogDescription>{p.pdf_path}</DialogDescription>
-                          </DialogHeader>
-                          <DialogFooter>
-                            <Button variant="secondary" onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}>
-                              Herunterladen
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    ) : p.kind === "PRIVATE_DIFF" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => generatePdf.mutate(p.id)}
-                        disabled={generatePdf.isPending}
-                      >
-                        Eigenbeleg erstellen
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
-                    )}
+                    <div className="inline-flex items-center justify-end gap-2">
+                      {p.pdf_path ? (
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline">PDF</Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Einkauf (PDF)</DialogTitle>
+                              <DialogDescription>{p.pdf_path}</DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                              <Button variant="secondary" onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}>
+                                Herunterladen
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      ) : p.kind === "PRIVATE_DIFF" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => generatePdf.mutate(p.id)}
+                          disabled={generatePdf.isPending}
+                        >
+                          Eigenbeleg erstellen
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                      )}
+
+                      {!p.pdf_path && (
+                        <Button size="sm" variant="secondary" onClick={() => startEdit(p)} disabled={create.isPending || update.isPending}>
+                          Bearbeiten
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

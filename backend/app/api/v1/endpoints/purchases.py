@@ -10,8 +10,8 @@ from sqlalchemy.orm import selectinload
 from app.core.db import get_session
 from app.core.security import require_basic_auth
 from app.models.purchase import Purchase
-from app.schemas.purchase import PurchaseCreate, PurchaseOut, PurchaseRefOut
-from app.services.purchases import create_purchase, generate_purchase_credit_note_pdf
+from app.schemas.purchase import PurchaseCreate, PurchaseOut, PurchaseRefOut, PurchaseUpdate
+from app.services.purchases import create_purchase, generate_purchase_credit_note_pdf, update_purchase
 
 
 router = APIRouter()
@@ -58,6 +58,25 @@ async def get_purchase(purchase_id: uuid.UUID, session: AsyncSession = Depends(g
     if row is None:
         raise HTTPException(status_code=404, detail="Not found")
     return PurchaseOut.model_validate(row)
+
+
+@router.put("/{purchase_id}", response_model=PurchaseOut)
+async def update_purchase_endpoint(
+    purchase_id: uuid.UUID,
+    data: PurchaseUpdate,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> PurchaseOut:
+    try:
+        async with session.begin():
+            purchase = await update_purchase(session, actor=actor, purchase_id=purchase_id, data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    purchase = (
+        await session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    return PurchaseOut.model_validate(purchase)
 
 
 @router.post("/{purchase_id}/generate-pdf", response_model=PurchaseOut)
