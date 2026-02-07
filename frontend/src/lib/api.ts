@@ -52,14 +52,18 @@ export function useApi() {
     return (await res.text()) as unknown as T;
   }
 
-  async function download(relPath: string, filename?: string): Promise<void> {
+  async function fileBlob(relPath: string): Promise<Blob> {
     const headers = new Headers();
     if (credentials) {
       headers.set("Authorization", basicAuthHeader(credentials.username, credentials.password));
     }
     const res = await fetch(`${API_BASE_URL}/files/${relPath.replace(/^\/+/, "")}`, { headers });
     if (!res.ok) throw new ApiError("Download fehlgeschlagen", res.status);
-    const blob = await res.blob();
+    return await res.blob();
+  }
+
+  async function download(relPath: string, filename?: string): Promise<void> {
+    const blob = await fileBlob(relPath);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -70,5 +74,5 @@ export function useApi() {
     URL.revokeObjectURL(url);
   }
 
-  return { request, download };
+  return { request, fileBlob, download };
 }

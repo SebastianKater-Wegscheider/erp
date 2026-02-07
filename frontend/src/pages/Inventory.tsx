@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
@@ -70,6 +70,19 @@ function purchaseTypeLabel(purchaseType: string): string {
   return PURCHASE_TYPE_LABEL[purchaseType] ?? purchaseType;
 }
 
+function isLikelyImagePath(path: string): boolean {
+  const p = (path ?? "").toLowerCase();
+  return (
+    p.endsWith(".png") ||
+    p.endsWith(".jpg") ||
+    p.endsWith(".jpeg") ||
+    p.endsWith(".webp") ||
+    p.endsWith(".gif") ||
+    p.endsWith(".avif") ||
+    p.endsWith(".bmp")
+  );
+}
+
 function ageVariant(days: number | null) {
   if (days === null) return { variant: "secondary" as const, label: "k. A." };
   if (days < 30) return { variant: "success" as const, label: `${days}T` };
@@ -86,6 +99,9 @@ export function InventoryPage() {
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [editStorageLocation, setEditStorageLocation] = useState("");
   const [editSerialNumber, setEditSerialNumber] = useState("");
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [previewErrors, setPreviewErrors] = useState<Record<string, true>>({});
+  const [activeImageId, setActiveImageId] = useState<string | null>(null);
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -115,6 +131,91 @@ export function InventoryPage() {
     queryFn: () => api.request<InventoryImage[]>(`/inventory/${editing!.id}/images`),
   });
 
+  useEffect(() => {
+    setActiveImageId(null);
+    setPreviewErrors({});
+    setPreviewUrls((prev) => {
+      Object.values(prev).forEach((u) => URL.revokeObjectURL(u));
+      return {};
+    });
+  }, [editing?.id]);
+
+  useEffect(() => {
+    const keep = new Set((images.data ?? []).map((i) => i.id));
+    setPreviewUrls((prev) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [id, url] of Object.entries(prev)) {
+        if (keep.has(id)) next[id] = url;
+        else {
+          changed = true;
+          URL.revokeObjectURL(url);
+        }
+      }
+      return changed ? next : prev;
+    });
+    setPreviewErrors((prev) => {
+      let changed = false;
+      const next: Record<string, true> = {};
+      for (const [id, v] of Object.entries(prev)) {
+        if (keep.has(id)) next[id] = v;
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [images.data]);
+
+  useEffect(() => {
+    const first = images.data?.[0]?.id ?? null;
+    if (!first) {
+      setActiveImageId(null);
+      return;
+    }
+    setActiveImageId((cur) => {
+      if (cur && (images.data ?? []).some((i) => i.id === cur)) return cur;
+      return first;
+    });
+  }, [images.data]);
+
+  useEffect(() => {
+    if (!editing?.id) return;
+    const missing = (images.data ?? []).filter(
+      (img) => isLikelyImagePath(img.upload_path) && !previewUrls[img.id] && !previewErrors[img.id],
+    );
+    if (!missing.length) return;
+
+    let cancelled = false;
+    (async () => {
+      const newUrls: Record<string, string> = {};
+      const newErr: Record<string, true> = {};
+      for (const img of missing) {
+        try {
+          const blob = await api.fileBlob(img.upload_path);
+          if (cancelled) break;
+          if (!blob.type.startsWith("image/")) {
+            newErr[img.id] = true;
+            continue;
+          }
+          newUrls[img.id] = URL.createObjectURL(blob);
+        } catch {
+          newErr[img.id] = true;
+        }
+      }
+
+      if (cancelled) {
+        Object.values(newUrls).forEach((u) => URL.revokeObjectURL(u));
+        return;
+      }
+
+      if (Object.keys(newUrls).length) setPreviewUrls((prev) => ({ ...prev, ...newUrls }));
+      if (Object.keys(newErr).length) setPreviewErrors((prev) => ({ ...prev, ...newErr }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editing?.id, images.data, previewErrors, previewUrls]);
+
   const update = useMutation({
     mutationFn: async () => {
       if (!editing) throw new Error("Kein Artikel ausgewählt");
@@ -140,7 +241,8 @@ export function InventoryPage() {
     },
     onSuccess: async (r) => {
       if (!editing) return;
-      await api.request<InventoryImage>(`/inventory/${editing.id}/images`, { method: "POST", json: { upload_path: r.upload_path } });
+      const img = await api.request<InventoryImage>(`/inventory/${editing.id}/images`, { method: "POST", json: { upload_path: r.upload_path } });
+      setActiveImageId(img.id);
       await qc.invalidateQueries({ queryKey: ["inventory-images", editing.id] });
     },
   });
@@ -314,6 +416,60 @@ export function InventoryPage() {
             {(images.isError || upload.isError || removeImage.isError) && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
                 {((images.error ?? upload.error ?? removeImage.error) as Error).message}
+              </div>
+            )}
+
+            {!!(images.data ?? []).length && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+                <div className="flex flex-wrap gap-2">
+                  {(images.data ?? []).map((img) => {
+                    const url = previewUrls[img.id];
+                    const isActive = activeImageId === img.id;
+                    const canPreview = isLikelyImagePath(img.upload_path) && !previewErrors[img.id];
+                    return (
+                      <button
+                        key={img.id}
+                        type="button"
+                        className={[
+                          "relative h-16 w-16 overflow-hidden rounded-md border bg-white shadow-sm",
+                          "dark:border-gray-800 dark:bg-gray-900",
+                          isActive ? "ring-2 ring-gray-300 dark:ring-gray-700" : "hover:ring-2 hover:ring-gray-200 dark:hover:ring-gray-800",
+                        ].join(" ")}
+                        onClick={() => setActiveImageId(img.id)}
+                        title={img.upload_path}
+                      >
+                        {url ? (
+                          <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                        ) : canPreview ? (
+                          <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gray-100 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                            Datei
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {activeImageId && (
+                  <div className="mt-3 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                    {previewUrls[activeImageId] ? (
+                      <img
+                        src={previewUrls[activeImageId]}
+                        alt="Artikelbild Vorschau"
+                        className="max-h-64 w-full bg-gray-50 object-contain dark:bg-gray-950/40"
+                      />
+                    ) : (
+                      <div className="flex h-40 w-full items-center justify-center bg-gray-50 text-sm text-gray-500 dark:bg-gray-950/40 dark:text-gray-400">
+                        Vorschau nicht verfügbar.
+                      </div>
+                    )}
+                    <div className="border-t border-gray-100 p-2 text-xs font-mono text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                      {(images.data ?? []).find((i) => i.id === activeImageId)?.upload_path ?? ""}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
