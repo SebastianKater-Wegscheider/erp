@@ -11,6 +11,7 @@ import { CostAllocationsPage } from "./pages/CostAllocations";
 import { OpexPage } from "./pages/Opex";
 import { MileagePage } from "./pages/Mileage";
 import { VatPage } from "./pages/Vat";
+import { BankPage } from "./pages/Bank";
 
 export function App() {
   return (
@@ -29,6 +30,7 @@ export function App() {
             <Route path="/opex" element={<OpexPage />} />
             <Route path="/mileage" element={<MileagePage />} />
             <Route path="/vat" element={<VatPage />} />
+            <Route path="/bank" element={<BankPage />} />
           </Routes>
         </div>
       </div>
