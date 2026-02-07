@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.api.v1.endpoints import (
+    bank,
     cost_allocations,
     files,
     inventory,
@@ -32,3 +33,5 @@ api_router.include_router(mileage.router, prefix="/mileage", tags=["mileage"])
 
 api_router.include_router(sales.router, prefix="/sales", tags=["sales"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+
+api_router.include_router(bank.router, prefix="/bank", tags=["bank"])

@@ -87,6 +87,38 @@ async def ensure_schema(conn: AsyncConnection) -> None:
         )
     )
 
+    # bank_transaction_purchases (join table)
+    await conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS bank_transaction_purchases ("
+            "bank_transaction_id UUID NOT NULL REFERENCES bank_transactions(id) ON DELETE CASCADE, "
+            "purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE, "
+            "PRIMARY KEY (bank_transaction_id, purchase_id)"
+            ")"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_bank_transaction_purchases_purchase_id "
+            "ON bank_transaction_purchases (purchase_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_bank_transaction_purchases_bank_transaction_id "
+            "ON bank_transaction_purchases (bank_transaction_id)"
+        )
+    )
+
+    # Helpful indexes for transaction listing/sync.
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bank_transactions_booked_date ON bank_transactions (booked_date)"))
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_bank_transactions_account_booked_date "
+            "ON bank_transactions (bank_account_id, booked_date)"
+        )
+    )
+
     # inventory_items
     await conn.execute(text("ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS serial_number VARCHAR(120)"))
 

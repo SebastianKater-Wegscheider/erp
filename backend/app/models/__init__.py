@@ -1,4 +1,6 @@
 from app.models.audit_log import AuditLog
+from app.models.bank_account import BankAccount
+from app.models.bank_transaction import BankTransaction
 from app.models.cost_allocation import CostAllocation, CostAllocationLine
 from app.models.document_counter import DocumentCounter
 from app.models.inventory_item import InventoryItem
@@ -13,6 +15,8 @@ from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
 
 __all__ = [
     "AuditLog",
+    "BankAccount",
+    "BankTransaction",
     "CostAllocation",
     "CostAllocationLine",
     "DocumentCounter",

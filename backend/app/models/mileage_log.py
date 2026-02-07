@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Column, Date, ForeignKey, Integer, String, Table
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,6 +12,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.enums import MileagePurpose
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.sql_enums import mileage_purpose_enum
+
+if TYPE_CHECKING:
+    from app.models.purchase import Purchase
 
 
 _mileage_log_purchases = Table(
@@ -40,7 +45,7 @@ class MileageLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
 
-    purchases: Mapped[list["Purchase"]] = relationship("Purchase", secondary=_mileage_log_purchases)
+    purchases: Mapped[list[Purchase]] = relationship("Purchase", secondary=_mileage_log_purchases)
 
     @property
     def purchase_ids(self) -> list[uuid.UUID]:
