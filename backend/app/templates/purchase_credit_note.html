@@ -148,17 +148,20 @@
           </tbody>
         </table>
 
-        {% for attachment in purchase_attachments %}
-          {% if attachment.is_image and attachment.file_uri %}
+        {% if purchase_attachment_images and purchase_attachment_images|length > 0 %}
+          <div class="evidence-images-title">Screenshots / Bilder</div>
+        {% endif %}
+
+        {% for img in purchase_attachment_images %}
             <div class="evidence-attachment">
               <div class="evidence-attachment-caption">
-                <span class="evidence-attachment-kind">{{ attachment.kind_label }}</span>
-                <span class="mono">{{ attachment.original_filename }}</span>
-                {% if attachment.note %}<span class="evidence-attachment-note">({{ attachment.note }})</span>{% endif %}
+                <span class="evidence-attachment-kind">{{ img.kind_label }}</span>
+                <span class="mono">{{ img.original_filename }}</span>
+                {% if img.part_label %}<span class="evidence-attachment-part">{{ img.part_label }}</span>{% endif %}
+                {% if img.note %}<span class="evidence-attachment-note">({{ img.note }})</span>{% endif %}
               </div>
-              <img class="evidence-attachment-img" src="{{ attachment.file_uri }}" alt="{{ attachment.original_filename }}" />
+              <img class="evidence-attachment-img" src="{{ img.file_uri }}" alt="{{ img.original_filename }}" />
             </div>
-          {% endif %}
         {% endfor %}
       {% else %}
         <div class="muted small">Keine zusätzlichen Uploads hinterlegt.</div>

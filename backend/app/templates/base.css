@@ -146,7 +146,7 @@ th {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-top: 10mm;
+  margin-top: 6mm;
 }
 
 .recipient {
@@ -182,13 +182,13 @@ th {
 }
 
 .subject {
-  margin: 10mm 0 2mm 0;
+  margin: 7mm 0 2mm 0;
   font-size: 18px;
   font-weight: 700;
 }
 
 .subline {
-  margin: 0 0 6mm 0;
+  margin: 0 0 4mm 0;
   color: #374151;
 }
 
@@ -249,7 +249,6 @@ table.items td {
 
 .evidence-attachment {
   margin-top: 5mm;
-  page-break-inside: avoid;
 }
 
 .evidence-attachment-caption {
@@ -269,21 +268,29 @@ table.items td {
   margin-left: 6px;
 }
 
+.evidence-attachment-part {
+  color: #6b7280;
+  margin-left: 6px;
+}
+
+.evidence-attachment + .evidence-attachment {
+  page-break-before: always;
+}
+
 .evidence-attachment-img {
   display: block;
   width: 100%;
-  max-height: 240mm;
   object-fit: contain;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 2mm;
+  border-radius: 4px;
+  padding: 0;
   background: #fff;
 }
 
 .grand-total-wrap {
   display: flex;
   justify-content: flex-end;
-  margin-top: 6mm;
+  margin-top: 4mm;
 }
 
 .grand-total-box {
@@ -344,7 +351,7 @@ table.items td {
 }
 
 .evidence {
-  margin-top: 10mm;
+  margin-top: 6mm;
   padding-top: 4mm;
   border-top: 1px solid #e5e7eb;
 }
@@ -371,6 +378,12 @@ table.items td {
   margin-top: 3mm;
   margin-bottom: 1.5mm;
   font-weight: 600;
+}
+
+.evidence-images-title {
+  margin-top: 4mm;
+  margin-bottom: 2mm;
+  font-weight: 700;
 }
 
 .evidence-files-table {

@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from PIL import Image
 
 from app.core.enums import DocumentType, InventoryStatus, PurchaseKind, PurchaseType
 from app.core.config import get_settings
@@ -55,6 +56,45 @@ def _optional_str(value: str | None) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Path]:
+    """
+    Create page-friendly slices for very tall screenshots so they can be rendered
+    at full width (readable) without shrinking to fit a single page.
+    """
+    # These are CSS px, aligned with WeasyPrint's 96dpi CSS pixel model.
+    target_width_px = 680
+    max_scaled_height_px = 900
+
+    img = Image.open(src_path)
+    try:
+        img.load()
+        if img.width <= 0 or img.height <= 0:
+            return [src_path]
+
+        scaled_height_px = img.height * (target_width_px / img.width)
+        if scaled_height_px <= max_scaled_height_px:
+            return [src_path]
+
+        slice_height_px = max(1, int(max_scaled_height_px * (img.width / target_width_px)))
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        out_paths: list[Path] = []
+        part = 1
+        for top in range(0, img.height, slice_height_px):
+            bottom = min(img.height, top + slice_height_px)
+            crop = img.crop((0, top, img.width, bottom))
+            out_path = out_dir / f"{stem}-part{part:02d}.png"
+            crop.save(out_path, format="PNG", optimize=True)
+            out_paths.append(out_path)
+            part += 1
+        return out_paths
+    finally:
+        try:
+            img.close()
+        except Exception:
+            pass
 
 
 async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCreate) -> Purchase:
@@ -631,6 +671,7 @@ async def generate_purchase_credit_note_pdf(
     attachment_rows = (
         await session.execute(
             select(
+                PurchaseAttachment.id,
                 PurchaseAttachment.kind,
                 PurchaseAttachment.original_filename,
                 PurchaseAttachment.note,
@@ -652,6 +693,9 @@ async def generate_purchase_credit_note_pdf(
     storage_dir = settings.app_storage_dir.resolve()
     image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
     attachments_ctx = []
+    attachment_images_ctx = []
+    tmp_dir = storage_dir / "tmp" / "pdf-evidence" / str(purchase.id)
+    tmp_paths: list[Path] = []
     for r in attachment_rows:
         upload_path = str(r.upload_path or "").strip().lstrip("/")
         abs_path = (storage_dir / upload_path).resolve()
@@ -663,50 +707,76 @@ async def generate_purchase_credit_note_pdf(
             file_uri = None
 
         ext = Path(upload_path).suffix.lower()
+        is_image = ext in image_exts
         attachments_ctx.append(
             {
+                "id": str(r.id),
                 "kind": r.kind,
                 "kind_label": attachment_kind_labels.get(str(r.kind).upper(), str(r.kind)),
                 "original_filename": r.original_filename,
                 "note": r.note,
                 "upload_path": upload_path,
                 "created_at": r.created_at.strftime("%d.%m.%Y %H:%M") if getattr(r, "created_at", None) else None,
-                "is_image": ext in image_exts,
+                "is_image": is_image,
                 "file_uri": file_uri,
             }
         )
+        if is_image and file_uri and abs_path.exists():
+            stem = f"{r.id}"
+            slice_paths = _slice_image_for_pdf(src_path=abs_path, out_dir=tmp_dir, stem=stem)
+            for idx, p in enumerate(slice_paths, start=1):
+                if p != abs_path:
+                    tmp_paths.append(p)
+                attachment_images_ctx.append(
+                    {
+                        "kind_label": attachment_kind_labels.get(str(r.kind).upper(), str(r.kind)),
+                        "original_filename": r.original_filename,
+                        "note": r.note,
+                        "part_label": f"Teil {idx}/{len(slice_paths)}" if len(slice_paths) > 1 else None,
+                        "file_uri": p.as_uri(),
+                    }
+                )
 
     templates_dir = Path(__file__).resolve().parents[1] / "templates"
     rel_path = f"pdfs/credit-notes/{purchase.document_number}.pdf"
     out_path = settings.app_storage_dir / rel_path
 
-    render_pdf(
-        templates_dir=templates_dir,
-        template_name="purchase_credit_note.html",
-        context={
-            "document_number": purchase.document_number,
-            "purchase_date": purchase.purchase_date.strftime("%d.%m.%Y"),
-            "company_name": settings.company_name,
-            "company_address": settings.company_address,
-            "company_email": settings.company_email,
-            "company_vat_id": settings.company_vat_id,
-            "company_logo_path": settings.company_logo_path,
-            "company_small_business_notice": settings.company_small_business_notice,
-            "counterparty_name": purchase.counterparty_name,
-            "counterparty_address": purchase.counterparty_address,
-            "counterparty_birthdate": purchase.counterparty_birthdate.strftime("%d.%m.%Y") if purchase.counterparty_birthdate else None,
-            "counterparty_id_number": purchase.counterparty_id_number,
-            "payment_source": {"CASH": "Bar", "BANK": "Bank"}.get(purchase.payment_source.value, purchase.payment_source.value),
-            "source_platform": purchase.source_platform,
-            "listing_url": purchase.listing_url,
-            "purchase_notes": purchase.notes,
-            "purchase_attachments": attachments_ctx,
-            "lines": lines_ctx,
-            "total_amount_eur": format_eur(purchase.total_amount_cents),
-        },
-        output_path=out_path,
-        css_paths=[templates_dir / "base.css"],
-    )
+    try:
+        render_pdf(
+            templates_dir=templates_dir,
+            template_name="purchase_credit_note.html",
+            context={
+                "document_number": purchase.document_number,
+                "purchase_date": purchase.purchase_date.strftime("%d.%m.%Y"),
+                "company_name": settings.company_name,
+                "company_address": settings.company_address,
+                "company_email": settings.company_email,
+                "company_vat_id": settings.company_vat_id,
+                "company_logo_path": settings.company_logo_path,
+                "company_small_business_notice": settings.company_small_business_notice,
+                "counterparty_name": purchase.counterparty_name,
+                "counterparty_address": purchase.counterparty_address,
+                "counterparty_birthdate": purchase.counterparty_birthdate.strftime("%d.%m.%Y") if purchase.counterparty_birthdate else None,
+                "counterparty_id_number": purchase.counterparty_id_number,
+                "payment_source": {"CASH": "Bar", "BANK": "Bank"}.get(purchase.payment_source.value, purchase.payment_source.value),
+                "source_platform": purchase.source_platform,
+                "listing_url": purchase.listing_url,
+                "purchase_notes": purchase.notes,
+                "purchase_attachments": attachments_ctx,
+                "purchase_attachment_images": attachment_images_ctx,
+                "lines": lines_ctx,
+                "total_amount_eur": format_eur(purchase.total_amount_cents),
+            },
+            output_path=out_path,
+            css_paths=[templates_dir / "base.css"],
+        )
+    finally:
+        for p in tmp_paths:
+            try:
+                if p.exists():
+                    p.unlink()
+            except Exception:
+                pass
 
     purchase.pdf_path = rel_path
 
