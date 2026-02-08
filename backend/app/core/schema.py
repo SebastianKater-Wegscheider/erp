@@ -64,6 +64,27 @@ async def ensure_schema(conn: AsyncConnection) -> None:
     for stmt in stmts:
         await conn.execute(text(stmt))
 
+    # enum upgrades
+    await conn.execute(text("ALTER TYPE inventory_status ADD VALUE IF NOT EXISTS 'FBA_INBOUND'"))
+    await conn.execute(text("ALTER TYPE inventory_status ADD VALUE IF NOT EXISTS 'FBA_WAREHOUSE'"))
+    await conn.execute(text("ALTER TYPE inventory_status ADD VALUE IF NOT EXISTS 'DISCREPANCY'"))
+    await conn.execute(
+        text(
+            "DO $$ BEGIN "
+            "CREATE TYPE fba_shipment_status AS ENUM ('DRAFT', 'SHIPPED', 'RECEIVED'); "
+            "EXCEPTION WHEN duplicate_object THEN NULL; "
+            "END $$"
+        )
+    )
+    await conn.execute(
+        text(
+            "DO $$ BEGIN "
+            "CREATE TYPE fba_cost_distribution_method AS ENUM ('EQUAL', 'PURCHASE_PRICE_WEIGHTED'); "
+            "EXCEPTION WHEN duplicate_object THEN NULL; "
+            "END $$"
+        )
+    )
+
     # mileage_log_purchases (join table)
     await conn.execute(
         text(
@@ -109,6 +130,76 @@ async def ensure_schema(conn: AsyncConnection) -> None:
         text(
             "CREATE INDEX IF NOT EXISTS ix_bank_transaction_purchases_bank_transaction_id "
             "ON bank_transaction_purchases (bank_transaction_id)"
+        )
+    )
+
+    # fba_shipments
+    await conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS fba_shipments ("
+            "id UUID PRIMARY KEY, "
+            "name VARCHAR(180) NOT NULL, "
+            "status fba_shipment_status NOT NULL DEFAULT 'DRAFT', "
+            "carrier VARCHAR(80), "
+            "tracking_number VARCHAR(120), "
+            "shipping_cost_cents INTEGER NOT NULL DEFAULT 0, "
+            "cost_distribution_method fba_cost_distribution_method NOT NULL DEFAULT 'EQUAL', "
+            "shipped_at TIMESTAMPTZ, "
+            "received_at TIMESTAMPTZ, "
+            "created_at TIMESTAMPTZ NOT NULL DEFAULT now(), "
+            "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+            ")"
+        )
+    )
+    await conn.execute(text("ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS name VARCHAR(180)"))
+    await conn.execute(text("ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS status fba_shipment_status NOT NULL DEFAULT 'DRAFT'"))
+    await conn.execute(text("ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS carrier VARCHAR(80)"))
+    await conn.execute(text("ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS tracking_number VARCHAR(120)"))
+    await conn.execute(text("ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS shipping_cost_cents INTEGER NOT NULL DEFAULT 0"))
+    await conn.execute(
+        text(
+            "ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS "
+            "cost_distribution_method fba_cost_distribution_method NOT NULL DEFAULT 'EQUAL'"
+        )
+    )
+    await conn.execute(text("ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ"))
+    await conn.execute(text("ALTER TABLE fba_shipments ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fba_shipments_status ON fba_shipments (status)"))
+
+    # fba_shipment_items
+    await conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS fba_shipment_items ("
+            "id UUID PRIMARY KEY, "
+            "shipment_id UUID NOT NULL REFERENCES fba_shipments(id) ON DELETE CASCADE, "
+            "inventory_item_id UUID NOT NULL REFERENCES inventory_items(id), "
+            "allocated_shipping_cost_cents INTEGER NOT NULL DEFAULT 0, "
+            "received_status inventory_status, "
+            "discrepancy_note TEXT, "
+            "CONSTRAINT uq_fba_shipment_item UNIQUE (shipment_id, inventory_item_id)"
+            ")"
+        )
+    )
+    await conn.execute(
+        text("ALTER TABLE fba_shipment_items ADD COLUMN IF NOT EXISTS allocated_shipping_cost_cents INTEGER NOT NULL DEFAULT 0")
+    )
+    await conn.execute(text("ALTER TABLE fba_shipment_items ADD COLUMN IF NOT EXISTS received_status inventory_status"))
+    await conn.execute(text("ALTER TABLE fba_shipment_items ADD COLUMN IF NOT EXISTS discrepancy_note TEXT"))
+    await conn.execute(
+        text(
+            "ALTER TABLE fba_shipment_items DROP CONSTRAINT IF EXISTS uq_fba_shipment_item"
+        )
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE fba_shipment_items "
+            "ADD CONSTRAINT uq_fba_shipment_item UNIQUE (shipment_id, inventory_item_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_fba_shipment_items_inventory_item_id "
+            "ON fba_shipment_items (inventory_item_id)"
         )
     )
 

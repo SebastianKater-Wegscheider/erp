@@ -19,9 +19,12 @@ class PurchaseType(StrEnum):
 class InventoryStatus(StrEnum):
     DRAFT = "DRAFT"
     AVAILABLE = "AVAILABLE"
+    FBA_INBOUND = "FBA_INBOUND"
+    FBA_WAREHOUSE = "FBA_WAREHOUSE"
     RESERVED = "RESERVED"
     SOLD = "SOLD"
     RETURNED = "RETURNED"
+    DISCREPANCY = "DISCREPANCY"
     LOST = "LOST"
 
 
@@ -46,6 +49,17 @@ class OrderStatus(StrEnum):
     DRAFT = "DRAFT"
     FINALIZED = "FINALIZED"
     CANCELLED = "CANCELLED"
+
+
+class FBAShipmentStatus(StrEnum):
+    DRAFT = "DRAFT"
+    SHIPPED = "SHIPPED"
+    RECEIVED = "RECEIVED"
+
+
+class FBACostDistributionMethod(StrEnum):
+    EQUAL = "EQUAL"
+    PURCHASE_PRICE_WEIGHTED = "PURCHASE_PRICE_WEIGHTED"
 
 
 class MileagePurpose(StrEnum):

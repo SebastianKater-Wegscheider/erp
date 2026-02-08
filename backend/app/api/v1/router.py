@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from app.api.v1.endpoints import (
     bank,
     cost_allocations,
+    fba_shipments,
     files,
     inventory,
     master_products,
@@ -25,6 +26,7 @@ api_router.include_router(files.router, prefix="/files", tags=["files"])
 
 api_router.include_router(master_products.router, prefix="/master-products", tags=["master-products"])
 api_router.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
+api_router.include_router(fba_shipments.router, prefix="/fba-shipments", tags=["fba-shipments"])
 
 api_router.include_router(purchases.router, prefix="/purchases", tags=["purchases"])
 api_router.include_router(cost_allocations.router, prefix="/cost-allocations", tags=["cost-allocations"])

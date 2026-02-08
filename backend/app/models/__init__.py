@@ -3,6 +3,7 @@ from app.models.bank_account import BankAccount
 from app.models.bank_transaction import BankTransaction
 from app.models.cost_allocation import CostAllocation, CostAllocationLine
 from app.models.document_counter import DocumentCounter
+from app.models.fba_shipment import FBAShipment, FBAShipmentItem
 from app.models.inventory_item import InventoryItem
 from app.models.inventory_item_image import InventoryItemImage
 from app.models.ledger_entry import LedgerEntry
@@ -20,6 +21,8 @@ __all__ = [
     "CostAllocation",
     "CostAllocationLine",
     "DocumentCounter",
+    "FBAShipment",
+    "FBAShipmentItem",
     "InventoryItem",
     "InventoryItemImage",
     "LedgerEntry",
