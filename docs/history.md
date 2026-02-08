@@ -241,3 +241,4 @@
 - Dialoge: mobile Seitenrands + max-height/overflow fuer lange Inhalte; Close-Button mit groesserer Hit-Area.
 - Tables: horizontaler Scroll als Default (`overflow-x-auto`) und `min-w-max`, damit Spalten nicht gequetscht werden.
 - Topbar: kurzer Titel auf Mobile (Abkuerzung), damit Header nicht ueberlaeuft.
+- Zusaetzlicher Guard gegen horizontales "Seitwaerts-Panning" auf iOS: `overflow-x` fuer `html/body` auf `clip` (Fallback `hidden`).
