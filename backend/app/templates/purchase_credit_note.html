@@ -23,19 +23,25 @@
         <div class="recipient-name">{{ counterparty_name }}</div>
         <div class="recipient-address preline">{{ counterparty_address or "" }}</div>
 
-        <div class="spacer"></div>
+        {% if counterparty_birthdate or counterparty_id_number %}
+          <div class="spacer"></div>
 
-        <div class="small muted">Identifikation</div>
-        <table class="meta-table">
-          <tr>
-            <td>Geburtsdatum</td>
-            <td class="right">{{ counterparty_birthdate or "" }}</td>
-          </tr>
-          <tr>
-            <td>Ausweisnr.</td>
-            <td class="right mono">{{ counterparty_id_number or "" }}</td>
-          </tr>
-        </table>
+          <div class="small muted">Identifikation</div>
+          <table class="meta-table">
+            {% if counterparty_birthdate %}
+              <tr>
+                <td>Geburtsdatum</td>
+                <td class="right">{{ counterparty_birthdate }}</td>
+              </tr>
+            {% endif %}
+            {% if counterparty_id_number %}
+              <tr>
+                <td>Ausweisnr.</td>
+                <td class="right mono">{{ counterparty_id_number }}</td>
+              </tr>
+            {% endif %}
+          </table>
+        {% endif %}
       </div>
 
       <div class="meta">
@@ -56,7 +62,7 @@
       </div>
     </div>
 
-    <div class="subject">Gutschrift (Eigenbeleg) – Ankauf</div>
+    <div class="subject">Gutschrift (Eigenbeleg) - Ankauf</div>
     <div class="subline">
       Ankauf von Gebrauchtwaren von einer Privatperson. Die Nachweise zum Ankauf sind unten dokumentiert.
     </div>
@@ -105,7 +111,13 @@
         </tr>
         <tr>
           <td>Anzeige-URL</td>
-          <td class="mono">{{ listing_url or "" }}</td>
+          <td class="mono">
+            {% if listing_url %}
+              <a href="{{ listing_url }}">{{ listing_url }}</a>
+            {% else %}
+              {{ "" }}
+            {% endif %}
+          </td>
         </tr>
         <tr>
           <td>Notizen</td>
@@ -121,7 +133,7 @@
               <th>Typ</th>
               <th>Datei</th>
               <th>Notiz</th>
-              <th>Pfad</th>
+              <th>Upload</th>
             </tr>
           </thead>
           <tbody>
@@ -130,11 +142,24 @@
                 <td>{{ attachment.kind_label }}</td>
                 <td class="mono">{{ attachment.original_filename }}</td>
                 <td>{{ attachment.note or "" }}</td>
-                <td class="mono">{{ attachment.upload_path }}</td>
+                <td class="mono">{{ attachment.created_at or "" }}</td>
               </tr>
             {% endfor %}
           </tbody>
         </table>
+
+        {% for attachment in purchase_attachments %}
+          {% if attachment.is_image and attachment.file_uri %}
+            <div class="evidence-attachment">
+              <div class="evidence-attachment-caption">
+                <span class="evidence-attachment-kind">{{ attachment.kind_label }}</span>
+                <span class="mono">{{ attachment.original_filename }}</span>
+                {% if attachment.note %}<span class="evidence-attachment-note">({{ attachment.note }})</span>{% endif %}
+              </div>
+              <img class="evidence-attachment-img" src="{{ attachment.file_uri }}" alt="{{ attachment.original_filename }}" />
+            </div>
+          {% endif %}
+        {% endfor %}
       {% else %}
         <div class="muted small">Keine zusätzlichen Uploads hinterlegt.</div>
       {% endif %}

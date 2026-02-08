@@ -635,6 +635,7 @@ async def generate_purchase_credit_note_pdf(
                 PurchaseAttachment.original_filename,
                 PurchaseAttachment.note,
                 PurchaseAttachment.upload_path,
+                PurchaseAttachment.created_at,
             )
             .where(PurchaseAttachment.purchase_id == purchase.id)
             .order_by(PurchaseAttachment.created_at.asc())
@@ -647,18 +648,34 @@ async def generate_purchase_credit_note_pdf(
         "DELIVERY": "Versand",
         "OTHER": "Sonstiges",
     }
-    attachments_ctx = [
-        {
-            "kind": r.kind,
-            "kind_label": attachment_kind_labels.get(str(r.kind).upper(), str(r.kind)),
-            "original_filename": r.original_filename,
-            "note": r.note,
-            "upload_path": r.upload_path,
-        }
-        for r in attachment_rows
-    ]
-
     settings = get_settings()
+    storage_dir = settings.app_storage_dir.resolve()
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+    attachments_ctx = []
+    for r in attachment_rows:
+        upload_path = str(r.upload_path or "").strip().lstrip("/")
+        abs_path = (storage_dir / upload_path).resolve()
+        file_uri = None
+        try:
+            abs_path.relative_to(storage_dir)
+            file_uri = abs_path.as_uri() if upload_path.startswith("uploads/") else None
+        except ValueError:
+            file_uri = None
+
+        ext = Path(upload_path).suffix.lower()
+        attachments_ctx.append(
+            {
+                "kind": r.kind,
+                "kind_label": attachment_kind_labels.get(str(r.kind).upper(), str(r.kind)),
+                "original_filename": r.original_filename,
+                "note": r.note,
+                "upload_path": upload_path,
+                "created_at": r.created_at.strftime("%d.%m.%Y %H:%M") if getattr(r, "created_at", None) else None,
+                "is_image": ext in image_exts,
+                "file_uri": file_uri,
+            }
+        )
+
     templates_dir = Path(__file__).resolve().parents[1] / "templates"
     rel_path = f"pdfs/credit-notes/{purchase.document_number}.pdf"
     out_path = settings.app_storage_dir / rel_path

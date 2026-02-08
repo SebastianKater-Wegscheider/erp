@@ -1,6 +1,6 @@
 @page {
   size: A4;
-  margin: 18mm 16mm 34mm 16mm;
+  margin: 18mm 16mm 40mm 16mm;
 }
 
 * {
@@ -11,6 +11,12 @@ body {
   font-family: "Inter", "Roboto", "Open Sans", DejaVu Sans, sans-serif;
   font-size: 11px;
   color: #111827;
+}
+
+a {
+  color: #111827;
+  text-decoration: underline;
+  word-break: break-word;
 }
 
 h1 {
@@ -239,6 +245,39 @@ table.items td {
   border-top: 1px solid #d1d5db;
   padding-top: 4px;
   font-weight: 700;
+}
+
+.evidence-attachment {
+  margin-top: 5mm;
+  page-break-inside: avoid;
+}
+
+.evidence-attachment-caption {
+  font-size: 10px;
+  color: #374151;
+  margin: 0 0 2mm 0;
+  line-height: 1.35;
+}
+
+.evidence-attachment-kind {
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.evidence-attachment-note {
+  color: #6b7280;
+  margin-left: 6px;
+}
+
+.evidence-attachment-img {
+  display: block;
+  width: 100%;
+  max-height: 240mm;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 2mm;
+  background: #fff;
 }
 
 .grand-total-wrap {

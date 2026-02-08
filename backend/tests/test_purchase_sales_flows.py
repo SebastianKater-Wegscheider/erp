@@ -25,6 +25,7 @@ from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.purchase import Purchase, PurchaseLine
+from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrder
 from app.models.sales_correction import SalesCorrection
 from app.schemas.fba_shipment import FBAShipmentCreate, FBAShipmentReceive, FBAShipmentReceiveDiscrepancy
@@ -805,6 +806,50 @@ async def test_generate_purchase_credit_note_pdf_sets_pdf_path(monkeypatch, db_s
     settings = get_settings()
     out_path = settings.app_storage_dir / updated.pdf_path
     assert out_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_purchase_credit_note_pdf_includes_image_attachments_in_context(monkeypatch, db_session: AsyncSession) -> None:
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, suffix="EVI")
+        purchase = await _create_private_purchase(
+            db_session,
+            purchase_date=date(2026, 2, 8),
+            lines=[(mp.id, 1_200)],
+        )
+
+        settings = get_settings()
+        img_rel = "uploads/evidence-test.png"
+        (settings.app_storage_dir / "uploads").mkdir(parents=True, exist_ok=True)
+        (settings.app_storage_dir / img_rel).write_bytes(b"png")
+
+        db_session.add(
+            PurchaseAttachment(
+                purchase_id=purchase.id,
+                upload_path=img_rel,
+                original_filename="evidence.png",
+                kind="CHAT",
+                note="Screenshot",
+            )
+        )
+
+    captured: dict[str, object] = {}
+
+    def fake_render_pdf(*, context: dict, **_kwargs) -> None:
+        captured.update(context)
+
+    monkeypatch.setattr("app.services.purchases.render_pdf", fake_render_pdf)
+
+    async with db_session.begin():
+        await generate_purchase_credit_note_pdf(db_session, actor=ACTOR, purchase_id=purchase.id)
+
+    attachments = captured.get("purchase_attachments")
+    assert isinstance(attachments, list)
+    assert len(attachments) == 1
+    a = attachments[0]
+    assert a["original_filename"] == "evidence.png"
+    assert a["is_image"] is True
+    assert str(a["file_uri"]).startswith("file:")
 
 
 @pytest.mark.asyncio
