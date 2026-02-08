@@ -106,9 +106,9 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
                 bottom = min(h, bottom + pad)
                 work = work.crop((left, top, right, bottom))
 
-        if work.width != img.width or work.height != img.height:
-            # Preserve original mode if possible, but use the cropped RGB for slicing/decisions.
-            img = work
+        # Always continue with the processed RGB image (cropped and/or flattened),
+        # otherwise later sampling may fail on RGBA images.
+        img = work
 
         scaled_height_px = img.height * (target_width_px / img.width)
         if scaled_height_px <= max_scaled_height_px:
