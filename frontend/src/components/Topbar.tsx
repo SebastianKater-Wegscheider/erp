@@ -63,13 +63,14 @@ export function Topbar() {
 
   return (
     <div className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur dark:border-gray-800 dark:bg-gray-950/80">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="flex min-w-0 items-center gap-3">
           <Link
             to={NAV_PRIMARY.to}
             className="shrink-0 font-semibold tracking-tight text-gray-900 hover:text-gray-700 dark:text-gray-100 dark:hover:text-gray-200"
           >
-            Kater-Wegscheider Company
+            <span className="sm:hidden">KWC</span>
+            <span className="hidden sm:inline">Kater-Wegscheider Company</span>
           </Link>
 
           {activeItem && (
@@ -150,7 +151,7 @@ export function Topbar() {
             >
               <Menu className="h-4 w-4" />
             </Button>
-            <DialogContent className="left-0 top-0 flex h-dvh w-[340px] max-w-[90vw] translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-r border-gray-200 p-0 dark:border-gray-800">
+            <DialogContent className="left-0 top-0 flex h-dvh w-[340px] max-w-[90vw] translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-r border-gray-200 p-0 dark:border-gray-800">
               <DialogHeader className="border-b border-gray-200 px-4 py-4 dark:border-gray-800">
                 <DialogTitle>Navigation</DialogTitle>
                 <DialogDescription className="sr-only">Wechseln Sie zwischen den Modulen.</DialogDescription>

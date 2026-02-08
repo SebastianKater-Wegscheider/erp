@@ -16,10 +16,11 @@ const buttonVariants = cva(
         ghost: "hover:bg-gray-100 dark:hover:bg-gray-800",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3",
+        // Mobile: slightly larger tap targets; desktop remains unchanged via `sm:` overrides.
+        default: "h-10 px-4 py-2 sm:h-9",
+        sm: "h-9 rounded-md px-3 sm:h-8",
         lg: "h-10 rounded-md px-6",
-        icon: "h-9 w-9",
+        icon: "h-10 w-10 sm:h-9 sm:w-9",
       },
     },
     defaultVariants: {

@@ -224,3 +224,20 @@
 - WeasyPrint nutzt lokale `file://` URIs fuer Uploads; nur `uploads/` Pfade werden akzeptiert (wie bisher in API-Validierung).
 - Layout/CSS wird so angepasst, dass der Footer die Inhalte nicht ueberlappt (groessere Bottom-Margin) und Bilder skaliert/umgebrochen werden.
 - Sehr hohe/vertikale Screenshots werden beim PDF-Render in mehrere Seitensegmente geschnitten, damit sie bei voller Breite lesbar bleiben.
+
+## 2026-02-08 - Frontend Mobile-Optimierung (Desktop unveraendert)
+
+### Ausgangslage
+- Desktop-Ansicht ist stimmig; auf Mobile wirkt die UI zu dicht/klein (Tap-Targets, Form-Controls) und Dialoge/Tables sind nicht angenehm zu bedienen.
+
+### Business-Entscheidungen
+- Desktop-Layout bleibt unveraendert; Anpassungen werden ausschliesslich fuer kleine Viewports umgesetzt.
+- Fokus auf "nutzbar auf dem Handy" statt pixel-perfekte Redesigns: groessere Interaktionsflaechen, weniger Padding, bessere Scrollbarkeit.
+
+### Technische Entscheidungen
+- UI-Primitives bekommen mobile-spezifische Tailwind-Klassen (Basis) mit `sm:` Overrides fuer identisches Desktop-Verhalten.
+- Inputs/Selects auf >=16px Font gesetzt, um iOS Safari Auto-Zoom zu vermeiden.
+- Cards: geringere Padding/Title-Groesse auf Mobile, um mehr Inhalt sichtbar zu machen.
+- Dialoge: mobile Seitenrands + max-height/overflow fuer lange Inhalte; Close-Button mit groesserer Hit-Area.
+- Tables: horizontaler Scroll als Default (`overflow-x-auto`) und `min-w-max`, damit Spalten nicht gequetscht werden.
+- Topbar: kurzer Titel auf Mobile (Abkuerzung), damit Header nicht ueberlaeuft.

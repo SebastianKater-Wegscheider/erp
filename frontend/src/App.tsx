@@ -19,7 +19,7 @@ export function App() {
     <AuthGate>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <Topbar />
-        <div className="mx-auto max-w-6xl px-4 py-6">
+        <div className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />

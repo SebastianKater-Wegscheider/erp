@@ -33,13 +33,14 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-gray-200 bg-white p-6 text-gray-900 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100",
+        // Mobile: add side margins + allow scroll for tall dialogs; desktop remains unchanged via `sm:` overrides.
+        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[85dvh] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-auto rounded-lg border border-gray-200 bg-white p-4 text-gray-900 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 sm:w-full sm:p-6",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-gray-700">
+      <DialogClose className="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-gray-700 sm:right-4 sm:top-4 sm:h-8 sm:w-8">
         <X className="h-4 w-4" />
         <span className="sr-only">Schließen</span>
       </DialogClose>
