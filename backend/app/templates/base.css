@@ -248,7 +248,11 @@ table.items td {
 }
 
 .evidence-attachment {
-  margin-top: 5mm;
+  margin-top: 3mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  break-after: page;
+  page-break-after: always;
 }
 
 .evidence-attachment-caption {
@@ -273,8 +277,9 @@ table.items td {
   margin-left: 6px;
 }
 
-.evidence-attachment + .evidence-attachment {
-  page-break-before: always;
+.evidence-attachment:last-child {
+  break-after: auto;
+  page-break-after: auto;
 }
 
 .evidence-attachment-img {
