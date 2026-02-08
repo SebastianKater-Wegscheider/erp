@@ -22,4 +22,4 @@ backups/*
 
 *.log
 .DS_Store
-
+repomix-output.xml
