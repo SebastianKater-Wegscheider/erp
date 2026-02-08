@@ -42,6 +42,8 @@ type PurchaseRefOut = {
   purchase_date: string;
   counterparty_name: string;
   total_amount_cents: number;
+  shipping_cost_cents: number;
+  buyer_protection_fee_cents: number;
   document_number?: string | null;
 };
 
@@ -61,7 +63,9 @@ function accountLabel(a: BankAccountOut): string {
 
 function purchaseLabel(p: PurchaseRefOut): string {
   const doc = p.document_number ? `${p.document_number} · ` : "";
-  return `${doc}${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name} · ${formatEur(p.total_amount_cents)}`;
+  const totalPaidCents =
+    (p.total_amount_cents ?? 0) + (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
+  return `${doc}${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name} · Bezahlt ${formatEur(totalPaidCents)} (Waren ${formatEur(p.total_amount_cents)})`;
 }
 
 export function BankPage() {

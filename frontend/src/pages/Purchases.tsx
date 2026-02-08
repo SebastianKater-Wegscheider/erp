@@ -40,6 +40,8 @@ type PurchaseOut = {
   counterparty_birthdate?: string | null;
   counterparty_id_number?: string | null;
   total_amount_cents: number;
+  shipping_cost_cents: number;
+  buyer_protection_fee_cents: number;
   tax_rate_bp?: number;
   payment_source: string;
   document_number?: string | null;
@@ -52,6 +54,8 @@ type PurchaseOut = {
     condition: string;
     purchase_type: string;
     purchase_price_cents: number;
+    shipping_allocated_cents: number;
+    buyer_protection_fee_allocated_cents: number;
   }>;
 };
 
@@ -134,6 +138,14 @@ function parseDateEuToIso(input: string): string | null {
   if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
 
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseMoneyInputToCents(input: string): number | null {
+  try {
+    return parseEurToCents(input);
+  } catch {
+    return null;
+  }
 }
 
 function newLineId(): string {
@@ -417,6 +429,8 @@ export function PurchasesPage() {
   const [counterpartyIdNumber, setCounterpartyIdNumber] = useState("");
   const [paymentSource, setPaymentSource] = useState<string>("CASH");
   const [totalAmount, setTotalAmount] = useState<string>("0,00");
+  const [shippingCost, setShippingCost] = useState<string>("0,00");
+  const [buyerProtectionFee, setBuyerProtectionFee] = useState<string>("0,00");
 
   const [externalInvoiceNumber, setExternalInvoiceNumber] = useState<string>("");
   const [receiptUploadPath, setReceiptUploadPath] = useState<string>("");
@@ -437,13 +451,26 @@ export function PurchasesPage() {
   const purchaseDateIso = useMemo(() => parseDateEuToIso(purchaseDate), [purchaseDate]);
   const purchaseDateValid = !!purchaseDateIso;
 
-  const totalCents = useMemo(() => {
-    try {
-      return parseEurToCents(totalAmount);
-    } catch {
-      return 0;
-    }
-  }, [totalAmount]);
+  const totalCentsParsed = useMemo(() => parseMoneyInputToCents(totalAmount), [totalAmount]);
+  const shippingCostCentsParsed = useMemo(
+    () => (kind === "PRIVATE_DIFF" ? parseMoneyInputToCents(shippingCost) : 0),
+    [kind, shippingCost],
+  );
+  const buyerProtectionFeeCentsParsed = useMemo(
+    () => (kind === "PRIVATE_DIFF" ? parseMoneyInputToCents(buyerProtectionFee) : 0),
+    [kind, buyerProtectionFee],
+  );
+
+  const totalCents = totalCentsParsed ?? 0;
+  const shippingCostCents = shippingCostCentsParsed ?? 0;
+  const buyerProtectionFeeCents = buyerProtectionFeeCentsParsed ?? 0;
+  const extraCostsCents = shippingCostCents + buyerProtectionFeeCents;
+  const totalPaidCents = totalCents + extraCostsCents;
+  const extraCostsValid =
+    shippingCostCentsParsed !== null &&
+    buyerProtectionFeeCentsParsed !== null &&
+    shippingCostCents >= 0 &&
+    buyerProtectionFeeCents >= 0;
 
   const sumLinesCents = useMemo(() => {
     let sum = 0;
@@ -486,6 +513,8 @@ export function PurchasesPage() {
         counterparty_id_number:
           kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
         total_amount_cents: totalCents,
+        shipping_cost_cents: kind === "PRIVATE_DIFF" ? shippingCostCents : 0,
+        buyer_protection_fee_cents: kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0,
         tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? (vatEnabled ? Number(taxRateBp) : 0) : 0,
         payment_source: paymentSource,
         external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
@@ -508,6 +537,8 @@ export function PurchasesPage() {
       setExternalInvoiceNumber("");
       setReceiptUploadPath("");
       setTotalAmount("0,00");
+      setShippingCost("0,00");
+      setBuyerProtectionFee("0,00");
       setLines([]);
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
@@ -532,6 +563,8 @@ export function PurchasesPage() {
         counterparty_id_number:
           kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
         total_amount_cents: totalCents,
+        shipping_cost_cents: kind === "PRIVATE_DIFF" ? shippingCostCents : 0,
+        buyer_protection_fee_cents: kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0,
         tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? (vatEnabled ? Number(taxRateBp) : 0) : 0,
         payment_source: paymentSource,
         external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
@@ -555,6 +588,8 @@ export function PurchasesPage() {
       setExternalInvoiceNumber("");
       setReceiptUploadPath("");
       setTotalAmount("0,00");
+      setShippingCost("0,00");
+      setBuyerProtectionFee("0,00");
       setLines([]);
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
@@ -600,6 +635,8 @@ export function PurchasesPage() {
     lines.length > 0 &&
     allLinesHaveProduct &&
     splitOk &&
+    totalCentsParsed !== null &&
+    (kind !== "PRIVATE_DIFF" || extraCostsValid) &&
     (kind === "PRIVATE_DIFF" || (externalInvoiceNumber.trim() && receiptUploadPath.trim()));
 
   const platformOptions = useMemo(() => {
@@ -636,6 +673,8 @@ export function PurchasesPage() {
     setCounterpartyIdNumber(p.counterparty_id_number ?? "");
     setPaymentSource(p.payment_source);
     setTotalAmount(formatEur(p.total_amount_cents));
+    setShippingCost(formatEur(p.shipping_cost_cents ?? 0));
+    setBuyerProtectionFee(formatEur(p.buyer_protection_fee_cents ?? 0));
     setExternalInvoiceNumber(p.external_invoice_number ?? "");
     setReceiptUploadPath(p.receipt_upload_path ?? "");
     setTaxRateBp(String(p.tax_rate_bp ?? 2000));
@@ -664,6 +703,8 @@ export function PurchasesPage() {
     setCounterpartyIdNumber("");
     setPaymentSource("CASH");
     setTotalAmount("0,00");
+    setShippingCost("0,00");
+    setBuyerProtectionFee("0,00");
     setExternalInvoiceNumber("");
     setReceiptUploadPath("");
     setTaxRateBp("2000");
@@ -727,17 +768,29 @@ export function PurchasesPage() {
                 <TableHead>Datum</TableHead>
                 <TableHead>Art</TableHead>
                 <TableHead>Verkäufer</TableHead>
-                <TableHead className="text-right">Gesamt</TableHead>
+                <TableHead className="text-right">Waren</TableHead>
+                <TableHead className="text-right">Nebenkosten</TableHead>
+                <TableHead className="text-right">Bezahlt</TableHead>
                 <TableHead className="text-right">Dokumente</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {(list.data ?? []).map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell>{formatDateEuFromIso(p.purchase_date)}</TableCell>
-                  <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
-                  <TableCell>{p.counterparty_name}</TableCell>
-                  <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
+                  {(() => {
+                    const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
+                    const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
+                    return (
+                      <>
+                        <TableCell>{formatDateEuFromIso(p.purchase_date)}</TableCell>
+                        <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
+                        <TableCell>{p.counterparty_name}</TableCell>
+                        <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
+                        <TableCell className="text-right">{formatEur(extraCosts)} €</TableCell>
+                        <TableCell className="text-right">{formatEur(totalPaid)} €</TableCell>
+                      </>
+                    );
+                  })()}
                   <TableCell className="text-right">
                     <div className="inline-flex items-center justify-end gap-2">
                       {p.pdf_path ? (
@@ -781,7 +834,7 @@ export function PurchasesPage() {
               ))}
               {!list.data?.length && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
+                  <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
                     Keine Daten.
                   </TableCell>
                 </TableRow>
@@ -855,23 +908,39 @@ export function PurchasesPage() {
             </div>
 
             {kind === "PRIVATE_DIFF" && (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Geburtsdatum (optional)</Label>
-                  <Input
-                    value={counterpartyBirthdate}
-                    onChange={(e) => setCounterpartyBirthdate(e.target.value)}
-                    placeholder="TT.MM.JJJJ"
-                    inputMode="numeric"
-                  />
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Geburtsdatum (optional)</Label>
+                    <Input
+                      value={counterpartyBirthdate}
+                      onChange={(e) => setCounterpartyBirthdate(e.target.value)}
+                      placeholder="TT.MM.JJJJ"
+                      inputMode="numeric"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ausweisnummer (optional)</Label>
+                    <Input
+                      value={counterpartyIdNumber}
+                      onChange={(e) => setCounterpartyIdNumber(e.target.value)}
+                      placeholder="z.B. Reisepass / Personalausweis"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Ausweisnummer (optional)</Label>
-                  <Input
-                    value={counterpartyIdNumber}
-                    onChange={(e) => setCounterpartyIdNumber(e.target.value)}
-                    placeholder="z.B. Reisepass / Personalausweis"
-                  />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>Versandkosten (EUR)</Label>
+                    <Input value={shippingCost} onChange={(e) => setShippingCost(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Käuferschutz / PayLivery (EUR)</Label>
+                    <Input value={buyerProtectionFee} onChange={(e) => setBuyerProtectionFee(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Gesamt bezahlt (EUR)</Label>
+                    <Input value={formatEur(totalPaidCents)} readOnly />
+                  </div>
                 </div>
               </div>
             )}
@@ -921,7 +990,7 @@ export function PurchasesPage() {
             )}
 
             <div className="space-y-2">
-              <Label>Gesamtbetrag (EUR)</Label>
+              <Label>Warenbetrag (EUR, an Verkäufer)</Label>
               <Input value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
             </div>
 
@@ -933,6 +1002,11 @@ export function PurchasesPage() {
                 {!splitOk && (
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {editingPurchaseId ? "Speichern" : "Erstellen"} ist blockiert, bis die Summen übereinstimmen.
+                  </div>
+                )}
+                {kind === "PRIVATE_DIFF" && !extraCostsValid && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Versand- und Käuferschutzbetrag müssen gültige, nicht-negative EUR-Werte sein.
                   </div>
                 )}
                 {splitOk && !allLinesHaveProduct && (
