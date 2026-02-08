@@ -888,6 +888,11 @@ export function PurchasesPage() {
               {(list.error as Error).message}
             </div>
           )}
+          {(generatePdf.isError || reopenPurchase.isError) && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+              {String(((generatePdf.error as Error) ?? (reopenPurchase.error as Error))?.message ?? "Unbekannter Fehler")}
+            </div>
+          )}
 
           <Table>
             <TableHeader>
