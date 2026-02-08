@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from PIL import Image
+from PIL import Image, ImageChops
 
 from app.core.enums import DocumentType, InventoryStatus, PurchaseKind, PurchaseType
 from app.core.config import get_settings
@@ -73,6 +73,38 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
         if img.width <= 0 or img.height <= 0:
             return [src_path]
 
+        # Flatten transparency to white and auto-crop uniform background (common for long mobile screenshots).
+        work = img
+        if work.mode in ("RGBA", "LA") or (work.mode == "P" and "transparency" in work.info):
+            bg = Image.new("RGBA", work.size, (255, 255, 255, 255))
+            bg.alpha_composite(work.convert("RGBA"))
+            work = bg.convert("RGB")
+        elif work.mode != "RGB":
+            work = work.convert("RGB")
+
+        w, h = work.size
+        corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+        corner_colors = [work.getpixel(pt) for pt in corners]
+        bg_color = max(set(corner_colors), key=corner_colors.count)
+        bg_img = Image.new("RGB", work.size, bg_color)
+        diff = ImageChops.difference(work, bg_img).convert("L")
+        diff = diff.point(lambda p: 255 if p > 10 else 0)
+        bbox = diff.getbbox()
+        if bbox:
+            # Avoid pathological crops when the whole image differs from the chosen background.
+            left, top, right, bottom = bbox
+            if (right - left) * (bottom - top) < int(w * h * 0.98):
+                pad = 2
+                left = max(0, left - pad)
+                top = max(0, top - pad)
+                right = min(w, right + pad)
+                bottom = min(h, bottom + pad)
+                work = work.crop((left, top, right, bottom))
+
+        if work.width != img.width or work.height != img.height:
+            # Preserve original mode if possible, but use the cropped RGB for slicing/decisions.
+            img = work
+
         scaled_height_px = img.height * (target_width_px / img.width)
         if scaled_height_px <= max_scaled_height_px:
             return [src_path]
@@ -85,11 +117,29 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
         for top in range(0, img.height, slice_height_px):
             bottom = min(img.height, top + slice_height_px)
             crop = img.crop((0, top, img.width, bottom))
+            # Skip slices that are almost entirely background (prevents "blank" evidence pages).
+            cw, ch = crop.size
+            if cw > 0 and ch > 0:
+                sample = 24
+                tol = 10
+                hits = 0
+                total = 0
+                for sy in range(sample):
+                    py = min(ch - 1, int((sy + 0.5) * ch / sample))
+                    for sx in range(sample):
+                        px = min(cw - 1, int((sx + 0.5) * cw / sample))
+                        r, g, b = crop.getpixel((px, py))
+                        br, bgc, bb = bg_color
+                        if abs(r - br) <= tol and abs(g - bgc) <= tol and abs(b - bb) <= tol:
+                            hits += 1
+                        total += 1
+                if total and (hits / total) >= 0.985:
+                    continue
             out_path = out_dir / f"{stem}-part{part:02d}.png"
             crop.save(out_path, format="PNG", optimize=True)
             out_paths.append(out_path)
             part += 1
-        return out_paths
+        return out_paths or [src_path]
     finally:
         try:
             img.close()
