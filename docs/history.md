@@ -1,5 +1,31 @@
 # History
 
+## 2026-02-08 - Privatankauf: Plattformquelle + Evidenzanhänge
+
+### Ausgangslage
+- Beim Erfassen von Privatankäufen fehlt aktuell die strukturierte Quelle (z. B. Kleinanzeigen, ebay, willhaben.at).
+- Relevante Nachweise (Anzeige, Chatverlauf, Screenshots) können nicht am Einkauf hinterlegt werden und gehen damit für Nachvollziehbarkeit/Prüfung verloren.
+
+### Business-Entscheidungen
+- Die Einkaufsquelle wird als optionales Feld direkt am Einkauf geführt, mit Vorschlagsliste plus frei ergänzbaren Werten.
+- Zusätzlich werden je Einkauf mehrere Evidenzdateien unterstützt (z. B. Anzeige-Screenshot, Konversation, Rechnung/Beleg-Upload).
+- Monatsabschluss-Export soll diese Nachweise mit ausgeben, damit die Prüfkette im Archiv vollständig bleibt.
+
+### Technische Entscheidungen
+- Additive Felder auf `purchases`: `source_platform`, `listing_url`, `notes` (abwärtskompatibel, optional).
+- Neue Tabelle `purchase_attachments` für beliebig viele Dateien pro Einkauf, inkl. Metadaten (`kind`, `original_filename`, optionale Notiz).
+- Neue API-Flows:
+  - Plattformvorschläge (`GET /purchases/source-platforms`)
+  - Attachments je Einkauf listen/anlegen/löschen (`GET/POST/DELETE /purchases/{id}/attachments...`)
+- Frontend nutzt ein Combobox-/Datalist-Muster mit fixen Defaults plus DB-gestützten Vorschlägen und erlaubt freie Eingaben.
+- Upload läuft weiterhin über den bestehenden Upload-Endpunkt; die Einkauf-Referenz wird danach separat persistiert.
+- Month-Close ZIP wird um `csv/purchase_attachments.csv` und die referenzierten Dateien ergänzt.
+
+### Risiken / Trade-offs
+- Freitext-Plattformen können Dubletten erzeugen (z. B. `Ebay`, `eBay`); wird im MVP bewusst toleriert und per Normalisierung in Suggestions entschärft.
+- Datei-Uploads erhöhen Speicherbedarf; es gibt im MVP noch keine Deduplizierung und keine Größenquoten pro Einkauf.
+- Gelöschte Attachments entfernen die Referenz, nicht zwingend die Datei im Upload-Ordner (bewusste Safety-Entscheidung gegen versehentlichen Datenverlust).
+
 ## 2026-02-08 - Privatankauf: Versand + Käuferschutz/PayLivery als Anschaffungsnebenkosten
 
 ### Ausgangslage
