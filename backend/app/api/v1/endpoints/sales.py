@@ -18,6 +18,7 @@ from app.services.sales import (
     create_sales_order,
     finalize_sales_order,
     generate_sales_invoice_pdf,
+    reopen_sales_order_for_edit,
     update_sales_order,
 )
 from app.services.sales_corrections import create_sales_correction, generate_sales_correction_pdf
@@ -108,6 +109,24 @@ async def generate_sales_invoice_pdf_endpoint(
     try:
         async with session.begin():
             order = await generate_sales_invoice_pdf(session, actor=actor, order_id=order_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    order = (
+        await session.execute(select(SalesOrder).where(SalesOrder.id == order.id).options(selectinload(SalesOrder.lines)))
+    ).scalar_one()
+    return SalesOrderOut.model_validate(order)
+
+
+@router.post("/{order_id}/reopen", response_model=SalesOrderOut)
+async def reopen_sales_order_endpoint(
+    order_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> SalesOrderOut:
+    try:
+        async with session.begin():
+            order = await reopen_sales_order_for_edit(session, actor=actor, order_id=order_id)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 

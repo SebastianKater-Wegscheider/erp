@@ -702,3 +702,35 @@ async def generate_purchase_credit_note_pdf(
         after={"pdf_path": purchase.pdf_path, "document_number": purchase.document_number},
     )
     return purchase
+
+
+async def reopen_purchase_for_edit(
+    session: AsyncSession,
+    *,
+    actor: str,
+    purchase_id: uuid.UUID,
+) -> Purchase:
+    purchase = await session.get(Purchase, purchase_id)
+    if purchase is None:
+        raise ValueError("Purchase not found")
+    if not purchase.pdf_path:
+        raise ValueError("Purchase is already editable")
+
+    old_pdf_path = str(purchase.pdf_path)
+    settings = get_settings()
+    abs_pdf_path = settings.app_storage_dir / old_pdf_path
+    if abs_pdf_path.exists():
+        abs_pdf_path.unlink()
+
+    purchase.pdf_path = None
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="purchase",
+        entity_id=purchase.id,
+        action="reopen_for_edit",
+        before={"pdf_path": old_pdf_path, "document_number": purchase.document_number},
+        after={"pdf_path": purchase.pdf_path, "document_number": purchase.document_number},
+    )
+    return purchase

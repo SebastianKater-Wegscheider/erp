@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,7 @@ from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.sales import SalesOrder, SalesOrderLine
+from app.models.sales_correction import SalesCorrection
 from app.schemas.sales import SalesOrderCreate, SalesOrderUpdate
 from app.services.audit import audit_log
 from app.services.documents import next_document_number
@@ -92,9 +93,11 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
 
     line_by_id: dict[uuid.UUID, SalesOrderLine] = {line.id: line for line in order.lines}
 
-    invoice_number = await next_document_number(
-        session, doc_type=DocumentType.SALES_INVOICE, issue_date=order.order_date
-    )
+    invoice_number = order.invoice_number
+    if not invoice_number:
+        invoice_number = await next_document_number(
+            session, doc_type=DocumentType.SALES_INVOICE, issue_date=order.order_date
+        )
     order.invoice_number = invoice_number
     order.status = OrderStatus.FINALIZED
 
@@ -525,6 +528,97 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
             "payment_source": order.payment_source,
             "status": order.status,
             "lines_count": len(data.lines),
+        },
+    )
+
+    return order
+
+
+async def reopen_sales_order_for_edit(
+    session: AsyncSession,
+    *,
+    actor: str,
+    order_id: uuid.UUID,
+) -> SalesOrder:
+    result = await session.execute(
+        select(SalesOrder).where(SalesOrder.id == order_id).options(selectinload(SalesOrder.lines))
+    )
+    order = result.scalar_one_or_none()
+    if order is None:
+        raise ValueError("Sales order not found")
+    if order.status != OrderStatus.FINALIZED:
+        raise ValueError("Only FINALIZED orders can be reopened")
+
+    corrections_count = (
+        await session.scalar(
+            select(func.count()).select_from(SalesCorrection).where(SalesCorrection.order_id == order.id)
+        )
+    ) or 0
+    if corrections_count:
+        raise ValueError("Order cannot be reopened: returns/corrections already exist")
+
+    old_invoice_pdf_path = order.invoice_pdf_path
+    if old_invoice_pdf_path:
+        settings = get_settings()
+        abs_pdf_path = settings.app_storage_dir / old_invoice_pdf_path
+        if abs_pdf_path.exists():
+            abs_pdf_path.unlink()
+
+    for line in sorted(order.lines, key=lambda row: str(row.inventory_item_id)):
+        item = await session.get(InventoryItem, line.inventory_item_id)
+        if item is None:
+            raise ValueError(f"Inventory item not found: {line.inventory_item_id}")
+        if item.status != InventoryStatus.SOLD:
+            raise ValueError(f"Cannot reopen order: inventory item not SOLD ({item.id}, status={item.status})")
+
+        before_status = item.status
+        item.status = InventoryStatus.RESERVED
+        await audit_log(
+            session,
+            actor=actor,
+            entity_type="inventory_item",
+            entity_id=item.id,
+            action="reopen_sales_order",
+            before={"status": before_status},
+            after={"status": item.status},
+        )
+
+    ledger_entries = (
+        await session.execute(select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order.id))
+    ).scalars().all()
+    for entry in ledger_entries:
+        await session.delete(entry)
+
+    before = {
+        "status": order.status,
+        "invoice_number": order.invoice_number,
+        "invoice_pdf_path": old_invoice_pdf_path,
+    }
+
+    order.status = OrderStatus.DRAFT
+    order.invoice_pdf_path = None
+    order.shipping_regular_gross_cents = 0
+    order.shipping_regular_net_cents = 0
+    order.shipping_regular_tax_cents = 0
+    order.shipping_margin_gross_cents = 0
+    for line in order.lines:
+        line.shipping_allocated_cents = 0
+        line.cost_basis_cents = 0
+        line.margin_gross_cents = 0
+        line.margin_net_cents = 0
+        line.margin_tax_cents = 0
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="sale",
+        entity_id=order.id,
+        action="reopen_for_edit",
+        before=before,
+        after={
+            "status": order.status,
+            "invoice_number": order.invoice_number,
+            "invoice_pdf_path": order.invoice_pdf_path,
         },
     )
 
