@@ -223,3 +223,4 @@
 ### Technische Entscheidungen
 - WeasyPrint nutzt lokale `file://` URIs fuer Uploads; nur `uploads/` Pfade werden akzeptiert (wie bisher in API-Validierung).
 - Layout/CSS wird so angepasst, dass der Footer die Inhalte nicht ueberlappt (groessere Bottom-Margin) und Bilder skaliert/umgebrochen werden.
+- Sehr hohe/vertikale Screenshots werden beim PDF-Render in mehrere Seitensegmente geschnitten, damit sie bei voller Breite lesbar bleiben.
