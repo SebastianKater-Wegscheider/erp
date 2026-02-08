@@ -18,6 +18,22 @@
 ### Risiken / Trade-offs
 - API-Pfad-Änderung ist ein Breaking Change für externe Consumer; im aktuellen Setup ist das vertretbar, da Frontend und Backend gemeinsam betrieben werden.
 
+## 2026-02-08 - Diagnose: Frontend `NetworkError` bei API-Calls
+
+### Ausgangslage
+- Frontend lief als Docker-Service auf Port `15173`, Browser-Requests an die API schlugen aber mit `NetworkError` fehl.
+- Der Verdacht war ein Kommunikationsproblem zwischen Frontend und Backend (Port/Origin).
+
+### Erkenntnisse
+- Der laufende Frontend-Container hatte `VITE_API_BASE_URL=http://localhost:8000/api/v1`.
+- Der laufende Backend-Container war auf Host-Port `18000` veröffentlicht (`18000 -> 8000`).
+- Damit zeigten Frontend-Requests auf den falschen Port; zusätzlich war die Konfiguration nicht zentralisiert, wodurch Port-Drift leicht entsteht.
+
+### Entscheidung
+- Docker-Compose soll `VITE_API_BASE_URL` aus der Root-`.env` übernehmen (mit sinnvollem Fallback auf den veröffentlichten Backend-Port), statt auf einen harten Wert zu zeigen.
+- Backend-Port wird über eine gemeinsame Variable (`BACKEND_PORT`) konfigurierbar gemacht, damit API-URL und Port-Mapping konsistent bleiben.
+- CORS bekommt einen defensiven Fallback für lokale Frontend-Origins.
+
 ## 2026-02-08 - FBA Inbound & Lagerhaltung: Designentscheidungen
 
 ### Ausgangslage

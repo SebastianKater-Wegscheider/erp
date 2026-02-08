@@ -10,20 +10,21 @@ Lean ERP für Gebrauchtwarenhandel (z.B. Videospiele) mit **FastAPI + PostgreSQL
 2. Start:
    - `docker compose up -d --build`
 3. Swagger UI:
-   - `http://localhost:8000/docs` (HTTP Basic Auth aus `.env`)
+   - `http://localhost:18000/docs` (HTTP Basic Auth aus `.env`)
 
 ## Frontend (Vite + shadcn/ui)
 
 1. `cd frontend`
-2. `cp .env.example .env` (optional, default: `http://localhost:8000/api/v1`)
+2. `cp .env.example .env` (optional, default: `http://localhost:18000/api/v1`)
 3. `npm install`
 4. `npm run dev` → `http://localhost:5173`
 
 Hinweis: Für Browser-Calls muss CORS erlaubt sein. Setze in `.env` (root) z.B.:
-- `CORS_ORIGINS=http://localhost:5173`
+- `CORS_ORIGINS=http://localhost:15173,http://localhost:5173`
 
 Alternative via Docker Compose (läuft dauerhaft als Service):
 - `docker compose up -d frontend`
+- Frontend ist dann über `http://localhost:15173` erreichbar.
 
 ## Storage
 
