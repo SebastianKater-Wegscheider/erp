@@ -19,6 +19,7 @@ const NAV_SECTIONS = [
     items: [
       { to: "/master-products", label: "Produktstamm" },
       { to: "/inventory", label: "Lagerbestand" },
+      { to: "/fba-shipments", label: "FBA Sendungen" },
     ],
   },
   {

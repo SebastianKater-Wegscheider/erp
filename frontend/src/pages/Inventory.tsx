@@ -51,9 +51,12 @@ type UploadOut = { upload_path: string };
 const INVENTORY_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "DRAFT", label: "Entwurf" },
   { value: "AVAILABLE", label: "Verfügbar" },
+  { value: "FBA_INBOUND", label: "FBA Unterwegs" },
+  { value: "FBA_WAREHOUSE", label: "FBA Lagernd" },
   { value: "RESERVED", label: "Reserviert" },
   { value: "SOLD", label: "Verkauft" },
   { value: "RETURNED", label: "Retourniert" },
+  { value: "DISCREPANCY", label: "Abweichung" },
   { value: "LOST", label: "Verloren" },
 ];
 
@@ -86,8 +89,14 @@ function inventoryStatusVariant(status: string) {
   switch (status) {
     case "AVAILABLE":
       return "success" as const;
+    case "FBA_WAREHOUSE":
+      return "success" as const;
+    case "FBA_INBOUND":
+      return "warning" as const;
     case "RESERVED":
       return "warning" as const;
+    case "DISCREPANCY":
+      return "danger" as const;
     case "LOST":
       return "danger" as const;
     case "SOLD":

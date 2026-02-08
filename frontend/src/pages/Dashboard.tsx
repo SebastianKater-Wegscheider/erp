@@ -65,9 +65,12 @@ const CHANNEL_LABEL: Record<string, string> = {
 const INVENTORY_STATUS_LABEL: Record<string, string> = {
   DRAFT: "Entwurf",
   AVAILABLE: "Verfügbar",
+  FBA_INBOUND: "FBA Unterwegs",
+  FBA_WAREHOUSE: "FBA Lagernd",
   RESERVED: "Reserviert",
   SOLD: "Verkauft",
   RETURNED: "Retourniert",
+  DISCREPANCY: "Abweichung",
   LOST: "Verloren",
 };
 
@@ -157,11 +160,11 @@ export function DashboardPage() {
       count,
       label: INVENTORY_STATUS_LABEL[status] ?? status,
       variant:
-        status === "AVAILABLE"
+        status === "AVAILABLE" || status === "FBA_WAREHOUSE"
           ? ("success" as const)
-          : status === "RESERVED"
+          : status === "RESERVED" || status === "FBA_INBOUND"
             ? ("warning" as const)
-            : status === "RETURNED" || status === "LOST"
+            : status === "RETURNED" || status === "LOST" || status === "DISCREPANCY"
               ? ("danger" as const)
               : ("secondary" as const),
     }));
