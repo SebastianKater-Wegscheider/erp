@@ -11,6 +11,7 @@ from app.models.master_product import MasterProduct
 from app.models.mileage_log import MileageLog
 from app.models.opex_expense import OpexExpense
 from app.models.purchase import Purchase, PurchaseLine
+from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrder, SalesOrderLine
 from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
 
@@ -31,6 +32,7 @@ __all__ = [
     "OpexExpense",
     "Purchase",
     "PurchaseLine",
+    "PurchaseAttachment",
     "SalesOrder",
     "SalesOrderLine",
     "SalesCorrection",

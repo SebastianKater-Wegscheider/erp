@@ -24,6 +24,9 @@ async def ensure_schema(conn: AsyncConnection) -> None:
         "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS buyer_protection_fee_cents INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS counterparty_birthdate DATE",
         "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS counterparty_id_number VARCHAR(80)",
+        "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS source_platform VARCHAR(120)",
+        "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS listing_url VARCHAR(1000)",
+        "ALTER TABLE purchases ADD COLUMN IF NOT EXISTS notes TEXT",
         # purchase_lines
         "ALTER TABLE purchase_lines ADD COLUMN IF NOT EXISTS shipping_allocated_cents INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE purchase_lines ADD COLUMN IF NOT EXISTS buyer_protection_fee_allocated_cents INTEGER NOT NULL DEFAULT 0",
@@ -134,6 +137,42 @@ async def ensure_schema(conn: AsyncConnection) -> None:
         text(
             "CREATE INDEX IF NOT EXISTS ix_bank_transaction_purchases_bank_transaction_id "
             "ON bank_transaction_purchases (bank_transaction_id)"
+        )
+    )
+
+    # purchase_attachments
+    await conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS purchase_attachments ("
+            "id UUID PRIMARY KEY, "
+            "purchase_id UUID NOT NULL REFERENCES purchases(id) ON DELETE CASCADE, "
+            "upload_path VARCHAR(500) NOT NULL, "
+            "original_filename VARCHAR(300) NOT NULL, "
+            "kind VARCHAR(40) NOT NULL DEFAULT 'OTHER', "
+            "note TEXT, "
+            "created_at TIMESTAMPTZ NOT NULL DEFAULT now(), "
+            "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+            ")"
+        )
+    )
+    await conn.execute(text("ALTER TABLE purchase_attachments ADD COLUMN IF NOT EXISTS original_filename VARCHAR(300)"))
+    await conn.execute(text("ALTER TABLE purchase_attachments ADD COLUMN IF NOT EXISTS kind VARCHAR(40) NOT NULL DEFAULT 'OTHER'"))
+    await conn.execute(text("ALTER TABLE purchase_attachments ADD COLUMN IF NOT EXISTS note TEXT"))
+    await conn.execute(
+        text(
+            "ALTER TABLE purchase_attachments DROP CONSTRAINT IF EXISTS uq_purchase_attachment_path"
+        )
+    )
+    await conn.execute(
+        text(
+            "ALTER TABLE purchase_attachments "
+            "ADD CONSTRAINT uq_purchase_attachment_path UNIQUE (purchase_id, upload_path)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_purchase_attachments_purchase_id "
+            "ON purchase_attachments (purchase_id)"
         )
     )
 

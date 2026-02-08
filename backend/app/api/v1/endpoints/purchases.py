@@ -2,19 +2,32 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import get_session
 from app.core.security import require_basic_auth
 from app.models.purchase import Purchase
+from app.models.purchase_attachment import PurchaseAttachment
+from app.schemas.purchase_attachment import (
+    PurchaseAttachmentBatchCreate,
+    PurchaseAttachmentOut,
+)
 from app.schemas.purchase import PurchaseCreate, PurchaseOut, PurchaseRefOut, PurchaseUpdate
 from app.services.purchases import create_purchase, generate_purchase_credit_note_pdf, update_purchase
 
 
 router = APIRouter()
+
+DEFAULT_SOURCE_PLATFORMS = [
+    "kleinanzeigen",
+    "ebay",
+    "willhaben.at",
+    "ländleanzeiger.at",
+]
 
 
 @router.post("", response_model=PurchaseOut)
@@ -48,6 +61,82 @@ async def list_purchases(session: AsyncSession = Depends(get_session)) -> list[P
 async def list_purchase_refs(session: AsyncSession = Depends(get_session)) -> list[PurchaseRefOut]:
     rows = (await session.execute(select(Purchase).order_by(Purchase.purchase_date.desc()))).scalars().all()
     return [PurchaseRefOut.model_validate(r) for r in rows]
+
+
+@router.get("/source-platforms", response_model=list[str])
+async def list_purchase_source_platforms(session: AsyncSession = Depends(get_session)) -> list[str]:
+    rows = (
+        await session.execute(
+            select(Purchase.source_platform)
+            .where(Purchase.source_platform.is_not(None))
+            .order_by(Purchase.source_platform.asc())
+        )
+    ).scalars().all()
+    out = set(DEFAULT_SOURCE_PLATFORMS)
+    for value in rows:
+        normalized = str(value or "").strip()
+        if normalized:
+            out.add(normalized)
+    return sorted(out, key=str.casefold)
+
+
+@router.get("/{purchase_id}/attachments", response_model=list[PurchaseAttachmentOut])
+async def list_purchase_attachments(
+    purchase_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> list[PurchaseAttachmentOut]:
+    if await session.get(Purchase, purchase_id) is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    rows = (
+        await session.execute(
+            select(PurchaseAttachment)
+            .where(PurchaseAttachment.purchase_id == purchase_id)
+            .order_by(PurchaseAttachment.created_at.desc())
+        )
+    ).scalars().all()
+    return [PurchaseAttachmentOut.model_validate(r) for r in rows]
+
+
+@router.post("/{purchase_id}/attachments", response_model=list[PurchaseAttachmentOut])
+async def add_purchase_attachments(
+    purchase_id: uuid.UUID,
+    data: PurchaseAttachmentBatchCreate,
+    session: AsyncSession = Depends(get_session),
+) -> list[PurchaseAttachmentOut]:
+    if await session.get(Purchase, purchase_id) is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    rows = [
+        PurchaseAttachment(
+            purchase_id=purchase_id,
+            upload_path=attachment.upload_path.lstrip("/"),
+            original_filename=str(attachment.original_filename or "").strip() or attachment.upload_path.split("/")[-1],
+            kind=str(attachment.kind or "OTHER").strip().upper() or "OTHER",
+            note=attachment.note,
+        )
+        for attachment in data.attachments
+    ]
+    session.add_all(rows)
+    try:
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Attachment already linked to purchase") from e
+    return [PurchaseAttachmentOut.model_validate(row) for row in rows]
+
+
+@router.delete("/{purchase_id}/attachments/{attachment_id}", status_code=204)
+async def delete_purchase_attachment(
+    purchase_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    row = await session.get(PurchaseAttachment, attachment_id)
+    if row is None or row.purchase_id != purchase_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    await session.delete(row)
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.get("/{purchase_id}", response_model=PurchaseOut)

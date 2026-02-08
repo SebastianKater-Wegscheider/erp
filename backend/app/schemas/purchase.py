@@ -31,6 +31,9 @@ class PurchaseCreate(BaseModel):
     counterparty_address: str | None = None
     counterparty_birthdate: date | None = None
     counterparty_id_number: str | None = Field(default=None, max_length=80)
+    source_platform: str | None = Field(default=None, max_length=120)
+    listing_url: str | None = Field(default=None, max_length=1000)
+    notes: str | None = Field(default=None, max_length=4000)
 
     total_amount_cents: int = Field(ge=0)
     shipping_cost_cents: int = Field(default=0, ge=0)
@@ -73,6 +76,9 @@ class PurchaseUpdate(BaseModel):
     counterparty_address: str | None = None
     counterparty_birthdate: date | None = None
     counterparty_id_number: str | None = Field(default=None, max_length=80)
+    source_platform: str | None = Field(default=None, max_length=120)
+    listing_url: str | None = Field(default=None, max_length=1000)
+    notes: str | None = Field(default=None, max_length=4000)
 
     total_amount_cents: int = Field(ge=0)
     shipping_cost_cents: int = Field(default=0, ge=0)
@@ -133,6 +139,9 @@ class PurchaseOut(BaseModel):
     counterparty_address: str | None
     counterparty_birthdate: date | None
     counterparty_id_number: str | None
+    source_platform: str | None
+    listing_url: str | None
+    notes: str | None
 
     total_amount_cents: int
     shipping_cost_cents: int
@@ -161,4 +170,5 @@ class PurchaseRefOut(BaseModel):
     total_amount_cents: int
     shipping_cost_cents: int
     buyer_protection_fee_cents: int
+    source_platform: str | None
     document_number: str | None

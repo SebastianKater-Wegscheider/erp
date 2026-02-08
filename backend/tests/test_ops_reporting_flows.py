@@ -14,6 +14,7 @@ from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.purchase import Purchase
+from app.schemas.purchase_attachment import PurchaseAttachmentBatchCreate
 from app.schemas.cost_allocation import CostAllocationCreate, CostAllocationLineCreate
 from app.schemas.mileage import MileageCreate
 from app.schemas.opex import OpexCreate
@@ -275,3 +276,117 @@ async def test_monthly_close_zip_contains_core_csv_exports(db_session: AsyncSess
     assert "csv/mileage.csv" in names
     assert "csv/vat_summary.csv" in names
     assert "csv/sales_lines.csv" in names
+
+
+@pytest.mark.asyncio
+async def test_purchase_source_platform_suggestions_include_defaults_and_saved_values(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.purchases import list_purchase_source_platforms
+
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, "E")
+        await create_purchase(
+            db_session,
+            actor=ACTOR,
+            data=PurchaseCreate(
+                kind=PurchaseKind.PRIVATE_DIFF,
+                purchase_date=date(2026, 2, 8),
+                counterparty_name="Privat",
+                source_platform="Flohmarkt Dornbirn",
+                total_amount_cents=500,
+                payment_source=PaymentSource.CASH,
+                lines=[
+                    PurchaseLineCreate(
+                        master_product_id=mp.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        purchase_price_cents=500,
+                    )
+                ],
+            ),
+        )
+
+    suggestions = await list_purchase_source_platforms(session=db_session)
+    assert "kleinanzeigen" in suggestions
+    assert "ebay" in suggestions
+    assert "willhaben.at" in suggestions
+    assert "Flohmarkt Dornbirn" in suggestions
+
+
+@pytest.mark.asyncio
+async def test_purchase_attachments_crud_and_monthly_close_export(db_session: AsyncSession, tmp_path) -> None:
+    from app.api.v1.endpoints.purchases import (
+        add_purchase_attachments,
+        delete_purchase_attachment,
+        list_purchase_attachments,
+    )
+
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, "F")
+        purchase = await create_purchase(
+            db_session,
+            actor=ACTOR,
+            data=PurchaseCreate(
+                kind=PurchaseKind.PRIVATE_DIFF,
+                purchase_date=date(2026, 2, 8),
+                counterparty_name="Privat",
+                source_platform="willhaben.at",
+                total_amount_cents=500,
+                payment_source=PaymentSource.CASH,
+                lines=[
+                    PurchaseLineCreate(
+                        master_product_id=mp.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        purchase_price_cents=500,
+                    )
+                ],
+            ),
+        )
+
+    uploads_dir = tmp_path / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    (uploads_dir / "chat-1.png").write_bytes(b"chat1")
+    (uploads_dir / "listing-1.png").write_bytes(b"listing1")
+
+    created = await add_purchase_attachments(
+        purchase_id=purchase.id,
+        data=PurchaseAttachmentBatchCreate(
+            attachments=[
+                {
+                    "upload_path": "uploads/chat-1.png",
+                    "kind": "CHAT",
+                    "note": "Preis vereinbart",
+                },
+                {
+                    "upload_path": "uploads/listing-1.png",
+                    "kind": "LISTING",
+                },
+            ]
+        ),
+        session=db_session,
+    )
+    assert len(created) == 2
+
+    listed = await list_purchase_attachments(purchase_id=purchase.id, session=db_session)
+    assert len(listed) == 2
+    assert {item.kind for item in listed} == {"CHAT", "LISTING"}
+
+    await delete_purchase_attachment(
+        purchase_id=purchase.id,
+        attachment_id=created[0].id,
+        session=db_session,
+    )
+    after_delete = await list_purchase_attachments(purchase_id=purchase.id, session=db_session)
+    assert len(after_delete) == 1
+
+    filename, content = await monthly_close_zip(db_session, year=2026, month=2, storage_dir=tmp_path)
+    assert filename == "month-close-2026-02.zip"
+
+    with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+        names = set(zf.namelist())
+        csv_content = zf.read("csv/purchase_attachments.csv").decode("utf-8")
+
+    assert "csv/purchase_attachments.csv" in names
+    assert "input_docs/purchase_attachments/uploads/listing-1.png" in names
+    assert "willhaben.at" in csv_content
+    assert "LISTING" in csv_content

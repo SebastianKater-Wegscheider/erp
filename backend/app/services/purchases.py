@@ -49,6 +49,13 @@ def _total_paid_cents(
     return int(total_amount_cents) + int(shipping_cost_cents) + int(buyer_protection_fee_cents)
 
 
+def _optional_str(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
 async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCreate) -> Purchase:
     settings = get_settings()
     vat_enabled = settings.vat_enabled
@@ -100,6 +107,9 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         total_tax_cents=total_tax,
         tax_rate_bp=tax_rate_bp,
         payment_source=data.payment_source,
+        source_platform=_optional_str(data.source_platform),
+        listing_url=_optional_str(data.listing_url),
+        notes=_optional_str(data.notes),
         document_number=document_number,
         external_invoice_number=data.external_invoice_number,
         receipt_upload_path=data.receipt_upload_path,
@@ -218,6 +228,9 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
             "total_tax_cents": purchase.total_tax_cents,
             "tax_rate_bp": purchase.tax_rate_bp,
             "payment_source": purchase.payment_source,
+            "source_platform": purchase.source_platform,
+            "listing_url": purchase.listing_url,
+            "notes": purchase.notes,
             "document_number": purchase.document_number,
             "external_invoice_number": purchase.external_invoice_number,
         },
@@ -273,6 +286,9 @@ async def update_purchase(
         "buyer_protection_fee_cents": purchase.buyer_protection_fee_cents,
         "tax_rate_bp": purchase.tax_rate_bp,
         "payment_source": purchase.payment_source,
+        "source_platform": purchase.source_platform,
+        "listing_url": purchase.listing_url,
+        "notes": purchase.notes,
         "lines_count": len(purchase.lines),
     }
 
@@ -368,6 +384,9 @@ async def update_purchase(
     purchase.total_tax_cents = total_tax
     purchase.tax_rate_bp = tax_rate_bp
     purchase.payment_source = data.payment_source
+    purchase.source_platform = _optional_str(data.source_platform)
+    purchase.listing_url = _optional_str(data.listing_url)
+    purchase.notes = _optional_str(data.notes)
     purchase.external_invoice_number = data.external_invoice_number
     purchase.receipt_upload_path = data.receipt_upload_path
 
@@ -533,6 +552,9 @@ async def update_purchase(
             "buyer_protection_fee_cents": purchase.buyer_protection_fee_cents,
             "tax_rate_bp": purchase.tax_rate_bp,
             "payment_source": purchase.payment_source,
+            "source_platform": purchase.source_platform,
+            "listing_url": purchase.listing_url,
+            "notes": purchase.notes,
             "lines_count": len(data.lines),
         },
     )

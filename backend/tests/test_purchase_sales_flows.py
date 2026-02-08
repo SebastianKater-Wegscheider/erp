@@ -116,6 +116,77 @@ async def test_create_purchase_private_diff_creates_inventory_and_ledger(db_sess
 
 
 @pytest.mark.asyncio
+async def test_create_and_update_private_purchase_source_metadata(db_session: AsyncSession) -> None:
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, suffix="META")
+        purchase = await create_purchase(
+            db_session,
+            actor=ACTOR,
+            data=PurchaseCreate(
+                kind=PurchaseKind.PRIVATE_DIFF,
+                purchase_date=date(2026, 2, 8),
+                counterparty_name="Privat",
+                source_platform="  kleinanzeigen ",
+                listing_url=" https://www.kleinanzeigen.de/s-anzeige/123 ",
+                notes="  Mit Controller und Spiel  ",
+                total_amount_cents=1_500,
+                payment_source=PaymentSource.BANK,
+                lines=[
+                    PurchaseLineCreate(
+                        master_product_id=mp.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        purchase_price_cents=1_500,
+                    )
+                ],
+            ),
+        )
+    purchase_id = purchase.id
+
+    row = await db_session.get(Purchase, purchase_id)
+    assert row is not None
+    assert row.source_platform == "kleinanzeigen"
+    assert row.listing_url == "https://www.kleinanzeigen.de/s-anzeige/123"
+    assert row.notes == "Mit Controller und Spiel"
+    await db_session.rollback()
+
+    line = (
+        await db_session.execute(select(PurchaseLine).where(PurchaseLine.purchase_id == purchase_id))
+    ).scalar_one()
+    async with db_session.begin():
+        await update_purchase(
+            db_session,
+            actor=ACTOR,
+            purchase_id=purchase_id,
+            data=PurchaseUpdate(
+                kind=PurchaseKind.PRIVATE_DIFF,
+                purchase_date=date(2026, 2, 9),
+                counterparty_name="Privat",
+                source_platform="  Flohmarkt Dornbirn  ",
+                listing_url="  ",
+                notes="  ",
+                total_amount_cents=1_500,
+                payment_source=PaymentSource.BANK,
+                lines=[
+                    PurchaseLineUpsert(
+                        id=line.id,
+                        master_product_id=line.master_product_id,
+                        condition=line.condition,
+                        purchase_type=line.purchase_type,
+                        purchase_price_cents=1_500,
+                    )
+                ],
+            ),
+        )
+
+    updated = await db_session.get(Purchase, purchase_id)
+    assert updated is not None
+    assert updated.source_platform == "Flohmarkt Dornbirn"
+    assert updated.listing_url is None
+    assert updated.notes is None
+
+
+@pytest.mark.asyncio
 async def test_create_purchase_regular_splits_vat_and_uses_net_inventory_cost(db_session: AsyncSession) -> None:
     async with db_session.begin():
         mp = await _create_master_product(db_session, suffix="B")

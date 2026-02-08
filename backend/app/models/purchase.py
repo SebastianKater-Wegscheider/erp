@@ -30,6 +30,9 @@ class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     total_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     payment_source: Mapped[PaymentSource] = mapped_column(payment_source_enum, nullable=False)
+    source_platform: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    listing_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     pdf_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -38,6 +41,10 @@ class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     receipt_upload_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     lines: Mapped[list["PurchaseLine"]] = relationship(back_populates="purchase", cascade="all, delete-orphan")
+    attachments: Mapped[list["PurchaseAttachment"]] = relationship(
+        back_populates="purchase",
+        cascade="all, delete-orphan",
+    )
 
 
 class PurchaseLine(UUIDPrimaryKeyMixin, Base):

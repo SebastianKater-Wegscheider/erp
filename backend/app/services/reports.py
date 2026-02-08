@@ -19,6 +19,7 @@ from app.models.master_product import MasterProduct
 from app.models.mileage_log import MileageLog
 from app.models.opex_expense import OpexExpense
 from app.models.purchase import Purchase
+from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrder, SalesOrderLine
 from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
 
@@ -528,6 +529,60 @@ async def monthly_close_zip(
         for p in purchases:
             for path in [p.pdf_path, p.receipt_upload_path]:
                 _zip_add_if_exists(zf, storage_dir, path, base_folder="input_docs")
+
+        purchase_attachments = (
+            await session.execute(
+                select(
+                    PurchaseAttachment.id,
+                    PurchaseAttachment.purchase_id,
+                    Purchase.purchase_date,
+                    Purchase.counterparty_name,
+                    Purchase.source_platform,
+                    PurchaseAttachment.kind,
+                    PurchaseAttachment.upload_path,
+                    PurchaseAttachment.original_filename,
+                    PurchaseAttachment.note,
+                    PurchaseAttachment.created_at,
+                )
+                .select_from(PurchaseAttachment)
+                .join(Purchase, Purchase.id == PurchaseAttachment.purchase_id)
+                .where(and_(Purchase.purchase_date >= mr.start, Purchase.purchase_date < mr.end))
+                .order_by(Purchase.purchase_date.asc(), PurchaseAttachment.created_at.asc())
+            )
+        ).all()
+        pa_csv = io.StringIO()
+        paw = csv.writer(pa_csv)
+        paw.writerow(
+            [
+                "attachment_id",
+                "purchase_id",
+                "purchase_date",
+                "counterparty_name",
+                "source_platform",
+                "kind",
+                "upload_path",
+                "original_filename",
+                "note",
+                "created_at",
+            ]
+        )
+        for row in purchase_attachments:
+            paw.writerow(
+                [
+                    row.id,
+                    row.purchase_id,
+                    row.purchase_date,
+                    row.counterparty_name,
+                    row.source_platform or "",
+                    row.kind,
+                    row.upload_path,
+                    row.original_filename,
+                    row.note or "",
+                    row.created_at,
+                ]
+            )
+            _zip_add_if_exists(zf, storage_dir, row.upload_path, base_folder="input_docs/purchase_attachments")
+        zf.writestr("csv/purchase_attachments.csv", pa_csv.getvalue())
 
         expenses = (
             await session.execute(
