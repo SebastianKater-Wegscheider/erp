@@ -16,8 +16,10 @@ Sie sind **keine Steuerberatung** und ersetzen keine Prüfung durch Steuerberatu
     - `PRIVATE_DIFF`: Privatankauf (differenzbesteuert)
     - `COMMERCIAL_REGULAR`: Einkauf mit Rechnung (regelbesteuert, Vorsteuer möglich)
   - `Purchase.tax_rate_bp` (nur `COMMERCIAL_REGULAR`)
+  - `Purchase.shipping_cost_cents` / `buyer_protection_fee_cents` (nur `PRIVATE_DIFF`, als Anschaffungsnebenkosten)
   - `Purchase.total_net_cents` / `total_tax_cents` (nur sinnvoll bei `COMMERCIAL_REGULAR`)
   - `PurchaseLine.purchase_price_*` + `tax_rate_bp`
+  - `PurchaseLine.shipping_allocated_cents` / `buyer_protection_fee_allocated_cents` (proportionale Verteilung auf Artikel)
   - `InventoryItem.purchase_price_cents` ist die **Kostenbasis im Lager**:
     - `REGULAR`: netto (bei abzugsfähiger Vorsteuer)
     - `DIFF`: brutto (weil keine Vorsteuer im Privatankauf)
@@ -70,4 +72,3 @@ Wenn ein Konvolut gekauft wird, kann die Aufteilung auf einzelne Artikel über *
 - Aktuell wird für die Marge **fix 20%** angenommen. Wenn ermäßigte Sätze relevant werden, muss das auf Positionsebene modelliert werden.
 - Bestehende Datensätze vor der Schema‑Erweiterung haben ggf. `0` in neuen Feldern (kein Backfill).
 - Schema‑Upgrades passieren derzeit per `ensure_schema()` beim Startup (MVP‑Stopgap); langfristig Alembic‑Migrationen.
-

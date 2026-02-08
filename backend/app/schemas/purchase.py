@@ -33,6 +33,8 @@ class PurchaseCreate(BaseModel):
     counterparty_id_number: str | None = Field(default=None, max_length=80)
 
     total_amount_cents: int = Field(ge=0)
+    shipping_cost_cents: int = Field(default=0, ge=0)
+    buyer_protection_fee_cents: int = Field(default=0, ge=0)
     tax_rate_bp: int | None = Field(default=None, ge=0, le=10000)
     payment_source: PaymentSource
 
@@ -47,6 +49,10 @@ class PurchaseCreate(BaseModel):
         if self.kind == PurchaseKind.COMMERCIAL_REGULAR:
             if self.tax_rate_bp is None:
                 self.tax_rate_bp = 2000
+            if self.shipping_cost_cents != 0 or self.buyer_protection_fee_cents != 0:
+                raise ValueError(
+                    "shipping_cost_cents and buyer_protection_fee_cents must be 0 for COMMERCIAL_REGULAR purchases"
+                )
             if not self.external_invoice_number:
                 raise ValueError("external_invoice_number is required for COMMERCIAL_REGULAR purchases")
             if not self.receipt_upload_path:
@@ -69,6 +75,8 @@ class PurchaseUpdate(BaseModel):
     counterparty_id_number: str | None = Field(default=None, max_length=80)
 
     total_amount_cents: int = Field(ge=0)
+    shipping_cost_cents: int = Field(default=0, ge=0)
+    buyer_protection_fee_cents: int = Field(default=0, ge=0)
     tax_rate_bp: int | None = Field(default=None, ge=0, le=10000)
     payment_source: PaymentSource
 
@@ -83,6 +91,10 @@ class PurchaseUpdate(BaseModel):
         if self.kind == PurchaseKind.COMMERCIAL_REGULAR:
             if self.tax_rate_bp is None:
                 self.tax_rate_bp = 2000
+            if self.shipping_cost_cents != 0 or self.buyer_protection_fee_cents != 0:
+                raise ValueError(
+                    "shipping_cost_cents and buyer_protection_fee_cents must be 0 for COMMERCIAL_REGULAR purchases"
+                )
             if not self.external_invoice_number:
                 raise ValueError("external_invoice_number is required for COMMERCIAL_REGULAR purchases")
             if not self.receipt_upload_path:
@@ -103,6 +115,8 @@ class PurchaseLineOut(BaseModel):
     condition: InventoryCondition
     purchase_type: PurchaseType
     purchase_price_cents: int
+    shipping_allocated_cents: int
+    buyer_protection_fee_allocated_cents: int
     purchase_price_net_cents: int
     purchase_price_tax_cents: int
     tax_rate_bp: int
@@ -121,6 +135,8 @@ class PurchaseOut(BaseModel):
     counterparty_id_number: str | None
 
     total_amount_cents: int
+    shipping_cost_cents: int
+    buyer_protection_fee_cents: int
     total_net_cents: int
     total_tax_cents: int
     tax_rate_bp: int
@@ -143,4 +159,6 @@ class PurchaseRefOut(BaseModel):
     purchase_date: date
     counterparty_name: str
     total_amount_cents: int
+    shipping_cost_cents: int
+    buyer_protection_fee_cents: int
     document_number: str | None

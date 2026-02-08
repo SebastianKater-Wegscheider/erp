@@ -156,6 +156,193 @@ async def test_create_purchase_regular_splits_vat_and_uses_net_inventory_cost(db
 
 
 @pytest.mark.asyncio
+async def test_create_private_purchase_with_shipping_and_buyer_fee_allocates_and_updates_ledger(
+    db_session: AsyncSession,
+) -> None:
+    purchase_date = date(2026, 2, 8)
+
+    async with db_session.begin():
+        mp_a = await _create_master_product(db_session, suffix="B1")
+        mp_b = await _create_master_product(db_session, suffix="B2")
+        purchase = await create_purchase(
+            db_session,
+            actor=ACTOR,
+            data=PurchaseCreate(
+                kind=PurchaseKind.PRIVATE_DIFF,
+                purchase_date=purchase_date,
+                counterparty_name="Privat",
+                total_amount_cents=4_000,
+                shipping_cost_cents=40,
+                buyer_protection_fee_cents=20,
+                payment_source=PaymentSource.BANK,
+                lines=[
+                    PurchaseLineCreate(
+                        master_product_id=mp_a.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        purchase_price_cents=1_000,
+                    ),
+                    PurchaseLineCreate(
+                        master_product_id=mp_b.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        purchase_price_cents=3_000,
+                    ),
+                ],
+            ),
+        )
+
+    row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    assert row.shipping_cost_cents == 40
+    assert row.buyer_protection_fee_cents == 20
+    assert sum(line.shipping_allocated_cents for line in row.lines) == 40
+    assert sum(line.buyer_protection_fee_allocated_cents for line in row.lines) == 20
+
+    line_by_price = {line.purchase_price_cents: line for line in row.lines}
+    low = line_by_price[1_000]
+    high = line_by_price[3_000]
+    assert low.shipping_allocated_cents == 10
+    assert low.buyer_protection_fee_allocated_cents == 5
+    assert high.shipping_allocated_cents == 30
+    assert high.buyer_protection_fee_allocated_cents == 15
+
+    inventory_rows = (
+        await db_session.execute(
+            select(InventoryItem).where(InventoryItem.purchase_line_id.in_([line.id for line in row.lines]))
+        )
+    ).scalars().all()
+    inventory_by_line_id = {item.purchase_line_id: item for item in inventory_rows}
+    assert inventory_by_line_id[low.id].allocated_costs_cents == 15
+    assert inventory_by_line_id[high.id].allocated_costs_cents == 45
+
+    ledger = (
+        await db_session.execute(
+            select(LedgerEntry).where(LedgerEntry.entity_type == "purchase", LedgerEntry.entity_id == row.id)
+        )
+    ).scalar_one()
+    assert ledger.amount_cents == -4_060
+
+
+@pytest.mark.asyncio
+async def test_update_private_purchase_reallocates_shipping_and_buyer_fee_with_delta(
+    db_session: AsyncSession,
+) -> None:
+    async with db_session.begin():
+        mp_a = await _create_master_product(db_session, suffix="B3")
+        mp_b = await _create_master_product(db_session, suffix="B4")
+        purchase = await create_purchase(
+            db_session,
+            actor=ACTOR,
+            data=PurchaseCreate(
+                kind=PurchaseKind.PRIVATE_DIFF,
+                purchase_date=date(2026, 2, 8),
+                counterparty_name="Privat",
+                total_amount_cents=4_000,
+                shipping_cost_cents=40,
+                buyer_protection_fee_cents=20,
+                payment_source=PaymentSource.BANK,
+                lines=[
+                    PurchaseLineCreate(
+                        master_product_id=mp_a.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        purchase_price_cents=1_000,
+                    ),
+                    PurchaseLineCreate(
+                        master_product_id=mp_b.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        purchase_price_cents=3_000,
+                    ),
+                ],
+            ),
+        )
+    purchase_id = purchase.id
+
+    before = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    line_a = min(before.lines, key=lambda line: line.purchase_price_cents)
+    line_b = max(before.lines, key=lambda line: line.purchase_price_cents)
+    line_a_id = line_a.id
+    line_a_master_product_id = line_a.master_product_id
+    line_a_condition = line_a.condition
+    line_a_purchase_type = line_a.purchase_type
+    line_b_id = line_b.id
+    line_b_master_product_id = line_b.master_product_id
+    line_b_condition = line_b.condition
+    line_b_purchase_type = line_b.purchase_type
+    inv_a_before = (
+        await db_session.execute(select(InventoryItem).where(InventoryItem.purchase_line_id == line_a_id))
+    ).scalar_one()
+    inv_b_before = (
+        await db_session.execute(select(InventoryItem).where(InventoryItem.purchase_line_id == line_b_id))
+    ).scalar_one()
+    assert inv_a_before.allocated_costs_cents == 15
+    assert inv_b_before.allocated_costs_cents == 45
+    await db_session.rollback()
+
+    async with db_session.begin():
+        await update_purchase(
+            db_session,
+            actor=ACTOR,
+            purchase_id=purchase_id,
+            data=PurchaseUpdate(
+                kind=PurchaseKind.PRIVATE_DIFF,
+                purchase_date=date(2026, 2, 9),
+                counterparty_name="Privat",
+                total_amount_cents=4_000,
+                shipping_cost_cents=30,
+                buyer_protection_fee_cents=10,
+                    payment_source=PaymentSource.BANK,
+                    lines=[
+                        PurchaseLineUpsert(
+                            id=line_a_id,
+                            master_product_id=line_a_master_product_id,
+                            condition=line_a_condition,
+                            purchase_type=line_a_purchase_type,
+                            purchase_price_cents=2_000,
+                        ),
+                        PurchaseLineUpsert(
+                            id=line_b_id,
+                            master_product_id=line_b_master_product_id,
+                            condition=line_b_condition,
+                            purchase_type=line_b_purchase_type,
+                            purchase_price_cents=2_000,
+                        ),
+                    ],
+            ),
+        )
+
+    updated = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    assert updated.shipping_cost_cents == 30
+    assert updated.buyer_protection_fee_cents == 10
+    assert sum(line.shipping_allocated_cents for line in updated.lines) == 30
+    assert sum(line.buyer_protection_fee_allocated_cents for line in updated.lines) == 10
+    assert {line.shipping_allocated_cents for line in updated.lines} == {15}
+    assert {line.buyer_protection_fee_allocated_cents for line in updated.lines} == {5}
+
+    inv_rows_after = (
+        await db_session.execute(
+            select(InventoryItem).where(InventoryItem.purchase_line_id.in_([line.id for line in updated.lines]))
+        )
+    ).scalars().all()
+    for inv in inv_rows_after:
+        assert inv.allocated_costs_cents == 20
+
+    ledger = (
+        await db_session.execute(
+            select(LedgerEntry).where(LedgerEntry.entity_type == "purchase", LedgerEntry.entity_id == purchase_id)
+        )
+    ).scalar_one()
+    assert ledger.amount_cents == -4_040
+
+
+@pytest.mark.asyncio
 async def test_update_purchase_can_remove_line_with_available_inventory(db_session: AsyncSession) -> None:
     async with db_session.begin():
         mp_a = await _create_master_product(db_session, suffix="C")

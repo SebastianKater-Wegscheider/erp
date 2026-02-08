@@ -24,6 +24,8 @@ class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     counterparty_id_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     total_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    shipping_cost_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buyer_protection_fee_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -47,6 +49,8 @@ class PurchaseLine(UUIDPrimaryKeyMixin, Base):
     condition: Mapped[InventoryCondition] = mapped_column(inventory_condition_enum, nullable=False)
     purchase_type: Mapped[PurchaseType] = mapped_column(purchase_type_enum, nullable=False)
     purchase_price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    shipping_allocated_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    buyer_protection_fee_allocated_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     purchase_price_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     purchase_price_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

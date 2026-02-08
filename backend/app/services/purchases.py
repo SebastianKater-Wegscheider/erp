@@ -21,6 +21,32 @@ from app.services.audit import audit_log
 from app.services.documents import next_document_number
 from app.services.money import format_eur, split_gross_to_net_and_tax
 from app.services.pdf import render_pdf
+from app.services.vat import allocate_proportional
+
+
+def _validate_extra_purchase_costs(
+    *,
+    kind: PurchaseKind,
+    shipping_cost_cents: int,
+    buyer_protection_fee_cents: int,
+) -> None:
+    if shipping_cost_cents < 0:
+        raise ValueError("shipping_cost_cents must be >= 0")
+    if buyer_protection_fee_cents < 0:
+        raise ValueError("buyer_protection_fee_cents must be >= 0")
+    if kind == PurchaseKind.COMMERCIAL_REGULAR and (shipping_cost_cents != 0 or buyer_protection_fee_cents != 0):
+        raise ValueError(
+            "shipping_cost_cents and buyer_protection_fee_cents must be 0 for COMMERCIAL_REGULAR purchases"
+        )
+
+
+def _total_paid_cents(
+    *,
+    total_amount_cents: int,
+    shipping_cost_cents: int,
+    buyer_protection_fee_cents: int,
+) -> int:
+    return int(total_amount_cents) + int(shipping_cost_cents) + int(buyer_protection_fee_cents)
 
 
 async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCreate) -> Purchase:
@@ -29,6 +55,11 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
 
     if sum(line.purchase_price_cents for line in data.lines) != data.total_amount_cents:
         raise ValueError("Sum(lines.purchase_price_cents) must equal total_amount_cents")
+    _validate_extra_purchase_costs(
+        kind=data.kind,
+        shipping_cost_cents=data.shipping_cost_cents,
+        buyer_protection_fee_cents=data.buyer_protection_fee_cents,
+    )
 
     expected_type = PurchaseType.DIFF if data.kind == PurchaseKind.PRIVATE_DIFF else PurchaseType.REGULAR
     if any(line.purchase_type != expected_type for line in data.lines):
@@ -63,6 +94,8 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         counterparty_birthdate=data.counterparty_birthdate,
         counterparty_id_number=data.counterparty_id_number,
         total_amount_cents=data.total_amount_cents,
+        shipping_cost_cents=data.shipping_cost_cents,
+        buyer_protection_fee_cents=data.buyer_protection_fee_cents,
         total_net_cents=total_net,
         total_tax_cents=total_tax,
         tax_rate_bp=tax_rate_bp,
@@ -74,6 +107,7 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
     session.add(purchase)
     await session.flush()
 
+    created_line_items: list[tuple[PurchaseLine, InventoryItem, int]] = []
     for line, (line_net, line_tax) in zip(data.lines, line_splits, strict=True):
         pl = PurchaseLine(
             purchase_id=purchase.id,
@@ -81,6 +115,8 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
             condition=line.condition,
             purchase_type=line.purchase_type,
             purchase_price_cents=line.purchase_price_cents,
+            shipping_allocated_cents=0,
+            buyer_protection_fee_allocated_cents=0,
             purchase_price_net_cents=line_net,
             purchase_price_tax_cents=line_tax,
             tax_rate_bp=tax_rate_bp,
@@ -118,12 +154,49 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
                 "status": item.status,
             },
         )
+        created_line_items.append((pl, item, int(line.purchase_price_cents)))
+
+    weights = [weight for _, _, weight in created_line_items]
+    shipping_allocations = allocate_proportional(total_cents=data.shipping_cost_cents, weights=weights)
+    buyer_protection_fee_allocations = allocate_proportional(
+        total_cents=data.buyer_protection_fee_cents,
+        weights=weights,
+    )
+    for (line, item, _), shipping_alloc, buyer_fee_alloc in zip(
+        created_line_items,
+        shipping_allocations,
+        buyer_protection_fee_allocations,
+        strict=True,
+    ):
+        line.shipping_allocated_cents = int(shipping_alloc)
+        line.buyer_protection_fee_allocated_cents = int(buyer_fee_alloc)
+        allocation_delta = int(shipping_alloc) + int(buyer_fee_alloc)
+        if allocation_delta != 0:
+            before = {"allocated_costs_cents": item.allocated_costs_cents}
+            item.allocated_costs_cents += allocation_delta
+            await audit_log(
+                session,
+                actor=actor,
+                entity_type="inventory_item",
+                entity_id=item.id,
+                action="allocate_purchase_cost",
+                before=before,
+                after={
+                    "allocated_costs_cents": item.allocated_costs_cents,
+                    "shipping_allocated_cents": int(shipping_alloc),
+                    "buyer_protection_fee_allocated_cents": int(buyer_fee_alloc),
+                },
+            )
 
     session.add(
         LedgerEntry(
             entry_date=data.purchase_date,
             account=data.payment_source,
-            amount_cents=-data.total_amount_cents,
+            amount_cents=-_total_paid_cents(
+                total_amount_cents=data.total_amount_cents,
+                shipping_cost_cents=data.shipping_cost_cents,
+                buyer_protection_fee_cents=data.buyer_protection_fee_cents,
+            ),
             entity_type="purchase",
             entity_id=purchase.id,
             memo=f"{data.kind} {purchase.document_number or ''}".strip(),
@@ -139,6 +212,8 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         after={
             "kind": purchase.kind,
             "total_amount_cents": purchase.total_amount_cents,
+            "shipping_cost_cents": purchase.shipping_cost_cents,
+            "buyer_protection_fee_cents": purchase.buyer_protection_fee_cents,
             "total_net_cents": purchase.total_net_cents,
             "total_tax_cents": purchase.total_tax_cents,
             "tax_rate_bp": purchase.tax_rate_bp,
@@ -172,6 +247,11 @@ async def update_purchase(
 
     if sum(line.purchase_price_cents for line in data.lines) != data.total_amount_cents:
         raise ValueError("Sum(lines.purchase_price_cents) must equal total_amount_cents")
+    _validate_extra_purchase_costs(
+        kind=data.kind,
+        shipping_cost_cents=data.shipping_cost_cents,
+        buyer_protection_fee_cents=data.buyer_protection_fee_cents,
+    )
 
     expected_type = PurchaseType.DIFF if data.kind == PurchaseKind.PRIVATE_DIFF else PurchaseType.REGULAR
     if any(line.purchase_type != expected_type for line in data.lines):
@@ -189,12 +269,18 @@ async def update_purchase(
         "purchase_date": purchase.purchase_date,
         "counterparty_name": purchase.counterparty_name,
         "total_amount_cents": purchase.total_amount_cents,
+        "shipping_cost_cents": purchase.shipping_cost_cents,
+        "buyer_protection_fee_cents": purchase.buyer_protection_fee_cents,
         "tax_rate_bp": purchase.tax_rate_bp,
         "payment_source": purchase.payment_source,
         "lines_count": len(purchase.lines),
     }
 
     existing_lines_by_id: dict[uuid.UUID, PurchaseLine] = {pl.id: pl for pl in purchase.lines}
+    old_allocated_costs_by_line_id: dict[uuid.UUID, int] = {
+        pl.id: int(pl.shipping_allocated_cents) + int(pl.buyer_protection_fee_allocated_cents)
+        for pl in purchase.lines
+    }
     existing_ids = set(existing_lines_by_id.keys())
     payload_ids = {l.id for l in data.lines if l.id is not None}
 
@@ -276,6 +362,8 @@ async def update_purchase(
     purchase.counterparty_birthdate = data.counterparty_birthdate
     purchase.counterparty_id_number = data.counterparty_id_number
     purchase.total_amount_cents = data.total_amount_cents
+    purchase.shipping_cost_cents = data.shipping_cost_cents
+    purchase.buyer_protection_fee_cents = data.buyer_protection_fee_cents
     purchase.total_net_cents = total_net
     purchase.total_tax_cents = total_tax
     purchase.tax_rate_bp = tax_rate_bp
@@ -309,6 +397,8 @@ async def update_purchase(
                 condition=line.condition,
                 purchase_type=line.purchase_type,
                 purchase_price_cents=line.purchase_price_cents,
+                shipping_allocated_cents=0,
+                buyer_protection_fee_allocated_cents=0,
                 purchase_price_net_cents=line_net,
                 purchase_price_tax_cents=line_tax,
                 tax_rate_bp=tax_rate_bp,
@@ -345,6 +435,67 @@ async def update_purchase(
                     "status": item.status,
                 },
             )
+            inv_by_purchase_line_id[pl.id] = item
+
+    current_lines = (
+        await session.execute(
+            select(PurchaseLine).where(PurchaseLine.purchase_id == purchase.id).order_by(PurchaseLine.id.asc())
+        )
+    ).scalars().all()
+    if not current_lines:
+        raise ValueError("Purchase must have at least one line")
+
+    weights = [int(line.purchase_price_cents) for line in current_lines]
+    shipping_allocations = allocate_proportional(total_cents=purchase.shipping_cost_cents, weights=weights)
+    buyer_protection_fee_allocations = allocate_proportional(
+        total_cents=purchase.buyer_protection_fee_cents,
+        weights=weights,
+    )
+
+    for line, shipping_alloc, buyer_fee_alloc in zip(
+        current_lines,
+        shipping_allocations,
+        buyer_protection_fee_allocations,
+        strict=True,
+    ):
+        line.shipping_allocated_cents = int(shipping_alloc)
+        line.buyer_protection_fee_allocated_cents = int(buyer_fee_alloc)
+        new_allocated_cost = int(shipping_alloc) + int(buyer_fee_alloc)
+        old_allocated_cost = old_allocated_costs_by_line_id.get(line.id, 0)
+        allocation_delta = new_allocated_cost - old_allocated_cost
+        if allocation_delta == 0:
+            continue
+
+        item = inv_by_purchase_line_id.get(line.id)
+        if item is None:
+            item = (
+                await session.execute(
+                    select(InventoryItem).where(InventoryItem.purchase_line_id == line.id)
+                )
+            ).scalar_one_or_none()
+            if item is None:
+                raise ValueError("Inventory item not found for purchase line")
+            inv_by_purchase_line_id[line.id] = item
+
+        before = {"allocated_costs_cents": item.allocated_costs_cents}
+        updated_allocated_costs = int(item.allocated_costs_cents) + allocation_delta
+        if updated_allocated_costs < 0:
+            raise ValueError("Cannot reduce allocated costs below zero for inventory item")
+        item.allocated_costs_cents = updated_allocated_costs
+        await audit_log(
+            session,
+            actor=actor,
+            entity_type="inventory_item",
+            entity_id=item.id,
+            action="allocate_purchase_cost",
+            before=before,
+            after={
+                "allocated_costs_cents": item.allocated_costs_cents,
+                "shipping_allocated_cents": int(shipping_alloc),
+                "buyer_protection_fee_allocated_cents": int(buyer_fee_alloc),
+                "allocation_delta_cents": allocation_delta,
+            },
+        )
 
     # Update ledger entry (create if missing).
     entry = (
@@ -360,7 +511,11 @@ async def update_purchase(
 
     entry.entry_date = data.purchase_date
     entry.account = data.payment_source
-    entry.amount_cents = -data.total_amount_cents
+    entry.amount_cents = -_total_paid_cents(
+        total_amount_cents=data.total_amount_cents,
+        shipping_cost_cents=data.shipping_cost_cents,
+        buyer_protection_fee_cents=data.buyer_protection_fee_cents,
+    )
     entry.memo = f"{data.kind} {purchase.document_number or ''}".strip()
 
     await audit_log(
@@ -374,6 +529,8 @@ async def update_purchase(
             "purchase_date": purchase.purchase_date,
             "counterparty_name": purchase.counterparty_name,
             "total_amount_cents": purchase.total_amount_cents,
+            "shipping_cost_cents": purchase.shipping_cost_cents,
+            "buyer_protection_fee_cents": purchase.buyer_protection_fee_cents,
             "tax_rate_bp": purchase.tax_rate_bp,
             "payment_source": purchase.payment_source,
             "lines_count": len(data.lines),
