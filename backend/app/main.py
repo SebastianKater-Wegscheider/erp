@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="Reseller ERP (AT EPU)",
+        title="Kater-Wegscheider Company (AT EPU)",
         version="1.0",
         docs_url=None,
         redoc_url=None,

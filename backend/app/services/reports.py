@@ -107,7 +107,7 @@ async def dashboard(session: AsyncSession, *, today: date) -> dict:
     }
 
 
-async def reseller_dashboard(session: AsyncSession, *, today: date, days: int = 90) -> dict:
+async def company_dashboard(session: AsyncSession, *, today: date, days: int = 90) -> dict:
     base = await dashboard(session, today=today)
 
     start_90 = today - timedelta(days=days - 1)
@@ -550,7 +550,7 @@ async def monthly_close_zip(
 
 async def vat_report(session: AsyncSession, *, year: int, month: int) -> dict:
     """
-    Lightweight VAT report for Austria-focused reseller flows.
+    Lightweight VAT report for Austria-focused company flows.
 
     Notes:
     - Regular sales VAT is taken from SalesOrderLine.sale_tax_cents + SalesOrder.shipping_regular_tax_cents.

@@ -1,4 +1,4 @@
-# Reseller ERP (AT EPU) – MVP Backend
+# Kater-Wegscheider Company (AT EPU) – MVP Backend
 
 Lean ERP für Gebrauchtwarenhandel (z.B. Videospiele) mit **FastAPI + PostgreSQL**, integer-basierter Cent-Mathematik, Audit-Log, PDF-Belegen und Docker Compose.
 

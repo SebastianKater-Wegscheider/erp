@@ -1,5 +1,23 @@
 # History
 
+## 2026-02-08 - Branding-Umstellung auf Kater-Wegscheider Company
+
+### Ausgangslage
+- Die Anwendung war in mehreren Stellen mit einem generischen Produktbranding benannt (UI, API-Bezeichner, Paketname, Dokumentation).
+- Das passt nicht zur tatsächlichen Positionierung als proprietäre Unternehmenssoftware.
+
+### Business-Entscheidungen
+- Einheitliche Produktbezeichnung in sichtbaren Oberflächen und Doku: `Kater-Wegscheider Company`.
+- Klare Abgrenzung von einem vermarkteten SaaS-Template hin zu interner Unternehmenssoftware.
+
+### Technische Entscheidungen
+- Technische Bezeichner mit dem alten Präfix wurden auf neutrale `company`-Namen umgestellt (Schemas, Service-Funktion, Reports-Endpoint).
+- Der Reports-Endpunkt wurde konsistent auf `/reports/company-dashboard` umbenannt und im Frontend angepasst.
+- Theme-Storage-Key und Frontend-Paketname wurden zur neuen Brand konsistent aktualisiert.
+
+### Risiken / Trade-offs
+- API-Pfad-Änderung ist ein Breaking Change für externe Consumer; im aktuellen Setup ist das vertretbar, da Frontend und Backend gemeinsam betrieben werden.
+
 ## 2026-02-08 - FBA Inbound & Lagerhaltung: Designentscheidungen
 
 ### Ausgangslage

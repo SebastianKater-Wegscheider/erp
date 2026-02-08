@@ -1,6 +1,6 @@
 export type Theme = "light" | "dark";
 
-const STORAGE_KEY = "reseller-erp-theme";
+const STORAGE_KEY = "kater-wegscheider-company-theme";
 
 export function getActiveTheme(): Theme {
   return document.documentElement.classList.contains("dark") ? "dark" : "light";

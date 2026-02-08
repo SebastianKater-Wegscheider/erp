@@ -69,7 +69,7 @@ export function Topbar() {
             to={NAV_PRIMARY.to}
             className="shrink-0 font-semibold tracking-tight text-gray-900 hover:text-gray-700 dark:text-gray-100 dark:hover:text-gray-200"
           >
-            Reseller ERP
+            Kater-Wegscheider Company
           </Link>
 
           {activeItem && (

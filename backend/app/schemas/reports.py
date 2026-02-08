@@ -11,20 +11,20 @@ class DashboardOut(BaseModel):
     gross_profit_month_cents: int
 
 
-class ResellerDashboardTimeseriesPoint(BaseModel):
+class CompanyDashboardTimeseriesPoint(BaseModel):
     date: str
     revenue_cents: int
     profit_cents: int
     orders_count: int = Field(ge=0)
 
 
-class ResellerDashboardAgingBucket(BaseModel):
+class CompanyDashboardAgingBucket(BaseModel):
     label: str
     count: int = Field(ge=0)
     value_cents: int = Field(ge=0)
 
 
-class ResellerDashboardProductAgg(BaseModel):
+class CompanyDashboardProductAgg(BaseModel):
     master_product_id: str
     sku: str
     title: str
@@ -36,18 +36,18 @@ class ResellerDashboardProductAgg(BaseModel):
     profit_cents: int
 
 
-class ResellerDashboardOut(BaseModel):
+class CompanyDashboardOut(BaseModel):
     inventory_value_cents: int = Field(ge=0)
     cash_balance_cents: dict[str, int]
     gross_profit_month_cents: int
 
     sales_revenue_30d_cents: int
     gross_profit_30d_cents: int
-    sales_timeseries: list[ResellerDashboardTimeseriesPoint]
+    sales_timeseries: list[CompanyDashboardTimeseriesPoint]
     revenue_by_channel_30d_cents: dict[str, int]
 
     inventory_status_counts: dict[str, int]
-    inventory_aging: list[ResellerDashboardAgingBucket]
+    inventory_aging: list[CompanyDashboardAgingBucket]
 
     sales_orders_draft_count: int = Field(ge=0)
     finalized_orders_missing_invoice_pdf_count: int = Field(ge=0)
@@ -57,8 +57,8 @@ class ResellerDashboardOut(BaseModel):
     negative_profit_orders_30d_count: int = Field(ge=0)
     master_products_missing_asin_count: int = Field(ge=0)
 
-    top_products_30d: list[ResellerDashboardProductAgg]
-    worst_products_30d: list[ResellerDashboardProductAgg]
+    top_products_30d: list[CompanyDashboardProductAgg]
+    worst_products_30d: list[CompanyDashboardProductAgg]
 
 
 class MonthlyCloseParams(BaseModel):

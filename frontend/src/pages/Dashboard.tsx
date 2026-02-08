@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
-type ResellerDashboardOut = {
+type CompanyDashboardOut = {
   inventory_value_cents: number;
   cash_balance_cents: Record<string, number>;
   gross_profit_month_cents: number;
@@ -106,7 +106,7 @@ export function DashboardPage() {
   const [sourcingQ, setSourcingQ] = useState("nintendo");
   const q = useQuery({
     queryKey: ["dashboard"],
-    queryFn: () => api.request<ResellerDashboardOut>("/reports/reseller-dashboard"),
+    queryFn: () => api.request<CompanyDashboardOut>("/reports/company-dashboard"),
   });
 
   const data = q.data;
