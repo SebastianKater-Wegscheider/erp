@@ -182,3 +182,30 @@
   - API-Hook (Headers, Fehlerbehandlung, Blob-Download)
 - Konkreter Bugfix aus Testlauf:
   - `_parse_iso_date()` normalisiert `datetime` jetzt korrekt auf `date`, um Typinkonsistenzen im Bank-Sync zu vermeiden.
+
+## 2026-02-08 - Reopen von finalisierten Einkäufen/Verkäufen für Korrekturen
+
+### Ausgangslage
+- Nach Generierung von Einkaufs-PDFs (`pdf_path`) und Verkaufs-Rechnungen (`invoice_pdf_path`) waren Datensätze gesperrt.
+- In der Praxis treten nachträgliche Korrekturen auf (falscher Name, falsche Position, ergänzte Nachweise), die ohne Neu-Erfassung möglich sein müssen.
+
+### Business-Entscheidungen
+- Es wird eine explizite "Zur Bearbeitung öffnen"-Funktion eingeführt:
+  - Einkauf: PDF-Lock entfernen, damit der Einkauf bearbeitet und danach erneut als Eigenbeleg erzeugt werden kann.
+  - Verkauf: Status von `FINALIZED` zurück auf `DRAFT`, damit wieder voll editierbar.
+- Beim Reopen bleibt die Dokumentnummer erhalten; bei erneuter PDF-Erzeugung wird das Dokument damit konsistent überschrieben statt neu nummeriert.
+- Für Verkäufe mit bestehenden Korrekturen (Returns) ist Reopen gesperrt, um keine widersprüchlichen Buchungen/Status zu erzeugen.
+
+### Technische Entscheidungen
+- Neue dedizierte Backend-Endpunkte für Reopen (Purchase + Sales), statt impliziter Freischaltung über `PUT`.
+- Reopen Sales führt technische Rückabwicklung durch:
+  - `SalesOrder.status -> DRAFT`
+  - `invoice_pdf_path -> NULL`
+  - Reservierungszustand der enthaltenen Inventory-Items wiederherstellen (`SOLD -> RESERVED`)
+  - zugehörigen Ledger-Eintrag der finalisierten Zahlung löschen
+  - shipping/margin-Snapshots auf 0 zurücksetzen
+- Frontend erhält in Historienlisten klare Aktionen zum Reopen direkt neben PDF/Invoice-Buttons.
+
+### Risiken / Trade-offs
+- Reopen überschreibt den bisherigen finalen Dokumentzustand bewusst; Audit-Log dient als Nachvollziehbarkeit.
+- Dokumentnummern-Lücken werden reduziert, aber eine bereits extern versendete Rechnung kann durch Reopen intern geändert werden; disziplinierte Nutzung bleibt erforderlich.
