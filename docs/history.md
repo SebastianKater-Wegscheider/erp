@@ -1,5 +1,31 @@
 # History
 
+## 2026-02-08 - Privatankauf: Versand + Käuferschutz/PayLivery als Anschaffungsnebenkosten
+
+### Ausgangslage
+- Beim Sourcing über Plattformen wie Kleinanzeigen/Willhaben entstehen zusätzlich zum Warenbetrag auch Versand- und Käuferschutz-/PayLivery-Gebühren.
+- Bisher konnte der Privatankauf nur den Warenbetrag sauber erfassen; zusätzliche Gebühren mussten indirekt über separate Workflows nachgezogen werden.
+
+### Business-Entscheidungen
+- Versand- und Käuferschutz-/PayLivery-Kosten werden bei `PRIVATE_DIFF` als **Anschaffungsnebenkosten** behandelt, damit die Stückkostenbasis und Margenrechnung pro Artikel korrekt bleiben.
+- Der Eigenbeleg bleibt auf den **Warenbetrag an den Verkäufer** fokussiert (`Purchase.total_amount_cents`), damit die Dokumentation gegenüber der Gegenpartei nicht verfälscht wird.
+- Für Bank-Abgleich und Liquidität wird im Ledger der **tatsächlich bezahlte Gesamtbetrag** (Warenbetrag + Versand + Gebühr) verwendet.
+
+### Technische Entscheidungen
+- Neue additive Felder auf Einkaufsebene:
+  - `Purchase.shipping_cost_cents`
+  - `Purchase.buyer_protection_fee_cents`
+- Neue persistierte Verteilfelder je Einkaufsposition:
+  - `PurchaseLine.shipping_allocated_cents`
+  - `PurchaseLine.buyer_protection_fee_allocated_cents`
+- Verteilung der Nebenkosten erfolgt proportional anhand der Positionspreise mit deterministischer Rundung; die Summe der Positionen entspricht immer exakt den Gesamtkosten.
+- Bei Änderungen eines Einkaufs werden Kosten per Delta neu auf Lagerartikel (`allocated_costs_cents`) angewendet, damit bestehende andere Kostenquellen (z. B. Cost Allocation/FBA) nicht überschrieben werden.
+- `COMMERCIAL_REGULAR` bleibt bewusst ausgeschlossen (Nebenkostenfelder müssen dort `0` sein), um steuerliche Mischlogik im MVP zu vermeiden.
+
+### Risiken / Trade-offs
+- Proportionale Verteilung kann bei kleinen Beträgen Rundungsreste erzeugen; deterministische Resteverteilung reduziert, aber eliminiert nicht die subjektive Wahrnehmung von „unfairen“ Cent-Verteilungen.
+- Die Aggregation im Ledger weicht absichtlich vom Eigenbeleg-Betrag ab (betriebswirtschaftlich korrekt, aber erklärungsbedürftig für Nutzer).
+
 ## 2026-02-08 - Branding-Umstellung auf Kater-Wegscheider Company
 
 ### Ausgangslage
