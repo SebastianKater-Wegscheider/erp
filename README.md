@@ -51,6 +51,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Master Products: `POST/GET/PATCH /master-products`
 - Purchases: `POST/GET /purchases` (Smart-Split: Summe Lines == Total)
 - Inventory: `GET /inventory` (Filter: `status`, Suche: `q`)
+- FBA Shipments: `POST/GET/PATCH /fba-shipments`, `POST /fba-shipments/{id}/ship`, `POST /fba-shipments/{id}/receive`
 - Cost Allocation: `POST/GET /cost-allocations`
 - OpEx: `POST/GET /opex`
 - Sales: `POST /sales` → `POST /sales/{id}/finalize` (PDF + Status SOLD)
