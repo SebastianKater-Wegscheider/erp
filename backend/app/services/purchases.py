@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from PIL import Image, ImageChops
+# Pillow is optional at runtime; without it we skip cropping/slicing evidence images.
 
 from app.core.enums import DocumentType, InventoryStatus, PurchaseKind, PurchaseType
 from app.core.config import get_settings
@@ -63,6 +63,11 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
     Create page-friendly slices for very tall screenshots so they can be rendered
     at full width (readable) without shrinking to fit a single page.
     """
+    try:
+        from PIL import Image, ImageChops  # type: ignore
+    except Exception:
+        return [src_path]
+
     # These are CSS px, aligned with WeasyPrint's 96dpi CSS pixel model.
     target_width_px = 680
     max_scaled_height_px = 900
