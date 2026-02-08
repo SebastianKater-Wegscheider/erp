@@ -39,6 +39,9 @@ type PurchaseOut = {
   counterparty_address?: string | null;
   counterparty_birthdate?: string | null;
   counterparty_id_number?: string | null;
+  source_platform?: string | null;
+  listing_url?: string | null;
+  notes?: string | null;
   total_amount_cents: number;
   shipping_cost_cents: number;
   buyer_protection_fee_cents: number;
@@ -57,6 +60,17 @@ type PurchaseOut = {
     shipping_allocated_cents: number;
     buyer_protection_fee_allocated_cents: number;
   }>;
+};
+
+type PurchaseAttachmentOut = {
+  id: string;
+  purchase_id: string;
+  upload_path: string;
+  original_filename: string;
+  kind: string;
+  note?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type UploadOut = { upload_path: string };
@@ -96,6 +110,16 @@ const MASTER_KIND_OPTIONS: Array<{ value: MasterProductKind; label: string }> = 
   { value: "GAME", label: "Spiel" },
   { value: "CONSOLE", label: "Konsole" },
   { value: "ACCESSORY", label: "Zubehör" },
+  { value: "OTHER", label: "Sonstiges" },
+];
+
+const DEFAULT_SOURCE_PLATFORMS = ["kleinanzeigen", "ebay", "willhaben.at", "ländleanzeiger.at"];
+
+const PURCHASE_ATTACHMENT_KIND_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "LISTING", label: "Anzeige" },
+  { value: "CHAT", label: "Konversation" },
+  { value: "PAYMENT", label: "Zahlung" },
+  { value: "DELIVERY", label: "Versand" },
   { value: "OTHER", label: "Sonstiges" },
 ];
 
@@ -413,6 +437,11 @@ export function PurchasesPage() {
     queryFn: () => api.request<PurchaseOut[]>("/purchases"),
   });
 
+  const sourcePlatformSuggestions = useQuery({
+    queryKey: ["purchases", "source-platforms"],
+    queryFn: () => api.request<string[]>("/purchases/source-platforms"),
+  });
+
   const generatePdf = useMutation({
     mutationFn: (purchaseId: string) => api.request<PurchaseOut>(`/purchases/${purchaseId}/generate-pdf`, { method: "POST" }),
     onSuccess: async () => {
@@ -427,6 +456,9 @@ export function PurchasesPage() {
   const [counterpartyAddress, setCounterpartyAddress] = useState("");
   const [counterpartyBirthdate, setCounterpartyBirthdate] = useState("");
   const [counterpartyIdNumber, setCounterpartyIdNumber] = useState("");
+  const [sourcePlatform, setSourcePlatform] = useState("");
+  const [listingUrl, setListingUrl] = useState("");
+  const [notes, setNotes] = useState("");
   const [paymentSource, setPaymentSource] = useState<string>("CASH");
   const [totalAmount, setTotalAmount] = useState<string>("0,00");
   const [shippingCost, setShippingCost] = useState<string>("0,00");
@@ -435,6 +467,9 @@ export function PurchasesPage() {
   const [externalInvoiceNumber, setExternalInvoiceNumber] = useState<string>("");
   const [receiptUploadPath, setReceiptUploadPath] = useState<string>("");
   const [taxRateBp, setTaxRateBp] = useState<string>("2000");
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [attachmentKind, setAttachmentKind] = useState<string>("OTHER");
+  const [attachmentNote, setAttachmentNote] = useState<string>("");
 
   const [lines, setLines] = useState<Line[]>([]);
 
@@ -496,6 +531,50 @@ export function PurchasesPage() {
     onSuccess: (r) => setReceiptUploadPath(r.upload_path),
   });
 
+  const purchaseAttachments = useQuery({
+    queryKey: ["purchase-attachments", editingPurchaseId],
+    enabled: !!editingPurchaseId,
+    queryFn: () => api.request<PurchaseAttachmentOut[]>(`/purchases/${editingPurchaseId!}/attachments`),
+  });
+
+  const addPurchaseAttachments = useMutation({
+    mutationFn: async () => {
+      if (!editingPurchaseId) throw new Error("Einkauf zuerst speichern");
+      if (!attachmentFiles.length) throw new Error("Keine Dateien ausgewählt");
+
+      const uploaded = [];
+      for (const file of attachmentFiles) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const out = await api.request<UploadOut>("/uploads", { method: "POST", body: fd });
+        uploaded.push({
+          upload_path: out.upload_path,
+          original_filename: file.name,
+          kind: attachmentKind,
+          note: attachmentNote.trim() ? attachmentNote.trim() : null,
+        });
+      }
+
+      return api.request<PurchaseAttachmentOut[]>(`/purchases/${editingPurchaseId}/attachments`, {
+        method: "POST",
+        json: { attachments: uploaded },
+      });
+    },
+    onSuccess: async () => {
+      setAttachmentFiles([]);
+      setAttachmentNote("");
+      await qc.invalidateQueries({ queryKey: ["purchase-attachments", editingPurchaseId] });
+    },
+  });
+
+  const deletePurchaseAttachment = useMutation({
+    mutationFn: ({ purchaseId, attachmentId }: { purchaseId: string; attachmentId: string }) =>
+      api.request<void>(`/purchases/${purchaseId}/attachments/${attachmentId}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["purchase-attachments", editingPurchaseId] });
+    },
+  });
+
   const create = useMutation({
     mutationFn: async () => {
       const purchase_date_iso = parseDateEuToIso(purchaseDate);
@@ -512,6 +591,9 @@ export function PurchasesPage() {
         counterparty_birthdate: kind === "PRIVATE_DIFF" ? counterparty_birthdate_iso : null,
         counterparty_id_number:
           kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
+        source_platform: kind === "PRIVATE_DIFF" ? (sourcePlatform.trim() ? sourcePlatform.trim() : null) : null,
+        listing_url: kind === "PRIVATE_DIFF" ? (listingUrl.trim() ? listingUrl.trim() : null) : null,
+        notes: kind === "PRIVATE_DIFF" ? (notes.trim() ? notes.trim() : null) : null,
         total_amount_cents: totalCents,
         shipping_cost_cents: kind === "PRIVATE_DIFF" ? shippingCostCents : 0,
         buyer_protection_fee_cents: kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0,
@@ -534,14 +616,21 @@ export function PurchasesPage() {
       setCounterpartyAddress("");
       setCounterpartyBirthdate("");
       setCounterpartyIdNumber("");
+      setSourcePlatform("");
+      setListingUrl("");
+      setNotes("");
       setExternalInvoiceNumber("");
       setReceiptUploadPath("");
       setTotalAmount("0,00");
       setShippingCost("0,00");
       setBuyerProtectionFee("0,00");
+      setAttachmentFiles([]);
+      setAttachmentNote("");
+      setAttachmentKind("OTHER");
       setLines([]);
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
+      await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
     },
   });
 
@@ -562,6 +651,9 @@ export function PurchasesPage() {
         counterparty_birthdate: kind === "PRIVATE_DIFF" ? counterparty_birthdate_iso : null,
         counterparty_id_number:
           kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
+        source_platform: kind === "PRIVATE_DIFF" ? (sourcePlatform.trim() ? sourcePlatform.trim() : null) : null,
+        listing_url: kind === "PRIVATE_DIFF" ? (listingUrl.trim() ? listingUrl.trim() : null) : null,
+        notes: kind === "PRIVATE_DIFF" ? (notes.trim() ? notes.trim() : null) : null,
         total_amount_cents: totalCents,
         shipping_cost_cents: kind === "PRIVATE_DIFF" ? shippingCostCents : 0,
         buyer_protection_fee_cents: kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0,
@@ -585,14 +677,21 @@ export function PurchasesPage() {
       setCounterpartyAddress("");
       setCounterpartyBirthdate("");
       setCounterpartyIdNumber("");
+      setSourcePlatform("");
+      setListingUrl("");
+      setNotes("");
       setExternalInvoiceNumber("");
       setReceiptUploadPath("");
       setTotalAmount("0,00");
       setShippingCost("0,00");
       setBuyerProtectionFee("0,00");
+      setAttachmentFiles([]);
+      setAttachmentNote("");
+      setAttachmentKind("OTHER");
       setLines([]);
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
+      await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
     },
   });
 
@@ -647,6 +746,15 @@ export function PurchasesPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [master.data]);
 
+  const sourcePlatformOptions = useMemo(() => {
+    const out = new Set<string>(DEFAULT_SOURCE_PLATFORMS);
+    for (const entry of sourcePlatformSuggestions.data ?? []) {
+      const normalized = (entry ?? "").trim();
+      if (normalized) out.add(normalized);
+    }
+    return Array.from(out).sort((a, b) => a.localeCompare(b));
+  }, [sourcePlatformSuggestions.data]);
+
   function openQuickCreate(lineId: string, seedTitle: string) {
     const lastSelected = [...lines]
       .reverse()
@@ -671,6 +779,9 @@ export function PurchasesPage() {
     setCounterpartyAddress(p.counterparty_address ?? "");
     setCounterpartyBirthdate(p.counterparty_birthdate ? formatDateEuFromIso(p.counterparty_birthdate) : "");
     setCounterpartyIdNumber(p.counterparty_id_number ?? "");
+    setSourcePlatform(p.source_platform ?? "");
+    setListingUrl(p.listing_url ?? "");
+    setNotes(p.notes ?? "");
     setPaymentSource(p.payment_source);
     setTotalAmount(formatEur(p.total_amount_cents));
     setShippingCost(formatEur(p.shipping_cost_cents ?? 0));
@@ -678,6 +789,9 @@ export function PurchasesPage() {
     setExternalInvoiceNumber(p.external_invoice_number ?? "");
     setReceiptUploadPath(p.receipt_upload_path ?? "");
     setTaxRateBp(String(p.tax_rate_bp ?? 2000));
+    setAttachmentFiles([]);
+    setAttachmentNote("");
+    setAttachmentKind("OTHER");
     setLines(
       (p.lines ?? []).map((pl) => ({
         ui_id: pl.id,
@@ -701,6 +815,9 @@ export function PurchasesPage() {
     setCounterpartyAddress("");
     setCounterpartyBirthdate("");
     setCounterpartyIdNumber("");
+    setSourcePlatform("");
+    setListingUrl("");
+    setNotes("");
     setPaymentSource("CASH");
     setTotalAmount("0,00");
     setShippingCost("0,00");
@@ -708,6 +825,9 @@ export function PurchasesPage() {
     setExternalInvoiceNumber("");
     setReceiptUploadPath("");
     setTaxRateBp("2000");
+    setAttachmentFiles([]);
+    setAttachmentNote("");
+    setAttachmentKind("OTHER");
     setLines([]);
     create.reset();
     update.reset();
@@ -784,7 +904,12 @@ export function PurchasesPage() {
                       <>
                         <TableCell>{formatDateEuFromIso(p.purchase_date)}</TableCell>
                         <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
-                        <TableCell>{p.counterparty_name}</TableCell>
+                        <TableCell>
+                          <div>{p.counterparty_name}</div>
+                          {p.source_platform ? (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{p.source_platform}</div>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
                         <TableCell className="text-right">{formatEur(extraCosts)} €</TableCell>
                         <TableCell className="text-right">{formatEur(totalPaid)} €</TableCell>
@@ -928,6 +1053,40 @@ export function PurchasesPage() {
                     />
                   </div>
                 </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Plattform / Quelle (optional)</Label>
+                    <Input
+                      value={sourcePlatform}
+                      onChange={(e) => setSourcePlatform(e.target.value)}
+                      placeholder="kleinanzeigen, ebay, willhaben.at, ..."
+                      list="purchase-source-platform-options"
+                    />
+                    <datalist id="purchase-source-platform-options">
+                      {sourcePlatformOptions.map((entry) => (
+                        <option key={entry} value={entry} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Anzeige-URL (optional)</Label>
+                    <Input
+                      value={listingUrl}
+                      onChange={(e) => setListingUrl(e.target.value)}
+                      placeholder="https://..."
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Notizen (optional)</Label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="z.B. Zustand, Bundle-Inhalt, Verhandlungsnotiz ..."
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
                     <Label>Versandkosten (EUR)</Label>
@@ -987,6 +1146,127 @@ export function PurchasesPage() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {kind === "PRIVATE_DIFF" && (
+              <Card className="border-dashed">
+                <CardHeader>
+                  <CardTitle>Evidenzanhänge</CardTitle>
+                  <CardDescription>
+                    Screenshots, Chatverläufe, Anzeige-Screens oder Zahlungsnachweise am Einkauf hinterlegen.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {!editingPurchaseId ? (
+                    <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
+                      Anhänge können nach dem ersten Speichern im Bearbeiten-Modus hinzugefügt werden.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-3 md:grid-cols-4">
+                        <div className="space-y-2">
+                          <Label>Typ</Label>
+                          <Select value={attachmentKind} onValueChange={setAttachmentKind}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PURCHASE_ATTACHMENT_KIND_OPTIONS.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <Label>Notiz (optional)</Label>
+                          <Input value={attachmentNote} onChange={(e) => setAttachmentNote(e.target.value)} placeholder="z.B. Chat bis Preisvereinbarung" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Dateien</Label>
+                          <Input
+                            type="file"
+                            multiple
+                            onChange={(e) => setAttachmentFiles(Array.from(e.target.files ?? []))}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {attachmentFiles.length ? `${attachmentFiles.length} Datei(en) ausgewählt` : "Keine Dateien ausgewählt"}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => addPurchaseAttachments.mutate()}
+                          disabled={!attachmentFiles.length || addPurchaseAttachments.isPending}
+                        >
+                          Anhänge hochladen
+                        </Button>
+                      </div>
+
+                      {(purchaseAttachments.isError || addPurchaseAttachments.isError || deletePurchaseAttachment.isError) && (
+                        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                          {(((purchaseAttachments.error ?? addPurchaseAttachments.error ?? deletePurchaseAttachment.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+                        </div>
+                      )}
+
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Typ</TableHead>
+                            <TableHead>Datei</TableHead>
+                            <TableHead>Notiz</TableHead>
+                            <TableHead className="text-right">Aktion</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(purchaseAttachments.data ?? []).map((attachment) => (
+                            <TableRow key={attachment.id}>
+                              <TableCell>{optionLabel(PURCHASE_ATTACHMENT_KIND_OPTIONS, attachment.kind)}</TableCell>
+                              <TableCell className="font-mono text-xs">{attachment.original_filename}</TableCell>
+                              <TableCell>{attachment.note ?? "—"}</TableCell>
+                              <TableCell className="text-right">
+                                <div className="inline-flex items-center justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => api.download(attachment.upload_path, attachment.original_filename)}
+                                  >
+                                    Download
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      deletePurchaseAttachment.mutate({
+                                        purchaseId: editingPurchaseId!,
+                                        attachmentId: attachment.id,
+                                      })}
+                                    disabled={deletePurchaseAttachment.isPending}
+                                  >
+                                    Löschen
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {!purchaseAttachments.isPending && !purchaseAttachments.data?.length && (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                                Noch keine Anhänge.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
             )}
 
             <div className="space-y-2">
