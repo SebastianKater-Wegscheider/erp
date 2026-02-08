@@ -45,6 +45,8 @@ def _decimal_amount_to_cents(amount: str) -> int:
 def _parse_iso_date(value: Any) -> date | None:
     if value is None:
         return None
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
     s = str(value).strip()
@@ -460,4 +462,3 @@ async def set_bank_transaction_purchases(
     tx.purchases = purchases
     await session.flush()
     return tx
-
