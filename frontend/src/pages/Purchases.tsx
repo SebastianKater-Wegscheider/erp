@@ -448,6 +448,13 @@ export function PurchasesPage() {
       await qc.invalidateQueries({ queryKey: ["purchases"] });
     },
   });
+  const reopenPurchase = useMutation({
+    mutationFn: (purchaseId: string) => api.request<PurchaseOut>(`/purchases/${purchaseId}/reopen`, { method: "POST" }),
+    onSuccess: async (purchase) => {
+      await qc.invalidateQueries({ queryKey: ["purchases"] });
+      startEdit(purchase);
+    },
+  });
 
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [kind, setKind] = useState<string>("PRIVATE_DIFF");
@@ -951,6 +958,16 @@ export function PurchasesPage() {
                       {!p.pdf_path && (
                         <Button size="sm" variant="secondary" onClick={() => startEdit(p)} disabled={create.isPending || update.isPending}>
                           Bearbeiten
+                        </Button>
+                      )}
+                      {p.pdf_path && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => reopenPurchase.mutate(p.id)}
+                          disabled={reopenPurchase.isPending || create.isPending || update.isPending}
+                        >
+                          Zur Bearbeitung öffnen
                         </Button>
                       )}
                     </div>

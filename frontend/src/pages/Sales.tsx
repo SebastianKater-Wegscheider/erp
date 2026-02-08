@@ -209,6 +209,14 @@ export function SalesPage() {
       await qc.invalidateQueries({ queryKey: ["sales"] });
     },
   });
+  const reopenOrder = useMutation({
+    mutationFn: (orderId: string) => api.request<SalesOrder>(`/sales/${orderId}/reopen`, { method: "POST" }),
+    onSuccess: async (order) => {
+      await qc.invalidateQueries({ queryKey: ["sales"] });
+      await qc.invalidateQueries({ queryKey: ["inventory-available"] });
+      startEdit(order);
+    },
+  });
 
   const cancel = useMutation({
     mutationFn: (orderId: string) => api.request<SalesOrder>(`/sales/${orderId}/cancel`, { method: "POST" }),
@@ -402,11 +410,15 @@ export function SalesPage() {
                               <Button variant="outline" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
                                 Rechnung erstellen
                               </Button>
-                              <Button variant="secondary" onClick={() => startEdit(o)} disabled={create.isPending || update.isPending}>
-                                Bearbeiten
-                              </Button>
                             </>
                           )}
+                          <Button
+                            variant="secondary"
+                            onClick={() => reopenOrder.mutate(o.id)}
+                            disabled={reopenOrder.isPending || create.isPending || update.isPending}
+                          >
+                            Zur Bearbeitung öffnen
+                          </Button>
 
                           <Dialog>
                             <DialogTrigger asChild>
