@@ -210,6 +210,7 @@ export function InventoryPage() {
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [previewErrors, setPreviewErrors] = useState<Record<string, true>>({});
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
+  const [imagesDragOver, setImagesDragOver] = useState(false);
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -341,17 +342,26 @@ export function InventoryPage() {
     },
   });
 
-  const upload = useMutation({
-    mutationFn: async (file: File) => {
-      const fd = new FormData();
-      fd.append("file", file);
-      return api.request<UploadOut>("/uploads", { method: "POST", body: fd });
+  const uploadImages = useMutation({
+    mutationFn: async ({ itemId, files }: { itemId: string; files: File[] }) => {
+      const created: InventoryImage[] = [];
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const uploaded = await api.request<UploadOut>("/uploads", { method: "POST", body: fd });
+        const img = await api.request<InventoryImage>(`/inventory/${itemId}/images`, {
+          method: "POST",
+          json: { upload_path: uploaded.upload_path },
+        });
+        created.push(img);
+      }
+      return { itemId, created };
     },
-    onSuccess: async (r) => {
-      if (!editing) return;
-      const img = await api.request<InventoryImage>(`/inventory/${editing.id}/images`, { method: "POST", json: { upload_path: r.upload_path } });
-      setActiveImageId(img.id);
-      await qc.invalidateQueries({ queryKey: ["inventory-images", editing.id] });
+    onSuccess: async ({ itemId, created }) => {
+      if (created.length) {
+        setActiveImageId(created[created.length - 1].id);
+      }
+      await qc.invalidateQueries({ queryKey: ["inventory-images", itemId] });
     },
   });
 
@@ -365,6 +375,13 @@ export function InventoryPage() {
       await qc.invalidateQueries({ queryKey: ["inventory-images", editing.id] });
     },
   });
+
+  function handleImageFiles(filesInput: FileList | File[] | null) {
+    if (!editing) return;
+    const files = Array.from(filesInput ?? []);
+    if (!files.length) return;
+    uploadImages.mutate({ itemId: editing.id, files });
+  }
 
   return (
     <div className="space-y-4">
@@ -578,21 +595,52 @@ export function InventoryPage() {
           )}
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="space-y-2">
               <div className="text-sm font-medium">Bilder</div>
-              <Input
-                type="file"
-                className="max-w-xs"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) upload.mutate(f);
+              <div
+                className={[
+                  "rounded-md border border-dashed p-3 transition-colors",
+                  imagesDragOver
+                    ? "border-gray-500 bg-gray-100 dark:border-gray-500 dark:bg-gray-900/60"
+                    : "border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/30",
+                ].join(" ")}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setImagesDragOver(true);
                 }}
-              />
+                onDragLeave={() => setImagesDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setImagesDragOver(false);
+                  handleImageFiles(e.dataTransfer.files);
+                }}
+              >
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
+                    Bilder hier ablegen oder mehrere Dateien auswählen.
+                  </div>
+                  <Input
+                    type="file"
+                    className="max-w-xs"
+                    multiple
+                    disabled={uploadImages.isPending}
+                    onChange={(e) => {
+                      handleImageFiles(e.target.files);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </div>
+                {uploadImages.isPending && (
+                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Upload läuft: {uploadImages.variables?.files.length ?? 0} Datei(en)…
+                  </div>
+                )}
+              </div>
             </div>
 
-            {(images.isError || upload.isError || removeImage.isError) && (
+            {(images.isError || uploadImages.isError || removeImage.isError) && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-                {((images.error ?? upload.error ?? removeImage.error) as Error).message}
+                {((images.error ?? uploadImages.error ?? removeImage.error) as Error).message}
               </div>
             )}
 
