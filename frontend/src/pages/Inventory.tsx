@@ -388,15 +388,19 @@ export function InventoryPage() {
   }, [tablePreviewImages]);
 
   const desiredTableImages = useMemo(() => {
+    // Prefetch up to 4 thumbnails per item for the table row preview,
+    // plus all images for the currently opened preview dialog.
     const map = new Map<string, InventoryImage>();
-    for (const img of rowPrimaryImageByItemId.values()) {
-      map.set(img.id, img);
+    for (const imagesForItem of rowImagesByItemId.values()) {
+      for (const img of imagesForItem.slice(0, 4)) {
+        map.set(img.id, img);
+      }
     }
     for (const img of tablePreviewImages) {
       map.set(img.id, img);
     }
     return Array.from(map.values());
-  }, [rowPrimaryImageByItemId, tablePreviewImages]);
+  }, [rowImagesByItemId, tablePreviewImages]);
 
   useEffect(() => {
     const keep = new Set(desiredTableImages.map((img) => img.id));
