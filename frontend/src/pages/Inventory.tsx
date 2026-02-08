@@ -1,5 +1,5 @@
 import { Image as ImageIcon, RefreshCw, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
@@ -42,6 +42,7 @@ type MasterProduct = {
 
 type InventoryImage = {
   id: string;
+  inventory_item_id: string;
   upload_path: string;
   created_at: string;
 };
@@ -211,6 +212,11 @@ export function InventoryPage() {
   const [previewErrors, setPreviewErrors] = useState<Record<string, true>>({});
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [imagesDragOver, setImagesDragOver] = useState(false);
+  const [tablePreviewItemId, setTablePreviewItemId] = useState<string | null>(null);
+  const [tablePreviewImageId, setTablePreviewImageId] = useState<string | null>(null);
+  const [tablePreviewUrls, setTablePreviewUrls] = useState<Record<string, string>>({});
+  const [tablePreviewErrors, setTablePreviewErrors] = useState<Record<string, true>>({});
+  const tablePreviewUrlsRef = useRef<Record<string, string>>({});
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -233,6 +239,40 @@ export function InventoryPage() {
 
   const rows = inv.data ?? [];
   const today = new Date();
+  const rowItemIds = useMemo(() => rows.map((row) => row.id), [rows]);
+
+  const rowImages = useQuery({
+    queryKey: ["inventory-row-images", rowItemIds.join(",")],
+    enabled: rowItemIds.length > 0,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      rowItemIds.forEach((id) => params.append("item_ids", id));
+      return api.request<InventoryImage[]>(`/inventory/images?${params.toString()}`);
+    },
+  });
+
+  const rowImagesByItemId = useMemo(() => {
+    const map = new Map<string, InventoryImage[]>();
+    for (const img of rowImages.data ?? []) {
+      const list = map.get(img.inventory_item_id) ?? [];
+      list.push(img);
+      map.set(img.inventory_item_id, list);
+    }
+    return map;
+  }, [rowImages.data]);
+
+  const rowPrimaryImageByItemId = useMemo(() => {
+    const map = new Map<string, InventoryImage>();
+    for (const [itemId, imagesForItem] of rowImagesByItemId.entries()) {
+      if (imagesForItem.length) map.set(itemId, imagesForItem[0]);
+    }
+    return map;
+  }, [rowImagesByItemId]);
+
+  const tablePreviewImages = useMemo(
+    () => (tablePreviewItemId ? (rowImagesByItemId.get(tablePreviewItemId) ?? []) : []),
+    [rowImagesByItemId, tablePreviewItemId],
+  );
 
   const images = useQuery({
     queryKey: ["inventory-images", editing?.id],
@@ -325,6 +365,102 @@ export function InventoryPage() {
     };
   }, [editing?.id, images.data, previewErrors, previewUrls]);
 
+  useEffect(() => {
+    tablePreviewUrlsRef.current = tablePreviewUrls;
+  }, [tablePreviewUrls]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(tablePreviewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  useEffect(() => {
+    const first = tablePreviewImages[0]?.id ?? null;
+    if (!first) {
+      setTablePreviewImageId(null);
+      return;
+    }
+    setTablePreviewImageId((cur) => {
+      if (cur && tablePreviewImages.some((img) => img.id === cur)) return cur;
+      return first;
+    });
+  }, [tablePreviewImages]);
+
+  const desiredTableImages = useMemo(() => {
+    const map = new Map<string, InventoryImage>();
+    for (const img of rowPrimaryImageByItemId.values()) {
+      map.set(img.id, img);
+    }
+    for (const img of tablePreviewImages) {
+      map.set(img.id, img);
+    }
+    return Array.from(map.values());
+  }, [rowPrimaryImageByItemId, tablePreviewImages]);
+
+  useEffect(() => {
+    const keep = new Set(desiredTableImages.map((img) => img.id));
+    setTablePreviewUrls((prev) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [id, url] of Object.entries(prev)) {
+        if (keep.has(id)) next[id] = url;
+        else {
+          changed = true;
+          URL.revokeObjectURL(url);
+        }
+      }
+      return changed ? next : prev;
+    });
+    setTablePreviewErrors((prev) => {
+      let changed = false;
+      const next: Record<string, true> = {};
+      for (const [id, value] of Object.entries(prev)) {
+        if (keep.has(id)) next[id] = value;
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+
+    const missing = desiredTableImages.filter(
+      (img) =>
+        isLikelyImagePath(img.upload_path) &&
+        !tablePreviewUrls[img.id] &&
+        !tablePreviewErrors[img.id],
+    );
+    if (!missing.length) return;
+
+    let cancelled = false;
+    (async () => {
+      const newUrls: Record<string, string> = {};
+      const newErr: Record<string, true> = {};
+      for (const img of missing) {
+        try {
+          const blob = await api.fileBlob(img.upload_path);
+          if (cancelled) break;
+          if (!blob.type.startsWith("image/")) {
+            newErr[img.id] = true;
+            continue;
+          }
+          newUrls[img.id] = URL.createObjectURL(blob);
+        } catch {
+          newErr[img.id] = true;
+        }
+      }
+
+      if (cancelled) {
+        Object.values(newUrls).forEach((url) => URL.revokeObjectURL(url));
+        return;
+      }
+      if (Object.keys(newUrls).length) setTablePreviewUrls((prev) => ({ ...prev, ...newUrls }));
+      if (Object.keys(newErr).length) setTablePreviewErrors((prev) => ({ ...prev, ...newErr }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, desiredTableImages, tablePreviewErrors, tablePreviewUrls]);
+
   const update = useMutation({
     mutationFn: async () => {
       if (!editing) throw new Error("Kein Artikel ausgewählt");
@@ -383,6 +519,11 @@ export function InventoryPage() {
     uploadImages.mutate({ itemId: editing.id, files });
   }
 
+  const tablePreviewItem = tablePreviewItemId ? rows.find((row) => row.id === tablePreviewItemId) ?? null : null;
+  const tablePreviewMasterProduct = tablePreviewItem
+    ? mpById.get(tablePreviewItem.master_product_id) ?? null
+    : null;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -407,9 +548,9 @@ export function InventoryPage() {
         </div>
       </div>
 
-      {(inv.isError || master.isError) && (
+      {(inv.isError || master.isError || rowImages.isError) && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-          {((inv.error ?? master.error) as Error).message}
+          {((inv.error ?? master.error ?? rowImages.error) as Error).message}
         </div>
       )}
 
@@ -481,11 +622,17 @@ export function InventoryPage() {
                 const av = ageVariant(days);
                 const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
                 const hasAllocated = it.allocated_costs_cents > 0;
+                const itemImages = rowImagesByItemId.get(it.id) ?? [];
+                const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
+                const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
                 return (
                   <TableRow key={it.id}>
                     <TableCell>
                       <div className="flex items-start gap-3">
-                        <ReferenceThumb url={mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
+                        <ReferenceThumb
+                          url={itemPrimaryUrl ?? mp?.reference_image_url ?? null}
+                          alt={mp?.title ?? "Produkt"}
+                        />
 
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
@@ -522,6 +669,59 @@ export function InventoryPage() {
                           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                             ID: <span className="font-mono text-gray-400 dark:text-gray-500">{it.id}</span>
                           </div>
+                          {!!itemImages.length && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Badge variant="outline">
+                                {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
+                              </Badge>
+                              <div className="flex items-center gap-1">
+                                {itemImages.slice(0, 4).map((img) => {
+                                  const url = tablePreviewUrls[img.id];
+                                  const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
+                                  return (
+                                    <button
+                                      key={img.id}
+                                      type="button"
+                                      className="h-8 w-8 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+                                      title={img.upload_path}
+                                      onClick={() => {
+                                        setTablePreviewItemId(it.id);
+                                        setTablePreviewImageId(img.id);
+                                      }}
+                                    >
+                                      {url ? (
+                                        <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                                      ) : canPreview ? (
+                                        <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                                      ) : (
+                                        <div className="flex h-full w-full items-center justify-center text-[9px] text-gray-500 dark:text-gray-400">
+                                          Datei
+                                        </div>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setTablePreviewItemId(it.id)}
+                              >
+                                Vorschau
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  for (const img of itemImages) {
+                                    void api.download(img.upload_path);
+                                  }
+                                }}
+                              >
+                                Alle herunterladen
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -571,179 +771,308 @@ export function InventoryPage() {
       </Card>
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Artikel bearbeiten</DialogTitle>
             <DialogDescription>{editing ? editing.id : ""}</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Seriennummer (optional)</Label>
-              <Input value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} placeholder="SN / IMEI / …" />
-            </div>
-            <div className="space-y-2">
-              <Label>Lagerplatz (optional)</Label>
-              <Input value={editStorageLocation} onChange={(e) => setEditStorageLocation(e.target.value)} placeholder="Regal 2 / Box A / …" />
-            </div>
-          </div>
-
-          {update.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-              {(update.error as Error).message}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Bilder</div>
-              <div
-                className={[
-                  "rounded-md border border-dashed p-3 transition-colors",
-                  imagesDragOver
-                    ? "border-gray-500 bg-gray-100 dark:border-gray-500 dark:bg-gray-900/60"
-                    : "border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/30",
-                ].join(" ")}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setImagesDragOver(true);
-                }}
-                onDragLeave={() => setImagesDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setImagesDragOver(false);
-                  handleImageFiles(e.dataTransfer.files);
-                }}
-              >
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
-                    Bilder hier ablegen oder mehrere Dateien auswählen.
-                  </div>
-                  <Input
-                    type="file"
-                    className="max-w-xs"
-                    multiple
-                    disabled={uploadImages.isPending}
-                    onChange={(e) => {
-                      handleImageFiles(e.target.files);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-                </div>
-                {uploadImages.isPending && (
-                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    Upload läuft: {uploadImages.variables?.files.length ?? 0} Datei(en)…
-                  </div>
-                )}
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Seriennummer (optional)</Label>
+                <Input value={editSerialNumber} onChange={(e) => setEditSerialNumber(e.target.value)} placeholder="SN / IMEI / …" />
+              </div>
+              <div className="space-y-2">
+                <Label>Lagerplatz (optional)</Label>
+                <Input value={editStorageLocation} onChange={(e) => setEditStorageLocation(e.target.value)} placeholder="Regal 2 / Box A / …" />
               </div>
             </div>
 
-            {(images.isError || uploadImages.isError || removeImage.isError) && (
+            {update.isError && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-                {((images.error ?? uploadImages.error ?? removeImage.error) as Error).message}
+                {(update.error as Error).message}
               </div>
             )}
 
-            {!!(images.data ?? []).length && (
-              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
-                <div className="flex flex-wrap gap-2">
-                  {(images.data ?? []).map((img) => {
-                    const url = previewUrls[img.id];
-                    const isActive = activeImageId === img.id;
-                    const canPreview = isLikelyImagePath(img.upload_path) && !previewErrors[img.id];
-                    return (
-                      <button
-                        key={img.id}
-                        type="button"
-                        className={[
-                          "relative h-16 w-16 overflow-hidden rounded-md border bg-white shadow-sm",
-                          "dark:border-gray-800 dark:bg-gray-900",
-                          isActive ? "ring-2 ring-gray-300 dark:ring-gray-700" : "hover:ring-2 hover:ring-gray-200 dark:hover:ring-gray-800",
-                        ].join(" ")}
-                        onClick={() => setActiveImageId(img.id)}
-                        title={img.upload_path}
-                      >
-                        {url ? (
-                          <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
-                        ) : canPreview ? (
-                          <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-gray-100 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                            Datei
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {activeImageId && (
-                  <div className="mt-3 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    {previewUrls[activeImageId] ? (
-                      <img
-                        src={previewUrls[activeImageId]}
-                        alt="Artikelbild Vorschau"
-                        className="max-h-64 w-full bg-gray-50 object-contain dark:bg-gray-950/40"
-                      />
-                    ) : (
-                      <div className="flex h-40 w-full items-center justify-center bg-gray-50 text-sm text-gray-500 dark:bg-gray-950/40 dark:text-gray-400">
-                        Vorschau nicht verfügbar.
-                      </div>
-                    )}
-                    <div className="border-t border-gray-100 p-2 text-xs font-mono text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                      {(images.data ?? []).find((i) => i.id === activeImageId)?.upload_path ?? ""}
+            <div className="space-y-2">
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Bilder</div>
+                <div
+                  className={[
+                    "rounded-md border border-dashed p-3 transition-colors",
+                    imagesDragOver
+                      ? "border-gray-500 bg-gray-100 dark:border-gray-500 dark:bg-gray-900/60"
+                      : "border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/30",
+                  ].join(" ")}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setImagesDragOver(true);
+                  }}
+                  onDragLeave={() => setImagesDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setImagesDragOver(false);
+                    handleImageFiles(e.dataTransfer.files);
+                  }}
+                >
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      Bilder hier ablegen oder mehrere Dateien auswählen.
                     </div>
+                    <Input
+                      type="file"
+                      className="max-w-xs"
+                      multiple
+                      disabled={uploadImages.isPending}
+                      onChange={(e) => {
+                        handleImageFiles(e.target.files);
+                        e.currentTarget.value = "";
+                      }}
+                    />
                   </div>
-                )}
-              </div>
-            )}
-
-            <div className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Datei</TableHead>
-                    <TableHead className="text-right"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(images.data ?? []).map((img) => (
-                    <TableRow key={img.id}>
-                      <TableCell className="font-mono text-xs">{img.upload_path}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="secondary" onClick={() => api.download(img.upload_path)} disabled={removeImage.isPending}>
-                            Download
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            onClick={() => removeImage.mutate(img.id)}
-                            disabled={removeImage.isPending}
-                          >
-                            Entfernen
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {!images.data?.length && (
-                    <TableRow>
-                      <TableCell colSpan={2} className="text-sm text-gray-500 dark:text-gray-400">
-                        Noch keine Bilder.
-                      </TableCell>
-                    </TableRow>
+                  {uploadImages.isPending && (
+                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Upload läuft: {uploadImages.variables?.files.length ?? 0} Datei(en)…
+                    </div>
                   )}
-                </TableBody>
-              </Table>
+                </div>
+              </div>
+
+              {(images.isError || uploadImages.isError || removeImage.isError) && (
+                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                  {((images.error ?? uploadImages.error ?? removeImage.error) as Error).message}
+                </div>
+              )}
+
+              {!!(images.data ?? []).length && (
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+                  <div className="flex flex-wrap gap-2">
+                    {(images.data ?? []).map((img) => {
+                      const url = previewUrls[img.id];
+                      const isActive = activeImageId === img.id;
+                      const canPreview = isLikelyImagePath(img.upload_path) && !previewErrors[img.id];
+                      return (
+                        <button
+                          key={img.id}
+                          type="button"
+                          className={[
+                            "relative h-16 w-16 overflow-hidden rounded-md border bg-white shadow-sm",
+                            "dark:border-gray-800 dark:bg-gray-900",
+                            isActive ? "ring-2 ring-gray-300 dark:ring-gray-700" : "hover:ring-2 hover:ring-gray-200 dark:hover:ring-gray-800",
+                          ].join(" ")}
+                          onClick={() => setActiveImageId(img.id)}
+                          title={img.upload_path}
+                        >
+                          {url ? (
+                            <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                          ) : canPreview ? (
+                            <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-gray-100 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                              Datei
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {activeImageId && (
+                    <div className="mt-3 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                      {previewUrls[activeImageId] ? (
+                        <img
+                          src={previewUrls[activeImageId]}
+                          alt="Artikelbild Vorschau"
+                          className="max-h-64 w-full bg-gray-50 object-contain dark:bg-gray-950/40"
+                        />
+                      ) : (
+                        <div className="flex h-40 w-full items-center justify-center bg-gray-50 text-sm text-gray-500 dark:bg-gray-950/40 dark:text-gray-400">
+                          Vorschau nicht verfügbar.
+                        </div>
+                      )}
+                      <div className="border-t border-gray-100 p-2 text-xs font-mono text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                        {(images.data ?? []).find((i) => i.id === activeImageId)?.upload_path ?? ""}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="max-h-56 overflow-y-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Datei</TableHead>
+                      <TableHead className="text-right"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(images.data ?? []).map((img) => (
+                      <TableRow key={img.id}>
+                        <TableCell className="font-mono text-xs">{img.upload_path}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="secondary" onClick={() => api.download(img.upload_path)} disabled={removeImage.isPending}>
+                              Download
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              onClick={() => removeImage.mutate(img.id)}
+                              disabled={removeImage.isPending}
+                            >
+                              Entfernen
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!images.data?.length && (
+                      <TableRow>
+                        <TableCell colSpan={2} className="text-sm text-gray-500 dark:text-gray-400">
+                          Noch keine Bilder.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 border-t border-gray-200 bg-white pt-4 dark:border-gray-800 dark:bg-gray-900">
             <Button variant="secondary" onClick={() => setEditing(null)} disabled={update.isPending}>
               Schließen
             </Button>
             <Button onClick={() => update.mutate()} disabled={update.isPending}>
               Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={tablePreviewItemId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTablePreviewItemId(null);
+            setTablePreviewImageId(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Artikelbilder</DialogTitle>
+            <DialogDescription>
+              {tablePreviewMasterProduct?.title ?? tablePreviewItem?.id ?? ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {!!tablePreviewImages.length && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {tablePreviewImages.map((img) => {
+                  const url = tablePreviewUrls[img.id];
+                  const isActive = tablePreviewImageId === img.id;
+                  const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
+                  return (
+                    <button
+                      key={img.id}
+                      type="button"
+                      className={[
+                        "relative h-16 w-16 overflow-hidden rounded-md border bg-white shadow-sm",
+                        "dark:border-gray-800 dark:bg-gray-900",
+                        isActive
+                          ? "ring-2 ring-gray-300 dark:ring-gray-700"
+                          : "hover:ring-2 hover:ring-gray-200 dark:hover:ring-gray-800",
+                      ].join(" ")}
+                      onClick={() => setTablePreviewImageId(img.id)}
+                      title={img.upload_path}
+                    >
+                      {url ? (
+                        <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                      ) : canPreview ? (
+                        <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gray-100 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                          Datei
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {tablePreviewImageId && (
+                <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                  {tablePreviewUrls[tablePreviewImageId] ? (
+                    <img
+                      src={tablePreviewUrls[tablePreviewImageId]}
+                      alt="Artikelbild Vorschau"
+                      className="max-h-[50vh] w-full bg-gray-50 object-contain dark:bg-gray-950/40"
+                    />
+                  ) : (
+                    <div className="flex h-48 w-full items-center justify-center bg-gray-50 text-sm text-gray-500 dark:bg-gray-950/40 dark:text-gray-400">
+                      Vorschau nicht verfügbar.
+                    </div>
+                  )}
+                  <div className="border-t border-gray-100 p-2 text-xs font-mono text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                    {(tablePreviewImages.find((img) => img.id === tablePreviewImageId)?.upload_path ?? "")}
+                  </div>
+                </div>
+              )}
+
+              <div className="max-h-56 overflow-y-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Datei</TableHead>
+                      <TableHead className="text-right">Aktion</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tablePreviewImages.map((img) => (
+                      <TableRow key={img.id}>
+                        <TableCell className="font-mono text-xs">{img.upload_path}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="secondary" onClick={() => api.download(img.upload_path)}>
+                            Download
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {!tablePreviewImages.length && (
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+              Für diesen Artikel sind keine Bilder hinterlegt.
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                for (const img of tablePreviewImages) {
+                  void api.download(img.upload_path);
+                }
+              }}
+              disabled={!tablePreviewImages.length}
+            >
+              Alle herunterladen
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTablePreviewItemId(null);
+                setTablePreviewImageId(null);
+              }}
+            >
+              Schließen
             </Button>
           </DialogFooter>
         </DialogContent>

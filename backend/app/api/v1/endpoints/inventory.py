@@ -58,6 +58,23 @@ async def list_inventory(
     return [InventoryItemOut.model_validate(r) for r in rows]
 
 
+@router.get("/images", response_model=list[InventoryItemImageOut])
+async def list_inventory_images_for_items(
+    item_ids: list[uuid.UUID] = Query(default=[]),
+    session: AsyncSession = Depends(get_session),
+) -> list[InventoryItemImageOut]:
+    if not item_ids:
+        return []
+    rows = (
+        await session.execute(
+            select(InventoryItemImage)
+            .where(InventoryItemImage.inventory_item_id.in_(item_ids))
+            .order_by(InventoryItemImage.inventory_item_id.asc(), InventoryItemImage.created_at.desc())
+        )
+    ).scalars().all()
+    return [InventoryItemImageOut.model_validate(r) for r in rows]
+
+
 @router.patch("/{inventory_item_id}", response_model=InventoryItemOut)
 async def update_inventory_item(
     inventory_item_id: uuid.UUID,
