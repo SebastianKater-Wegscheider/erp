@@ -38,3 +38,44 @@
 ### Offene technische Punkte (bewusst vertagt)
 - Kein eigener Inventar-Detail-Endpunkt (`GET /inventory/{id}`), daher im Empfangsdialog aktuell Fokus auf Item-ID statt Produktmetadaten.
 - Status `DISCREPANCY` bleibt als operativer Zwischenzustand für Nachverfolgung offen; finale Klärung erfolgt über manuelle Statuspflege (`FBA_WAREHOUSE`/`LOST`).
+
+## 2026-02-08 - Qualitätsdurchlauf: Teststrategie und Stabilität
+
+### Ausgangslage
+- Die bestehende Test-Suite deckt v. a. Utility-/Teil-Logik ab, aber nur begrenzt End-to-End-Verhalten über Services und API-ähnliche Flows.
+- Frontend hat bisher keine automatisierten Tests.
+
+### Business-Entscheidungen
+- Fokus auf regressionskritische Geschäftsprozesse statt künstlich hoher Coverage:
+  - Einkauf -> Lagerzugang
+  - Verkauf -> Finalisierung -> Rückabwicklung
+  - FBA-Shipping inkl. Kostenumlage
+  - Kostenumlagen/OpEx/Mileage
+  - Reporting-/Steuerlogik und sicherheitsrelevante File-Zugriffe
+- Ziel ist vor allem betriebliche Verlässlichkeit (keine stillen Status-/Betragsfehler), nicht nur formale Testmetriken.
+
+### Technische Entscheidungen
+- Einführung einer robusten Backend-Testbasis mit echter DB-Interaktion (SQLAlchemy async), inkl. Fixture-Strategie für deterministische Testdaten.
+- Ergänzung gezielter Negativtests (Fehlerpfade, Invalid States, Schutzmechanismen), um reale Betriebsfehler früh zu erkennen.
+- Einführung einer schlanken Frontend-Testschicht (Utility-/Auth/API-nahe Logik), damit Kernverhalten im Browsercode abgesichert ist.
+- Bei identifizierten Inkonsistenzen erfolgt direktes Refactoring/Fix, anschließend Absicherung durch Tests.
+
+### Risiken / Trade-offs
+- Mehr Integrationsnahe Tests erhöhen Laufzeit, senken dafür das Risiko von Business-kritischen Regressionen.
+- Test-Fixtures müssen sauber gekapselt bleiben, damit keine Seiteneffekte zwischen Modulen entstehen.
+
+### Umsetzung
+- Backend-Testbasis auf asynchrone, isolierte DB-Integration erweitert (inkl. Typ-Mapping für JSONB im SQLite-Testkontext).
+- Neue Integrations-/Flow-Tests für:
+  - Einkauf/Update/Inventar-Referenzen
+  - Sales-Finalisierung/Storno/Returns
+  - FBA Shipping + Empfang + Kostenumlage
+  - Cost Allocation, OpEx, Mileage
+  - Reporting (Dashboard, VAT, Month-Close ZIP)
+  - Dokumentnummern, Bank-Transaktions-Utilities, File-Download-Sicherheit
+- Frontend-Testinfrastruktur ergänzt (Vitest + Testing Library) mit Tests für:
+  - Money-/Date-Utilities
+  - Auth-Persistenz (LocalStorage)
+  - API-Hook (Headers, Fehlerbehandlung, Blob-Download)
+- Konkreter Bugfix aus Testlauf:
+  - `_parse_iso_date()` normalisiert `datetime` jetzt korrekt auf `date`, um Typinkonsistenzen im Bank-Sync zu vermeiden.
