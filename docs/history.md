@@ -209,3 +209,17 @@
 ### Risiken / Trade-offs
 - Reopen überschreibt den bisherigen finalen Dokumentzustand bewusst; Audit-Log dient als Nachvollziehbarkeit.
 - Dokumentnummern-Lücken werden reduziert, aber eine bereits extern versendete Rechnung kann durch Reopen intern geändert werden; disziplinierte Nutzung bleibt erforderlich.
+
+## 2026-02-08 - Eigenbeleg PDF: Identifikation nur wenn vorhanden + Uploads als Bilder einbetten
+
+### Ausgangslage
+- Im Eigenbeleg (Gutschrift) wurde der Block "Identifikation" immer gedruckt, auch wenn keine Daten erfasst wurden (wirkt willkuerlich/unvollstaendig).
+- Hochgeladene Nachweise (z. B. Kleinanzeigen-Chat/Anzeige/Payment-Screenshots) wurden im PDF nur als Pfad referenziert; fuer eine Pruefung ist das unpraktisch.
+
+### Business-Entscheidungen
+- Wenn keine Identifikationsdaten erfasst sind, wird der Identifikationsblock gar nicht angezeigt (keine leeren Labels).
+- Bild-Nachweise werden direkt im PDF dargestellt (mehrseitig), damit der Eigenbeleg zusammen mit den Nachweisen als ein Dokument abgelegt werden kann.
+
+### Technische Entscheidungen
+- WeasyPrint nutzt lokale `file://` URIs fuer Uploads; nur `uploads/` Pfade werden akzeptiert (wie bisher in API-Validierung).
+- Layout/CSS wird so angepasst, dass der Footer die Inhalte nicht ueberlappt (groessere Bottom-Margin) und Bilder skaliert/umgebrochen werden.
