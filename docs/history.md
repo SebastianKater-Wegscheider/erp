@@ -242,3 +242,5 @@
 - Tables: horizontaler Scroll als Default (`overflow-x-auto`) und `min-w-max`, damit Spalten nicht gequetscht werden.
 - Topbar: kurzer Titel auf Mobile (Abkuerzung), damit Header nicht ueberlaeuft.
 - Zusaetzlicher Guard gegen horizontales "Seitwaerts-Panning" auf iOS: `overflow-x` fuer `html/body` auf `clip` (Fallback `hidden`).
+- Falls Overflow aus Portals/absolut positionierten Elementen kommt: gleicher Guard auf `#root` (clip/hidden), damit Safari die Scroll-Width nicht vergroessert.
+- Tables: `min-w-max` wieder entfernt; einige Views (Dashboard) sollen auf Mobile nicht horizontal scrollen, wenn die Inhalte eigentlich per Truncate passen.
