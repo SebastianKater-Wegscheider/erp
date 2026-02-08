@@ -42,8 +42,11 @@ async def dashboard(session: AsyncSession, *, today: date) -> dict:
     in_stock_statuses = [
         InventoryStatus.DRAFT,
         InventoryStatus.AVAILABLE,
+        InventoryStatus.FBA_INBOUND,
+        InventoryStatus.FBA_WAREHOUSE,
         InventoryStatus.RESERVED,
         InventoryStatus.RETURNED,
+        InventoryStatus.DISCREPANCY,
     ]
     inv_value_stmt = select(
         func.coalesce(func.sum(InventoryItem.purchase_price_cents + InventoryItem.allocated_costs_cents), 0)
@@ -190,8 +193,11 @@ async def reseller_dashboard(session: AsyncSession, *, today: date, days: int = 
     in_stock_statuses = [
         InventoryStatus.DRAFT,
         InventoryStatus.AVAILABLE,
+        InventoryStatus.FBA_INBOUND,
+        InventoryStatus.FBA_WAREHOUSE,
         InventoryStatus.RESERVED,
         InventoryStatus.RETURNED,
+        InventoryStatus.DISCREPANCY,
     ]
     inv_age_rows = (
         await session.execute(
