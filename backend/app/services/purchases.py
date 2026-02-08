@@ -15,6 +15,7 @@ from app.models.inventory_item_image import InventoryItemImage
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.purchase import Purchase, PurchaseLine
+from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrderLine
 from app.schemas.purchase import PurchaseCreate, PurchaseUpdate
 from app.services.audit import audit_log
@@ -627,6 +628,36 @@ async def generate_purchase_credit_note_pdf(
             }
         )
 
+    attachment_rows = (
+        await session.execute(
+            select(
+                PurchaseAttachment.kind,
+                PurchaseAttachment.original_filename,
+                PurchaseAttachment.note,
+                PurchaseAttachment.upload_path,
+            )
+            .where(PurchaseAttachment.purchase_id == purchase.id)
+            .order_by(PurchaseAttachment.created_at.asc())
+        )
+    ).all()
+    attachment_kind_labels = {
+        "LISTING": "Anzeige",
+        "CHAT": "Konversation",
+        "PAYMENT": "Zahlung",
+        "DELIVERY": "Versand",
+        "OTHER": "Sonstiges",
+    }
+    attachments_ctx = [
+        {
+            "kind": r.kind,
+            "kind_label": attachment_kind_labels.get(str(r.kind).upper(), str(r.kind)),
+            "original_filename": r.original_filename,
+            "note": r.note,
+            "upload_path": r.upload_path,
+        }
+        for r in attachment_rows
+    ]
+
     settings = get_settings()
     templates_dir = Path(__file__).resolve().parents[1] / "templates"
     rel_path = f"pdfs/credit-notes/{purchase.document_number}.pdf"
@@ -649,6 +680,10 @@ async def generate_purchase_credit_note_pdf(
             "counterparty_birthdate": purchase.counterparty_birthdate.strftime("%d.%m.%Y") if purchase.counterparty_birthdate else None,
             "counterparty_id_number": purchase.counterparty_id_number,
             "payment_source": {"CASH": "Bar", "BANK": "Bank"}.get(purchase.payment_source.value, purchase.payment_source.value),
+            "source_platform": purchase.source_platform,
+            "listing_url": purchase.listing_url,
+            "purchase_notes": purchase.notes,
+            "purchase_attachments": attachments_ctx,
             "lines": lines_ctx,
             "total_amount_eur": format_eur(purchase.total_amount_cents),
         },

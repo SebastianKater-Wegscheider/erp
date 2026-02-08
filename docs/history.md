@@ -1,5 +1,22 @@
 # History
 
+## 2026-02-08 - Eigenbeleg ohne Unterschriftsblock, mit Nachweisdaten
+
+### Ausgangslage
+- Der bisherige Eigenbeleg enthält einen klassischen Unterschriftsblock, während die tatsächlichen Nachweise inzwischen digital vorliegen (Plattformquelle, Anzeige-URL, Chat-/Anzeige-Screenshots als Uploads).
+
+### Business-Entscheidung
+- Der Unterschriftsbereich wird aus dem Eigenbeleg entfernt.
+- Stattdessen zeigt der Eigenbeleg die hinterlegten Nachweisdaten strukturiert an, damit der Beleg den realen Beschaffungsprozess besser dokumentiert.
+
+### Technische Entscheidung
+- Der PDF-Context für `purchase_credit_note.html` wird um `source_platform`, `listing_url`, `notes` und `purchase_attachments` erweitert.
+- Das Template rendert diese Felder im Bereich „Belege / Nachweise“ inkl. Dateinamen, Typ und optionaler Notiz.
+
+### Risiken / Trade-offs
+- Upload-Pfade und Dateinamen sind reine Referenzen; der Eigenbeleg enthält keine eingebetteten Originaldateien.
+- Bei sehr vielen Anhängen wächst der Beleg textuell, bleibt aber nachvollziehbar und auditierbar.
+
 ## 2026-02-08 - Privatankauf: Plattformquelle + Evidenzanhänge
 
 ### Ausgangslage

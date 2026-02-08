@@ -58,7 +58,7 @@
 
     <div class="subject">Gutschrift (Eigenbeleg) – Ankauf</div>
     <div class="subline">
-      Ankauf von Gebrauchtwaren von einer Privatperson. Bitte prüfen Sie die Angaben und unterschreiben Sie unten.
+      Ankauf von Gebrauchtwaren von einer Privatperson. Die Nachweise zum Ankauf sind unten dokumentiert.
     </div>
 
     <table class="items">
@@ -96,22 +96,48 @@
       </div>
     </div>
 
-    <div class="signature">
-      <div class="signature-copy">
-        <div>Der Verkäufer versichert, dass die Ware frei von Rechten Dritter ist.</div>
-        <div>Hiermit bestätige ich den Erhalt des Betrags und das rechtmäßige Eigentum an der Ware.</div>
-      </div>
+    <div class="evidence">
+      <div class="evidence-title">Belege / Nachweise</div>
+      <table class="evidence-table">
+        <tr>
+          <td>Plattform / Quelle</td>
+          <td>{{ source_platform or "" }}</td>
+        </tr>
+        <tr>
+          <td>Anzeige-URL</td>
+          <td class="mono">{{ listing_url or "" }}</td>
+        </tr>
+        <tr>
+          <td>Notizen</td>
+          <td>{{ purchase_notes or "" }}</td>
+        </tr>
+      </table>
 
-      <div class="signature-grid">
-        <div class="sig-field">
-          <div class="sig-line"></div>
-          <div class="sig-label">Ort / Datum</div>
-        </div>
-        <div class="sig-field">
-          <div class="sig-line"></div>
-          <div class="sig-label">Unterschrift Verkäufer</div>
-        </div>
-      </div>
+      <div class="evidence-files-title">Hochgeladene Dateien</div>
+      {% if purchase_attachments and purchase_attachments|length > 0 %}
+        <table class="evidence-files-table">
+          <thead>
+            <tr>
+              <th>Typ</th>
+              <th>Datei</th>
+              <th>Notiz</th>
+              <th>Pfad</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for attachment in purchase_attachments %}
+              <tr>
+                <td>{{ attachment.kind_label }}</td>
+                <td class="mono">{{ attachment.original_filename }}</td>
+                <td>{{ attachment.note or "" }}</td>
+                <td class="mono">{{ attachment.upload_path }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="muted small">Keine zusätzlichen Uploads hinterlegt.</div>
+      {% endif %}
     </div>
 
     <footer class="doc-footer">
@@ -128,4 +154,3 @@
     </footer>
   </body>
 </html>
-

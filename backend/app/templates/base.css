@@ -303,3 +303,51 @@ table.items td {
   letter-spacing: 0.6px;
   text-transform: uppercase;
 }
+
+.evidence {
+  margin-top: 10mm;
+  padding-top: 4mm;
+  border-top: 1px solid #e5e7eb;
+}
+
+.evidence-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2mm;
+}
+
+.evidence-table td {
+  padding: 1.5mm 0;
+  border: none;
+  vertical-align: top;
+}
+
+.evidence-table td:first-child {
+  width: 36mm;
+  color: #6b7280;
+  padding-right: 10px;
+}
+
+.evidence-files-title {
+  margin-top: 3mm;
+  margin-bottom: 1.5mm;
+  font-weight: 600;
+}
+
+.evidence-files-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.evidence-files-table th,
+.evidence-files-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.evidence-files-table th {
+  background: #f9fafb;
+  font-size: 10px;
+}
