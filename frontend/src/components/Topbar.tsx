@@ -190,15 +190,15 @@ export function Topbar() {
               // Radix auto-focuses the first focusable element; with a search input first, iOS opens the keyboard.
               // Prevent that and let the user tap into search explicitly.
               onOpenAutoFocus={(e) => e.preventDefault()}
-              className="left-0 top-0 flex h-dvh w-[88vw] max-w-[420px] translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-r border-gray-200 p-0 dark:border-gray-800"
+              className="left-0 top-0 flex h-dvh max-h-none w-[88vw] max-w-[420px] translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-r border-gray-200 p-0 dark:border-gray-800"
             >
               <DialogHeader className="border-b border-gray-200 px-4 py-4 pr-14 pt-[calc(1rem+env(safe-area-inset-top))] dark:border-gray-800">
                 <DialogTitle className="text-base sm:text-lg">Navigation</DialogTitle>
                 <DialogDescription className="sr-only">Wechseln Sie zwischen den Modulen.</DialogDescription>
               </DialogHeader>
 
-              <div className="flex flex-1 flex-col">
-                <div ref={mobileNavScrollRef} className="flex-1 overflow-auto overscroll-contain">
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div ref={mobileNavScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                   <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/80">
                     <div className="px-4 pb-3 pt-2">
                       <Input
