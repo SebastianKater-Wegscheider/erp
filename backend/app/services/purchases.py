@@ -72,14 +72,14 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
     target_width_px = 680
     max_scaled_height_px = 900
 
-    img = Image.open(src_path)
+    orig = Image.open(src_path)
     try:
-        img.load()
-        if img.width <= 0 or img.height <= 0:
+        orig.load()
+        if orig.width <= 0 or orig.height <= 0:
             return [src_path]
 
         # Flatten transparency to white and auto-crop uniform background (common for long mobile screenshots).
-        work = img
+        work = orig
         if work.mode in ("RGBA", "LA") or (work.mode == "P" and "transparency" in work.info):
             bg = Image.new("RGBA", work.size, (255, 255, 255, 255))
             bg.alpha_composite(work.convert("RGBA"))
@@ -147,7 +147,8 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
         return out_paths or [src_path]
     finally:
         try:
-            img.close()
+            # Close the original ImageFile to release the underlying file handle.
+            orig.close()
         except Exception:
             pass
 

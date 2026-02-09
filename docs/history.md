@@ -275,3 +275,4 @@
 - Evidence-Image im Test wird als echtes 1x1 PNG erzeugt (Pillow), damit der PDF-Flow realistisch bleibt.
 - Zusaetzlicher Unit-Test fuer `_slice_image_for_pdf`: stellt sicher, dass kurze Bilder nicht gesliced werden und hohe Screenshots in mehrere PNG-Teile zerlegt werden.
 - Frontend: kleine Component-Tests fuer `Input`/`Select`/`Dialog` (>=16px auf Mobile, Dialog max-height/scroll + Safe-Area Close) sowie `Topbar` (Drawer oeffnet ohne Auto-Focus auf Search Input).
+- Refactor: `_slice_image_for_pdf` schliesst jetzt garantiert das originale `Image.open()` Handle (verhindert FD-Leaks bei vielen Evidence-Dateien).
