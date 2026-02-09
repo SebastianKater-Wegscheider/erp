@@ -306,78 +306,134 @@ export function DashboardPage() {
               <div className="space-y-2">
                 <div className="text-sm font-medium text-gray-700 dark:text-gray-200">Top</div>
                 <div className="rounded-md border border-gray-200 dark:border-gray-800">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Produkt</TableHead>
-                        <TableHead className="text-right">Stk</TableHead>
-                        <TableHead className="text-right">Umsatz</TableHead>
-                        <TableHead className="text-right">Gewinn</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(data?.top_products_30d ?? []).map((p) => (
-                        <TableRow key={p.master_product_id}>
-                          <TableCell className="max-w-[260px]">
-                            <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
-                            <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                              <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">{p.units_sold}</TableCell>
-                          <TableCell className="text-right">{formatEur(p.revenue_cents)} €</TableCell>
-                          <TableCell className="text-right">{formatEur(p.profit_cents)} €</TableCell>
-                        </TableRow>
-                      ))}
-                      {!data?.top_products_30d?.length && (
+                  <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-800">
+                    {(data?.top_products_30d ?? []).map((p) => (
+                      <div key={p.master_product_id} className="flex items-start justify-between gap-3 p-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
+                          <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">{p.units_sold} Stk</Badge>
+                            <Badge variant="secondary">{formatEur(p.revenue_cents)} € Umsatz</Badge>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Gewinn</div>
+                          <div className={["text-sm font-semibold", p.profit_cents < 0 ? "text-red-700 dark:text-red-300" : "text-gray-900 dark:text-gray-100"].join(" ")}>
+                            {formatEur(p.profit_cents)} €
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {!data?.top_products_30d?.length && (
+                      <div className="p-3 text-sm text-gray-500 dark:text-gray-400">Keine Verkäufe im Zeitraum.</div>
+                    )}
+                  </div>
+
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
-                            Keine Verkäufe im Zeitraum.
-                          </TableCell>
+                          <TableHead>Produkt</TableHead>
+                          <TableHead className="text-right">Stk</TableHead>
+                          <TableHead className="text-right">Umsatz</TableHead>
+                          <TableHead className="text-right">Gewinn</TableHead>
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {(data?.top_products_30d ?? []).map((p) => (
+                          <TableRow key={p.master_product_id}>
+                            <TableCell className="max-w-[260px]">
+                              <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
+                              <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+                                <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">{p.units_sold}</TableCell>
+                            <TableCell className="text-right">{formatEur(p.revenue_cents)} €</TableCell>
+                            <TableCell className="text-right">{formatEur(p.profit_cents)} €</TableCell>
+                          </TableRow>
+                        ))}
+                        {!data?.top_products_30d?.length && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                              Keine Verkäufe im Zeitraum.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="text-sm font-medium text-gray-700 dark:text-gray-200">Flops</div>
                 <div className="rounded-md border border-gray-200 dark:border-gray-800">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Produkt</TableHead>
-                        <TableHead className="text-right">Stk</TableHead>
-                        <TableHead className="text-right">Umsatz</TableHead>
-                        <TableHead className="text-right">Gewinn</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(data?.worst_products_30d ?? []).map((p) => (
-                        <TableRow key={p.master_product_id}>
-                          <TableCell className="max-w-[260px]">
-                            <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
-                            <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                              <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">{p.units_sold}</TableCell>
-                          <TableCell className="text-right">{formatEur(p.revenue_cents)} €</TableCell>
-                          <TableCell className={["text-right", p.profit_cents < 0 ? "text-red-700 dark:text-red-300" : ""].join(" ")}>
+                  <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-800">
+                    {(data?.worst_products_30d ?? []).map((p) => (
+                      <div key={p.master_product_id} className="flex items-start justify-between gap-3 p-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
+                          <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">{p.units_sold} Stk</Badge>
+                            <Badge variant="secondary">{formatEur(p.revenue_cents)} € Umsatz</Badge>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Gewinn</div>
+                          <div className={["text-sm font-semibold", p.profit_cents < 0 ? "text-red-700 dark:text-red-300" : "text-gray-900 dark:text-gray-100"].join(" ")}>
                             {formatEur(p.profit_cents)} €
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {!data?.worst_products_30d?.length && (
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {!data?.worst_products_30d?.length && (
+                      <div className="p-3 text-sm text-gray-500 dark:text-gray-400">Keine Verkäufe im Zeitraum.</div>
+                    )}
+                  </div>
+
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
-                            Keine Verkäufe im Zeitraum.
-                          </TableCell>
+                          <TableHead>Produkt</TableHead>
+                          <TableHead className="text-right">Stk</TableHead>
+                          <TableHead className="text-right">Umsatz</TableHead>
+                          <TableHead className="text-right">Gewinn</TableHead>
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {(data?.worst_products_30d ?? []).map((p) => (
+                          <TableRow key={p.master_product_id}>
+                            <TableCell className="max-w-[260px]">
+                              <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
+                              <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+                                <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">{p.units_sold}</TableCell>
+                            <TableCell className="text-right">{formatEur(p.revenue_cents)} €</TableCell>
+                            <TableCell className={["text-right", p.profit_cents < 0 ? "text-red-700 dark:text-red-300" : ""].join(" ")}>
+                              {formatEur(p.profit_cents)} €
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {!data?.worst_products_30d?.length && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                              Keine Verkäufe im Zeitraum.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </div>
             </CardContent>
