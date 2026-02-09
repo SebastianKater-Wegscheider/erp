@@ -259,3 +259,4 @@
 - Verkaeufe: Orders-Liste auf Mobile als Card-List mit actions (Bearbeiten/Abschliessen/Rechnung/Reopen/Returns) in handlichem Grid; Desktop-Table bleibt unveraendert.
 - Naechster Schritt: Restliche Views (Dashboard Top/Flops, FBA Sendungen, Kostenverteilung, Betriebsausgaben, Fahrtenbuch) auf Mobile ebenfalls als Card-Listen/Stacked-Layouts rendern; Desktop-Tables bleiben unveraendert.
 - Kostenverteilung: Historie auf Mobile als Card-List; Positionen im Formular als gestapelte Cards (UUID/Betrag) + full-width Actions.
+- Betriebsausgaben: Historie auf Mobile als Card-List inkl. prominentem Betrag + "Beleg oeffnen"; Upload-/Submit-Bereich auf Mobile ohne Overflow (gestapelt/full-width).

@@ -131,12 +131,12 @@ export function OpexPage() {
             Ausgaben erfassen, Belege ablegen und für die Steuer aufbereiten.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <Button className="w-full sm:w-auto" variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={openForm}>
+          <Button className="w-full sm:w-auto" onClick={openForm}>
             <Plus className="h-4 w-4" />
             Ausgabe erfassen
           </Button>
@@ -178,58 +178,109 @@ export function OpexPage() {
             </div>
           )}
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Datum</TableHead>
-                <TableHead>Ausgabe</TableHead>
-                <TableHead className="text-right">Betrag</TableHead>
-                <TableHead className="text-right">Beleg</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((e) => {
-                const cat = optionLabel(CATEGORY_OPTIONS, e.category);
-                const pay = optionLabel(PAYMENT_SOURCE_OPTIONS, e.payment_source);
-                return (
-                  <TableRow key={e.id}>
-                    <TableCell className="whitespace-nowrap">{formatDateEuFromIso(e.expense_date)}</TableCell>
-                    <TableCell>
-                      <div className="font-medium text-gray-900 dark:text-gray-100">{e.recipient}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
+          <div className="md:hidden space-y-2">
+            {rows.map((e) => {
+              const cat = optionLabel(CATEGORY_OPTIONS, e.category);
+              const pay = optionLabel(PAYMENT_SOURCE_OPTIONS, e.payment_source);
+              const receiptName = e.receipt_upload_path ? e.receipt_upload_path.split("/").pop() : null;
+              return (
+                <div
+                  key={e.id}
+                  className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{formatDateEuFromIso(e.expense_date)}</div>
+                      <div className="mt-1 truncate font-medium text-gray-900 dark:text-gray-100">{e.recipient}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Badge variant="secondary">{cat}</Badge>
                         <Badge variant="outline">{pay}</Badge>
-                        {e.receipt_upload_path ? (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">{e.receipt_upload_path.split("/").pop()}</span>
-                        ) : null}
                       </div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right font-medium">{formatEur(e.amount_cents)} €</TableCell>
-                    <TableCell className="whitespace-nowrap text-right">
-                      {e.receipt_upload_path ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => api.download(e.receipt_upload_path!, e.receipt_upload_path!.split("/").pop()!)}
-                        >
-                          Öffnen
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
-                      )}
+                      {receiptName ? (
+                        <div className="mt-2 truncate text-xs text-gray-500 dark:text-gray-400">{receiptName}</div>
+                      ) : null}
+                    </div>
+                    <div className="shrink-0 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {formatEur(e.amount_cents)} €
+                    </div>
+                  </div>
+
+                  {e.receipt_upload_path ? (
+                    <div className="mt-3">
+                      <Button
+                        type="button"
+                        className="w-full"
+                        variant="outline"
+                        onClick={() => api.download(e.receipt_upload_path!, receiptName ?? "beleg")}
+                      >
+                        Beleg öffnen
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+            {!rows.length && (
+              <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+                Keine Daten.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Datum</TableHead>
+                  <TableHead>Ausgabe</TableHead>
+                  <TableHead className="text-right">Betrag</TableHead>
+                  <TableHead className="text-right">Beleg</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((e) => {
+                  const cat = optionLabel(CATEGORY_OPTIONS, e.category);
+                  const pay = optionLabel(PAYMENT_SOURCE_OPTIONS, e.payment_source);
+                  return (
+                    <TableRow key={e.id}>
+                      <TableCell className="whitespace-nowrap">{formatDateEuFromIso(e.expense_date)}</TableCell>
+                      <TableCell>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{e.recipient}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary">{cat}</Badge>
+                          <Badge variant="outline">{pay}</Badge>
+                          {e.receipt_upload_path ? (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">{e.receipt_upload_path.split("/").pop()}</span>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium">{formatEur(e.amount_cents)} €</TableCell>
+                      <TableCell className="whitespace-nowrap text-right">
+                        {e.receipt_upload_path ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => api.download(e.receipt_upload_path!, e.receipt_upload_path!.split("/").pop()!)}
+                          >
+                            Öffnen
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {!rows.length && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Daten.
                     </TableCell>
                   </TableRow>
-                );
-              })}
-              {!rows.length && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
-                    Keine Daten.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -309,11 +360,11 @@ export function OpexPage() {
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Beleg-Upload (optional)</Label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <Input value={receiptUploadPath} readOnly placeholder="PDF/Bild hochladen…" />
                     <Input
                       type="file"
-                      className="max-w-xs"
+                      className="w-full sm:max-w-xs"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) upload.mutate(f);
@@ -323,11 +374,11 @@ export function OpexPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <Button type="button" variant="secondary" onClick={closeForm} disabled={create.isPending}>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between">
+                <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={closeForm} disabled={create.isPending}>
                   Schließen
                 </Button>
-                <Button onClick={() => create.mutate()} disabled={!recipient.trim() || create.isPending}>
+                <Button className="w-full sm:w-auto" onClick={() => create.mutate()} disabled={!recipient.trim() || create.isPending}>
                   Erstellen
                 </Button>
               </div>
