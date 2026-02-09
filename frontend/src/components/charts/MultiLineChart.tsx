@@ -79,9 +79,11 @@ export function MultiLineChart({
   const y0 = hasZero ? yAt(0) : null;
 
   return (
-    <div className={cn("relative", className)}>
+    // On mobile Safari, absolutely positioned children (tooltip) can expand scrollWidth.
+    // Keep the chart self-contained so the page can't pan horizontally.
+    <div className={cn("relative max-w-full overflow-hidden", className)}>
       {tooltip && (
-        <div className="pointer-events-none absolute right-0 top-0 z-10 rounded-md border border-gray-200 bg-white/90 px-2 py-1 text-xs text-gray-700 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-950/70 dark:text-gray-200">
+        <div className="pointer-events-none absolute right-0 top-0 z-10 max-w-[calc(100vw-2rem)] break-words rounded-md border border-gray-200 bg-white/90 px-2 py-1 text-xs text-gray-700 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-950/70 dark:text-gray-200">
           <div className="font-medium text-gray-900 dark:text-gray-100">{xFormatter(String(tooltip.x))}</div>
           <div className="mt-1 space-y-0.5">
             {series.map((s) => (
@@ -102,7 +104,7 @@ export function MultiLineChart({
         aria-label={ariaLabel}
         viewBox={`0 0 ${W} ${H}`}
         style={{ height }}
-        className="w-full"
+        className="block w-full"
         onMouseLeave={() => setHoverIdx(null)}
         onMouseMove={(e) => {
           const svg = e.currentTarget;
