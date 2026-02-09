@@ -114,12 +114,12 @@ export function CostAllocationsPage() {
             Zusätzliche Kosten (Reinigung, Versand, Gebühren) anteilig auf Lagerartikel verteilen.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <Button className="w-full sm:w-auto" variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={openForm}>
+          <Button className="w-full sm:w-auto" onClick={openForm}>
             <Plus className="h-4 w-4" />
             Kosten verteilen
           </Button>
@@ -160,35 +160,65 @@ export function CostAllocationsPage() {
               {(list.error as Error).message}
             </div>
           )}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Datum</TableHead>
-                <TableHead>Beschreibung</TableHead>
-                <TableHead>Quelle</TableHead>
-                <TableHead className="text-right">Betrag</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((a) => (
-                <TableRow key={a.id}>
-                  <TableCell className="whitespace-nowrap">{formatDateEuFromIso(a.allocation_date)}</TableCell>
-                  <TableCell>{a.description}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{a.payment_source === "CASH" ? "Bar" : "Bank"}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">{formatEur(a.amount_cents)} €</TableCell>
-                </TableRow>
-              ))}
-              {!rows.length && (
+
+          <div className="md:hidden space-y-2">
+            {rows.map((a) => (
+              <div
+                key={a.id}
+                className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-gray-900 dark:text-gray-100">{a.description}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                      <span className="whitespace-nowrap">{formatDateEuFromIso(a.allocation_date)}</span>
+                      <Badge variant="outline">{a.payment_source === "CASH" ? "Bar" : "Bank"}</Badge>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    {formatEur(a.amount_cents)} €
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!rows.length && (
+              <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+                Keine Daten.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
-                    Keine Daten.
-                  </TableCell>
+                  <TableHead>Datum</TableHead>
+                  <TableHead>Beschreibung</TableHead>
+                  <TableHead>Quelle</TableHead>
+                  <TableHead className="text-right">Betrag</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell className="whitespace-nowrap">{formatDateEuFromIso(a.allocation_date)}</TableCell>
+                    <TableCell>{a.description}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{a.payment_source === "CASH" ? "Bar" : "Bank"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">{formatEur(a.amount_cents)} €</TableCell>
+                  </TableRow>
+                ))}
+                {!rows.length && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Daten.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -258,13 +288,13 @@ export function CostAllocationsPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Badge variant={sumCents > 0 ? "success" : "secondary"}>Summe: {formatEur(sumCents)} €</Badge>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="secondary" onClick={closeForm} disabled={create.isPending}>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
+                  <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={closeForm} disabled={create.isPending}>
                     Schließen
                   </Button>
-                  <Button onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
+                  <Button className="w-full sm:w-auto" onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
                     Erstellen
                   </Button>
                 </div>
@@ -277,53 +307,101 @@ export function CostAllocationsPage() {
               )}
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="font-medium">Positionen</div>
-                  <Button variant="secondary" onClick={() => setLines((s) => [...s, { inventory_item_id: "", amount: "0,00" }])}>
+                  <Button
+                    type="button"
+                    className="w-full sm:w-auto"
+                    variant="secondary"
+                    onClick={() => setLines((s) => [...s, { inventory_item_id: "", amount: "0,00" }])}
+                  >
                     Position hinzufügen
                   </Button>
                 </div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Lagerartikel-UUID</TableHead>
-                      <TableHead className="text-right">Betrag (EUR)</TableHead>
-                      <TableHead className="text-right"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lines.map((l, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell>
+
+                <div className="md:hidden space-y-2">
+                  {lines.map((l, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-medium text-gray-600 dark:text-gray-300">Position {idx + 1}</div>
+                        <Button type="button" variant="ghost" onClick={() => setLines((s) => s.filter((_, i) => i !== idx))}>
+                          Entfernen
+                        </Button>
+                      </div>
+
+                      <div className="mt-2 grid gap-2">
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Lagerartikel-UUID</div>
                           <Input
                             value={l.inventory_item_id}
                             onChange={(e) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, inventory_item_id: e.target.value } : x)))}
                             placeholder="UUID…"
                           />
-                        </TableCell>
-                        <TableCell className="text-right">
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Betrag (EUR)</div>
                           <Input
                             className="text-right"
                             value={l.amount}
                             onChange={(e) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, amount: e.target.value } : x)))}
                           />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" onClick={() => setLines((s) => s.filter((_, i) => i !== idx))}>
-                            Entfernen
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {!lines.length && (
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {!lines.length && (
+                    <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+                      Noch keine Positionen.
+                    </div>
+                  )}
+                </div>
+
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
-                          Noch keine Positionen.
-                        </TableCell>
+                        <TableHead>Lagerartikel-UUID</TableHead>
+                        <TableHead className="text-right">Betrag (EUR)</TableHead>
+                        <TableHead className="text-right"></TableHead>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {lines.map((l, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell>
+                            <Input
+                              value={l.inventory_item_id}
+                              onChange={(e) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, inventory_item_id: e.target.value } : x)))}
+                              placeholder="UUID…"
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              className="text-right"
+                              value={l.amount}
+                              onChange={(e) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, amount: e.target.value } : x)))}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button type="button" variant="ghost" onClick={() => setLines((s) => s.filter((_, i) => i !== idx))}>
+                              Entfernen
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {!lines.length && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
+                            Noch keine Positionen.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </CardContent>
           </Card>
