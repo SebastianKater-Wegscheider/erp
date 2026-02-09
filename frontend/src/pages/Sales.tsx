@@ -326,12 +326,12 @@ export function SalesPage() {
             Aufträge erfassen, abschließen und Rechnungen als PDF erstellen.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => orders.refetch()} disabled={orders.isFetching}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => orders.refetch()} disabled={orders.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={openCreateForm}>
+          <Button className="w-full sm:w-auto" onClick={openCreateForm}>
             <Plus className="h-4 w-4" />
             {editingOrderId ? "Neuer Auftrag" : "Auftrag erstellen"}
           </Button>
@@ -359,249 +359,530 @@ export function SalesPage() {
             </div>
           )}
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Datum</TableHead>
-                <TableHead>Kanal</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Käufer</TableHead>
-                <TableHead className="text-right">Brutto</TableHead>
-                <TableHead className="text-right">Aktionen</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(orders.data ?? []).map((o) => {
+          <div className="space-y-2 md:hidden">
+            {orders.isPending &&
+              Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={`skel-so-${i}`}
+                  className="animate-pulse rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <div className="h-4 w-36 rounded bg-gray-200 dark:bg-gray-800" />
+                      <div className="h-3 w-56 rounded bg-gray-100 dark:bg-gray-800" />
+                      <div className="h-3 w-40 rounded bg-gray-100 dark:bg-gray-800" />
+                    </div>
+                    <div className="space-y-2 text-right">
+                      <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-800" />
+                      <div className="h-3 w-24 rounded bg-gray-100 dark:bg-gray-800" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+            {!orders.isPending &&
+              (orders.data ?? []).map((o) => {
                 const gross = o.shipping_gross_cents + o.lines.reduce((s, l) => s + l.sale_gross_cents, 0);
+                const statusVariant = o.status === "FINALIZED" ? "success" : o.status === "DRAFT" ? "secondary" : "warning";
                 return (
-                  <TableRow key={o.id}>
-                    <TableCell>{o.order_date}</TableCell>
-                    <TableCell>{optionLabel(CHANNEL_OPTIONS, o.channel)}</TableCell>
-                    <TableCell>
-                      <Badge variant={o.status === "FINALIZED" ? "success" : o.status === "DRAFT" ? "secondary" : "warning"}>
-                        {orderStatusLabel(o.status)}
-                      </Badge>
-                      {o.invoice_number && <div className="text-xs text-gray-500 dark:text-gray-400">#{o.invoice_number}</div>}
-                    </TableCell>
-                    <TableCell>{o.buyer_name}</TableCell>
-                    <TableCell className="text-right">{formatEur(gross)} €</TableCell>
-                    <TableCell className="text-right space-x-2">
-                      {o.status === "DRAFT" && (
-                        <>
-                          <Button variant="secondary" onClick={() => startEdit(o)} disabled={create.isPending || update.isPending}>
-                            Bearbeiten
-                          </Button>
-                          <Button variant="outline" onClick={() => finalize.mutate(o.id)} disabled={finalize.isPending}>
-                            Abschließen
-                          </Button>
-                          <Button variant="secondary" onClick={() => cancel.mutate(o.id)} disabled={cancel.isPending}>
-                            Stornieren
-                          </Button>
-                        </>
-                      )}
-                      {o.status === "FINALIZED" && (
-                        <>
-                          {o.invoice_pdf_path ? (
-                            <>
-                              <Button variant="outline" onClick={() => api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)}>
-                                Rechnung (PDF)
-                              </Button>
-                              <Button variant="ghost" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
-                                Neu erstellen
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button variant="outline" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
-                                Rechnung erstellen
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            variant="secondary"
-                            onClick={() => reopenOrder.mutate(o.id)}
-                            disabled={reopenOrder.isPending || create.isPending || update.isPending}
-                          >
-                            Zur Bearbeitung öffnen
-                          </Button>
+                  <div
+                    key={o.id}
+                    className="rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{o.order_date}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <Badge variant="outline">{optionLabel(CHANNEL_OPTIONS, o.channel)}</Badge>
+                          <Badge variant={statusVariant}>{orderStatusLabel(o.status)}</Badge>
+                          {o.invoice_number ? (
+                            <Badge variant="outline" className="font-mono text-[11px]">
+                              #{o.invoice_number}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 truncate text-sm text-gray-700 dark:text-gray-200">{o.buyer_name}</div>
+                      </div>
 
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button
-                                variant="secondary"
-                                onClick={() => {
-                                  setReturnOrderId(o.id);
-                                  setReturnPaymentSource(o.payment_source);
-                                  setReturnLines(
-                                    o.lines.map((l) => ({
-                                      inventory_item_id: l.inventory_item_id,
-                                      action: "RESTOCK",
-                                      refund_gross: formatEur(l.sale_gross_cents),
-                                    })),
-                                  );
-                                }}
-                              >
-                                Rückgabe / Korrektur
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Rückgabe / Korrektur</DialogTitle>
-                                <DialogDescription>Korrektur erfassen. PDF wird danach manuell erstellt.</DialogDescription>
-                              </DialogHeader>
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatEur(gross)} €</div>
+                      </div>
+                    </div>
 
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <div className="text-sm font-medium">Bestehende Korrekturen</div>
-                                  {returns.isLoading ? (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Lade…</div>
-                                  ) : returns.isError ? (
-                                    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-                                      {(returns.error as Error).message}
-                                    </div>
-                                  ) : (returns.data ?? []).length ? (
-                                    <div className="max-h-40 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
-                                      <Table>
-                                        <TableHeader>
-                                          <TableRow>
-                                            <TableHead>Nr.</TableHead>
-                                            <TableHead>Datum</TableHead>
-                                            <TableHead className="text-right">Brutto</TableHead>
-                                            <TableHead className="text-right">PDF</TableHead>
-                                          </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                          {(returns.data ?? []).map((r) => (
-                                            <TableRow key={r.id}>
-                                              <TableCell className="font-mono text-xs">{r.correction_number}</TableCell>
-                                              <TableCell>{r.correction_date}</TableCell>
-                                              <TableCell className="text-right">{formatEur(r.refund_gross_cents)} €</TableCell>
-                                              <TableCell className="text-right">
-                                                {r.pdf_path ? (
-                                                  <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => api.download(r.pdf_path!, r.pdf_path!.split("/").pop()!)}
-                                                  >
-                                                    PDF
-                                                  </Button>
-                                                ) : (
-                                                  <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => generateReturnPdf.mutate({ orderId: o.id, correctionId: r.id })}
-                                                    disabled={generateReturnPdf.isPending}
-                                                  >
-                                                    PDF erstellen
-                                                  </Button>
-                                                )}
-                                              </TableCell>
-                                            </TableRow>
-                                          ))}
-                                        </TableBody>
-                                      </Table>
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">Keine Korrekturen.</div>
-                                  )}
-                                </div>
+                    {o.status === "DRAFT" && (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <Button
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => startEdit(o)}
+                          disabled={create.isPending || update.isPending}
+                        >
+                          Bearbeiten
+                        </Button>
+                        <Button variant="outline" className="w-full" onClick={() => finalize.mutate(o.id)} disabled={finalize.isPending}>
+                          Abschließen
+                        </Button>
+                        <Button variant="destructive" className="w-full sm:col-span-2" onClick={() => cancel.mutate(o.id)} disabled={cancel.isPending}>
+                          Stornieren
+                        </Button>
+                      </div>
+                    )}
 
-                                <div className="space-y-3">
-                                  <div className="grid gap-3 md:grid-cols-3">
-                                    <div className="space-y-2">
-                                      <Label>Datum</Label>
-                                      <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
-                                    </div>
-                                    <div className="space-y-2">
-                                      <Label>Zahlungsquelle</Label>
-                                      <Select value={returnPaymentSource} onValueChange={setReturnPaymentSource}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                          {PAYMENT_SOURCE_OPTIONS.map((p) => (
-                                            <SelectItem key={p.value} value={p.value}>
-                                              {p.label}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                      <Label>Versand-Erstattung (EUR)</Label>
-                                      <Input value={shippingRefund} onChange={(e) => setShippingRefund(e.target.value)} />
-                                    </div>
+                    {o.status === "FINALIZED" && (
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() =>
+                            o.invoice_pdf_path
+                              ? api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)
+                              : generateInvoicePdf.mutate(o.id)
+                          }
+                          disabled={generateInvoicePdf.isPending}
+                        >
+                          {o.invoice_pdf_path ? "Rechnung (PDF)" : "Rechnung erstellen"}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => reopenOrder.mutate(o.id)}
+                          disabled={reopenOrder.isPending || create.isPending || update.isPending}
+                        >
+                          Zur Bearbeitung öffnen
+                        </Button>
+
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="secondary"
+                              className="w-full sm:col-span-2"
+                              onClick={() => {
+                                setReturnOrderId(o.id);
+                                setReturnPaymentSource(o.payment_source);
+                                setReturnLines(
+                                  o.lines.map((l) => ({
+                                    inventory_item_id: l.inventory_item_id,
+                                    action: "RESTOCK",
+                                    refund_gross: formatEur(l.sale_gross_cents),
+                                  })),
+                                );
+                              }}
+                            >
+                              Rückgabe / Korrektur
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Rückgabe / Korrektur</DialogTitle>
+                              <DialogDescription>Korrektur erfassen. PDF wird danach manuell erstellt.</DialogDescription>
+                            </DialogHeader>
+
+                            <div className="space-y-4">
+                              <div className="space-y-2">
+                                <div className="text-sm font-medium">Bestehende Korrekturen</div>
+                                {returns.isLoading ? (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">Lade…</div>
+                                ) : returns.isError ? (
+                                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                                    {(returns.error as Error).message}
                                   </div>
-
-                                  <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
+                                ) : (returns.data ?? []).length ? (
+                                  <div className="max-h-40 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
-                                          <TableHead>Artikel</TableHead>
-                                          <TableHead>Aktion</TableHead>
-                                          <TableHead className="text-right">Erstattung brutto</TableHead>
+                                          <TableHead>Nr.</TableHead>
+                                          <TableHead>Datum</TableHead>
+                                          <TableHead className="text-right">Brutto</TableHead>
+                                          <TableHead className="text-right">PDF</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
-                                        {returnLines.map((l, idx) => (
-                                          <TableRow key={l.inventory_item_id}>
-                                            <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
-                                            <TableCell>
-                                              <Select
-                                                value={l.action}
-                                                onValueChange={(v) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, action: v } : x)))}
-                                              >
-                                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                                <SelectContent>
-                                                  {RETURN_ACTION_OPTIONS.map((a) => (
-                                                    <SelectItem key={a.value} value={a.value}>
-                                                      {a.label}
-                                                    </SelectItem>
-                                                  ))}
-                                                </SelectContent>
-                                              </Select>
-                                            </TableCell>
+                                        {(returns.data ?? []).map((r) => (
+                                          <TableRow key={r.id}>
+                                            <TableCell className="font-mono text-xs">{r.correction_number}</TableCell>
+                                            <TableCell>{r.correction_date}</TableCell>
+                                            <TableCell className="text-right">{formatEur(r.refund_gross_cents)} €</TableCell>
                                             <TableCell className="text-right">
-                                              <Input
-                                                className="text-right"
-                                                value={l.refund_gross ?? ""}
-                                                onChange={(e) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, refund_gross: e.target.value } : x)))}
-                                              />
+                                              {r.pdf_path ? (
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  onClick={() => api.download(r.pdf_path!, r.pdf_path!.split("/").pop()!)}
+                                                >
+                                                  PDF
+                                                </Button>
+                                              ) : (
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  onClick={() => generateReturnPdf.mutate({ orderId: o.id, correctionId: r.id })}
+                                                  disabled={generateReturnPdf.isPending}
+                                                >
+                                                  PDF erstellen
+                                                </Button>
+                                              )}
                                             </TableCell>
                                           </TableRow>
                                         ))}
                                       </TableBody>
                                     </Table>
                                   </div>
-                                </div>
+                                ) : (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">Keine Korrekturen.</div>
+                                )}
                               </div>
 
-                              <DialogFooter>
-                                <Button onClick={() => createReturn.mutate()} disabled={!returnOrderId || createReturn.isPending}>
-                                  Korrektur erstellen
-                                </Button>
-                              </DialogFooter>
-
-                              {(createReturn.isError || generateReturnPdf.isError) && (
-                                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-                                  {(((createReturn.error ?? generateReturnPdf.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+                              <div className="space-y-3">
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  <div className="space-y-2">
+                                    <Label>Datum</Label>
+                                    <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Zahlungsquelle</Label>
+                                    <Select value={returnPaymentSource} onValueChange={setReturnPaymentSource}>
+                                      <SelectTrigger><SelectValue /></SelectTrigger>
+                                      <SelectContent>
+                                        {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                                          <SelectItem key={p.value} value={p.value}>
+                                            {p.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Versand-Erstattung (EUR)</Label>
+                                    <Input value={shippingRefund} onChange={(e) => setShippingRefund(e.target.value)} />
+                                  </div>
                                 </div>
-                              )}
-                            </DialogContent>
-                          </Dialog>
-                        </>
-                      )}
-                    </TableCell>
-                  </TableRow>
+
+                                <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Artikel</TableHead>
+                                        <TableHead>Aktion</TableHead>
+                                        <TableHead className="text-right">Erstattung brutto</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {returnLines.map((l, idx) => (
+                                        <TableRow key={l.inventory_item_id}>
+                                          <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
+                                          <TableCell>
+                                            <Select
+                                              value={l.action}
+                                              onValueChange={(v) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, action: v } : x)))}
+                                            >
+                                              <SelectTrigger><SelectValue /></SelectTrigger>
+                                              <SelectContent>
+                                                {RETURN_ACTION_OPTIONS.map((a) => (
+                                                  <SelectItem key={a.value} value={a.value}>
+                                                    {a.label}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </TableCell>
+                                          <TableCell className="text-right">
+                                            <Input
+                                              className="text-right"
+                                              value={l.refund_gross ?? ""}
+                                              onChange={(e) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, refund_gross: e.target.value } : x)))}
+                                            />
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+                            </div>
+
+                            <DialogFooter>
+                              <Button onClick={() => createReturn.mutate()} disabled={!returnOrderId || createReturn.isPending}>
+                                Korrektur erstellen
+                              </Button>
+                            </DialogFooter>
+
+                            {(createReturn.isError || generateReturnPdf.isError) && (
+                              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                                {(((createReturn.error ?? generateReturnPdf.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+                              </div>
+                            )}
+                          </DialogContent>
+                        </Dialog>
+
+                        {o.invoice_pdf_path ? (
+                          <Button
+                            variant="outline"
+                            className="w-full sm:col-span-2"
+                            onClick={() => generateInvoicePdf.mutate(o.id)}
+                            disabled={generateInvoicePdf.isPending}
+                          >
+                            Rechnung neu erstellen
+                          </Button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-              {!orders.data?.length && (
+
+            {!orders.isPending && !orders.data?.length && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                Keine Aufträge.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-sm text-gray-500 dark:text-gray-400">
-                    Keine Aufträge.
-                  </TableCell>
+                  <TableHead>Datum</TableHead>
+                  <TableHead>Kanal</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Käufer</TableHead>
+                  <TableHead className="text-right">Brutto</TableHead>
+                  <TableHead className="text-right">Aktionen</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {(orders.data ?? []).map((o) => {
+                  const gross = o.shipping_gross_cents + o.lines.reduce((s, l) => s + l.sale_gross_cents, 0);
+                  return (
+                    <TableRow key={o.id}>
+                      <TableCell>{o.order_date}</TableCell>
+                      <TableCell>{optionLabel(CHANNEL_OPTIONS, o.channel)}</TableCell>
+                      <TableCell>
+                        <Badge variant={o.status === "FINALIZED" ? "success" : o.status === "DRAFT" ? "secondary" : "warning"}>
+                          {orderStatusLabel(o.status)}
+                        </Badge>
+                        {o.invoice_number && <div className="text-xs text-gray-500 dark:text-gray-400">#{o.invoice_number}</div>}
+                      </TableCell>
+                      <TableCell>{o.buyer_name}</TableCell>
+                      <TableCell className="text-right">{formatEur(gross)} €</TableCell>
+                      <TableCell className="text-right space-x-2">
+                        {o.status === "DRAFT" && (
+                          <>
+                            <Button variant="secondary" onClick={() => startEdit(o)} disabled={create.isPending || update.isPending}>
+                              Bearbeiten
+                            </Button>
+                            <Button variant="outline" onClick={() => finalize.mutate(o.id)} disabled={finalize.isPending}>
+                              Abschließen
+                            </Button>
+                            <Button variant="secondary" onClick={() => cancel.mutate(o.id)} disabled={cancel.isPending}>
+                              Stornieren
+                            </Button>
+                          </>
+                        )}
+                        {o.status === "FINALIZED" && (
+                          <>
+                            {o.invoice_pdf_path ? (
+                              <>
+                                <Button variant="outline" onClick={() => api.download(o.invoice_pdf_path!, o.invoice_pdf_path!.split("/").pop()!)}>
+                                  Rechnung (PDF)
+                                </Button>
+                                <Button variant="ghost" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
+                                  Neu erstellen
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button variant="outline" onClick={() => generateInvoicePdf.mutate(o.id)} disabled={generateInvoicePdf.isPending}>
+                                  Rechnung erstellen
+                                </Button>
+                              </>
+                            )}
+                            <Button
+                              variant="secondary"
+                              onClick={() => reopenOrder.mutate(o.id)}
+                              disabled={reopenOrder.isPending || create.isPending || update.isPending}
+                            >
+                              Zur Bearbeitung öffnen
+                            </Button>
+
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => {
+                                    setReturnOrderId(o.id);
+                                    setReturnPaymentSource(o.payment_source);
+                                    setReturnLines(
+                                      o.lines.map((l) => ({
+                                        inventory_item_id: l.inventory_item_id,
+                                        action: "RESTOCK",
+                                        refund_gross: formatEur(l.sale_gross_cents),
+                                      })),
+                                    );
+                                  }}
+                                >
+                                  Rückgabe / Korrektur
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Rückgabe / Korrektur</DialogTitle>
+                                  <DialogDescription>Korrektur erfassen. PDF wird danach manuell erstellt.</DialogDescription>
+                                </DialogHeader>
+
+                                <div className="space-y-4">
+                                  <div className="space-y-2">
+                                    <div className="text-sm font-medium">Bestehende Korrekturen</div>
+                                    {returns.isLoading ? (
+                                      <div className="text-xs text-gray-500 dark:text-gray-400">Lade…</div>
+                                    ) : returns.isError ? (
+                                      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                                        {(returns.error as Error).message}
+                                      </div>
+                                    ) : (returns.data ?? []).length ? (
+                                      <div className="max-h-40 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead>Nr.</TableHead>
+                                              <TableHead>Datum</TableHead>
+                                              <TableHead className="text-right">Brutto</TableHead>
+                                              <TableHead className="text-right">PDF</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {(returns.data ?? []).map((r) => (
+                                              <TableRow key={r.id}>
+                                                <TableCell className="font-mono text-xs">{r.correction_number}</TableCell>
+                                                <TableCell>{r.correction_date}</TableCell>
+                                                <TableCell className="text-right">{formatEur(r.refund_gross_cents)} €</TableCell>
+                                                <TableCell className="text-right">
+                                                  {r.pdf_path ? (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => api.download(r.pdf_path!, r.pdf_path!.split("/").pop()!)}
+                                                    >
+                                                      PDF
+                                                    </Button>
+                                                  ) : (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => generateReturnPdf.mutate({ orderId: o.id, correctionId: r.id })}
+                                                      disabled={generateReturnPdf.isPending}
+                                                    >
+                                                      PDF erstellen
+                                                    </Button>
+                                                  )}
+                                                </TableCell>
+                                              </TableRow>
+                                            ))}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-gray-500 dark:text-gray-400">Keine Korrekturen.</div>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-3">
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                      <div className="space-y-2">
+                                        <Label>Datum</Label>
+                                        <Input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Zahlungsquelle</Label>
+                                        <Select value={returnPaymentSource} onValueChange={setReturnPaymentSource}>
+                                          <SelectTrigger><SelectValue /></SelectTrigger>
+                                          <SelectContent>
+                                            {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                                              <SelectItem key={p.value} value={p.value}>
+                                                {p.label}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Versand-Erstattung (EUR)</Label>
+                                        <Input value={shippingRefund} onChange={(e) => setShippingRefund(e.target.value)} />
+                                      </div>
+                                    </div>
+
+                                    <div className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40">
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>Artikel</TableHead>
+                                            <TableHead>Aktion</TableHead>
+                                            <TableHead className="text-right">Erstattung brutto</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {returnLines.map((l, idx) => (
+                                            <TableRow key={l.inventory_item_id}>
+                                              <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
+                                              <TableCell>
+                                                <Select
+                                                  value={l.action}
+                                                  onValueChange={(v) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, action: v } : x)))}
+                                                >
+                                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                                  <SelectContent>
+                                                    {RETURN_ACTION_OPTIONS.map((a) => (
+                                                      <SelectItem key={a.value} value={a.value}>
+                                                        {a.label}
+                                                      </SelectItem>
+                                                    ))}
+                                                  </SelectContent>
+                                                </Select>
+                                              </TableCell>
+                                              <TableCell className="text-right">
+                                                <Input
+                                                  className="text-right"
+                                                  value={l.refund_gross ?? ""}
+                                                  onChange={(e) => setReturnLines((s) => s.map((x, i) => (i === idx ? { ...x, refund_gross: e.target.value } : x)))}
+                                                />
+                                              </TableCell>
+                                            </TableRow>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <DialogFooter>
+                                  <Button onClick={() => createReturn.mutate()} disabled={!returnOrderId || createReturn.isPending}>
+                                    Korrektur erstellen
+                                  </Button>
+                                </DialogFooter>
+
+                                {(createReturn.isError || generateReturnPdf.isError) && (
+                                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                                    {(((createReturn.error ?? generateReturnPdf.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+                                  </div>
+                                )}
+                              </DialogContent>
+                            </Dialog>
+                          </>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {!orders.data?.length && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Aufträge.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
