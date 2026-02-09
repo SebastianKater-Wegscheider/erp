@@ -239,7 +239,7 @@
 - Inputs/Selects auf >=16px Font gesetzt, um iOS Safari Auto-Zoom zu vermeiden.
 - Cards: geringere Padding/Title-Groesse auf Mobile, um mehr Inhalt sichtbar zu machen.
 - Dialoge: mobile Seitenrands + max-height/overflow fuer lange Inhalte; Close-Button mit groesserer Hit-Area.
-- Tables: horizontaler Scroll als Default (`overflow-x-auto`) und `min-w-max`, damit Spalten nicht gequetscht werden.
+- Tables: horizontaler Scroll als Default (`overflow-x-auto`); `min-w-max` kurz getestet, spaeter wieder entfernt, damit nicht jede Table auf Mobile horizontal scrollt.
 - Topbar: kurzer Titel auf Mobile (Abkuerzung), damit Header nicht ueberlaeuft.
 - Zusaetzlicher Guard gegen horizontales "Seitwaerts-Panning" auf iOS: `overflow-x` fuer `html/body` auf `clip` (Fallback `hidden`).
 - Falls Overflow aus Portals/absolut positionierten Elementen kommt: gleicher Guard auf `#root` (clip/hidden), damit Safari die Scroll-Width nicht vergroessert.
@@ -248,3 +248,4 @@
 - Mobile Nav: Drawer breiter (viewport-basiert) + Safe-Area Insets; Search-Input fuer schnelle Navigation; Sections als Accordion (auto-open bei Suche); groessere Tap-Targets fuer Links.
 - Mobile Nav: `onOpenAutoFocus` deaktiviert, damit iOS beim Oeffnen nicht sofort die Tastatur aufklappt; Dialog-Close-Button nutzt Safe-Area Insets (Right/Top), damit nichts im Notch-Bereich "clipped".
 - Mobile Nav: Search + "Uebersicht" sticky im Drawer (schneller Wechsel beim Scrollen) und Theme-Toggle in den Drawer-Footer (one-handed).
+- Mobile Nav: Sections standardmaessig offen (weniger Taps) + Active-Link wird beim Oeffnen in View gescrollt (inkl. Scroll-Margin fuer Sticky-Header); Scroll-Container mit `overscroll-contain`.

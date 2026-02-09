@@ -1,5 +1,5 @@
 import { ChevronDown, LogOut, Menu, Moon, Sun } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
@@ -51,6 +51,7 @@ export function Topbar() {
   const [mobileNavQuery, setMobileNavQuery] = useState("");
   const [mobileOpenSections, setMobileOpenSections] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<Theme>(() => getActiveTheme());
+  const mobileNavScrollRef = useRef<HTMLDivElement | null>(null);
 
   const navSections = useMemo(() => {
     if (vatEnabled) return NAV_SECTIONS;
@@ -69,8 +70,19 @@ export function Topbar() {
     // When opening the drawer: reset search and expand the currently active section.
     setMobileNavQuery("");
     const next: Record<string, boolean> = {};
-    for (const s of navSections) next[s.label] = isSectionActive(s.items);
+    for (const s of navSections) next[s.label] = true;
     setMobileOpenSections(next);
+
+    // Ensure the active route is visible even when the drawer content is long.
+    // (Use double rAF so layout has settled before querying/scrolling.)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const scroller = mobileNavScrollRef.current;
+        if (!scroller) return;
+        const el = scroller.querySelector("[aria-current='page']");
+        if (el instanceof HTMLElement) el.scrollIntoView({ block: "center" });
+      });
+    });
   }, [mobileNavOpen, navSections, loc.pathname]);
 
   const filteredNavSections = useMemo(() => {
@@ -180,15 +192,15 @@ export function Topbar() {
               onOpenAutoFocus={(e) => e.preventDefault()}
               className="left-0 top-0 flex h-dvh w-[88vw] max-w-[420px] translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-r border-gray-200 p-0 dark:border-gray-800"
             >
-              <DialogHeader className="border-b border-gray-200 px-4 py-4 pt-[calc(1rem+env(safe-area-inset-top))] dark:border-gray-800">
+              <DialogHeader className="border-b border-gray-200 px-4 py-4 pr-14 pt-[calc(1rem+env(safe-area-inset-top))] dark:border-gray-800">
                 <DialogTitle className="text-base sm:text-lg">Navigation</DialogTitle>
                 <DialogDescription className="sr-only">Wechseln Sie zwischen den Modulen.</DialogDescription>
               </DialogHeader>
 
               <div className="flex flex-1 flex-col">
-                <div className="flex-1 overflow-auto px-2 py-3">
-                  <div className="sticky top-0 z-10 -mx-2 bg-white/95 px-2 pb-2 pt-1 backdrop-blur dark:bg-gray-950/80">
-                    <div className="px-2 pb-2">
+                <div ref={mobileNavScrollRef} className="flex-1 overflow-auto overscroll-contain">
+                  <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/80">
+                    <div className="px-4 pb-3 pt-2">
                       <Input
                         value={mobileNavQuery}
                         onChange={(e) => setMobileNavQuery(e.target.value)}
@@ -197,57 +209,71 @@ export function Topbar() {
                       />
                     </div>
 
-                    <Link
-                      to={NAV_PRIMARY.to}
-                      onClick={() => setMobileNavOpen(false)}
-                      className={cnMobileLink(isActive(NAV_PRIMARY.to))}
-                    >
-                      {NAV_PRIMARY.label}
-                    </Link>
+                    <div className="px-2 pb-3">
+                      <Link
+                        to={NAV_PRIMARY.to}
+                        aria-current={isActive(NAV_PRIMARY.to) ? "page" : undefined}
+                        onClick={() => setMobileNavOpen(false)}
+                        className={cnMobileLink(isActive(NAV_PRIMARY.to))}
+                      >
+                        {NAV_PRIMARY.label}
+                      </Link>
+                    </div>
                   </div>
 
-                  {!filteredNavSections.length && mobileNavQuery.trim() && (
-                    <div className="px-3 py-6 text-sm text-gray-500 dark:text-gray-400">Keine Treffer.</div>
-                  )}
+                  <div className="px-2 py-3">
+                    {!filteredNavSections.length && mobileNavQuery.trim() && (
+                      <div className="px-3 py-6 text-sm text-gray-500 dark:text-gray-400">Keine Treffer.</div>
+                    )}
 
-                  {filteredNavSections.map((section) => {
-                    const open = mobileOpenSections[section.label] ?? false;
-                    const forceOpen = mobileNavQuery.trim().length > 0;
-                    const isOpen = forceOpen ? true : open;
-                    return (
-                      <div key={section.label} className="mt-3">
-                        <button
-                          type="button"
-                          className={[
-                            "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide",
-                            "text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-200",
-                          ].join(" ")}
-                          onClick={() =>
-                            setMobileOpenSections((prev) => ({ ...prev, [section.label]: !(prev[section.label] ?? false) }))
-                          }
-                          aria-expanded={isOpen}
-                          disabled={forceOpen}
-                        >
-                          <span>{section.label}</span>
-                          <ChevronDown className={["h-4 w-4 opacity-70 transition-transform", isOpen ? "rotate-180" : ""].join(" ")} />
-                        </button>
-                        {isOpen && (
-                          <div className="mt-1 space-y-1">
-                            {section.items.map((item) => (
-                              <Link
-                                key={item.to}
-                                to={item.to}
-                                onClick={() => setMobileNavOpen(false)}
-                                className={cnMobileLink(isActive(item.to))}
-                              >
-                                {item.label}
-                              </Link>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                    {filteredNavSections.map((section) => {
+                      const open = mobileOpenSections[section.label] ?? false;
+                      const forceOpen = mobileNavQuery.trim().length > 0;
+                      const isOpen = forceOpen ? true : open;
+                      return (
+                        <div key={section.label} className="mt-3">
+                          <button
+                            type="button"
+                            className={[
+                              "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide",
+                              "text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-200",
+                            ].join(" ")}
+                            onClick={() =>
+                              setMobileOpenSections((prev) => ({
+                                ...prev,
+                                [section.label]: !(prev[section.label] ?? false),
+                              }))
+                            }
+                            aria-expanded={isOpen}
+                            disabled={forceOpen}
+                          >
+                            <span>
+                              {section.label}{" "}
+                              <span className="font-normal opacity-70">({section.items.length})</span>
+                            </span>
+                            <ChevronDown
+                              className={["h-4 w-4 opacity-70 transition-transform", isOpen ? "rotate-180" : ""].join(" ")}
+                            />
+                          </button>
+                          {isOpen && (
+                            <div className="mt-1 space-y-1">
+                              {section.items.map((item) => (
+                                <Link
+                                  key={item.to}
+                                  to={item.to}
+                                  aria-current={isActive(item.to) ? "page" : undefined}
+                                  onClick={() => setMobileNavOpen(false)}
+                                  className={cnMobileLink(isActive(item.to))}
+                                >
+                                  {item.label}
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-800">
@@ -301,7 +327,7 @@ function cnNavPill(active: boolean) {
 
 function cnMobileLink(active: boolean) {
   return [
-    "block rounded-md px-3 py-2.5 text-[16px] transition-colors sm:py-2 sm:text-sm",
+    "block scroll-mt-24 rounded-md px-3 py-2.5 text-[16px] transition-colors sm:py-2 sm:text-sm",
     active
       ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
       : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-900 dark:hover:text-gray-100",
