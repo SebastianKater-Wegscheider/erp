@@ -253,3 +253,4 @@
 - Produktstamm + Lagerbestand: Mobile Views auf Card-Listen umgestellt (`md:hidden`), Desktop-Tabellen bleiben unveraendert (`hidden md:block`).
 - Produktstamm: Actions/Filter auf Mobile besser stapelbar (Buttons full-width, Typ-Select full-width), Referenzbild-Klick stoppt Propagation damit Card-Tap nicht ungewollt editiert.
 - Lagerbestand: Cards mit Status/Age/Condition/Cost + Fotos-Strip (horizontal scroll) und Buttons fuer Bearbeiten/Fotos; Status-Select full-width auf Mobile.
+- iOS Zoom-Bug: Purchases "Notizen" war ein raw `<textarea>` mit `text-sm` und hat Safari Auto-Zoom getriggert; auf Mobile jetzt >=16px + gleiche Styles wie `Input`.

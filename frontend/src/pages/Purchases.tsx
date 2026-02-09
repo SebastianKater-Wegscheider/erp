@@ -1106,7 +1106,8 @@ export function PurchasesPage() {
                     onChange={(e) => setNotes(e.target.value)}
                     rows={3}
                     placeholder="z.B. Zustand, Bundle-Inhalt, Verhandlungsnotiz ..."
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    // Mobile: keep >=16px to avoid iOS Safari auto-zoom on focus.
+                    className="w-full resize-y rounded-md border border-gray-200 bg-white px-3 py-2 text-[16px] shadow-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus-visible:ring-gray-700 sm:text-sm"
                   />
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
