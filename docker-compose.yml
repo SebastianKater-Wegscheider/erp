@@ -31,6 +31,7 @@ services:
       # Keep backend in sync with local code (prevents stale images during dev).
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
+      - ./backend/scripts:/app/scripts
       # Alembic migrations (used for init/upgrade).
       - ./backend/alembic.ini:/app/alembic.ini:ro
       - ./backend/alembic:/app/alembic
