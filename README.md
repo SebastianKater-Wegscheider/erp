@@ -55,6 +55,13 @@ Docker-Backup-Service (täglich per Loop, default 24h):
 - In `docker-compose.yml` Service `backup`
 - Intervall via `BACKUP_INTERVAL_SECONDS` (siehe `.env.example`)
 
+## Restore (Drill)
+
+Warnung: Das Restore ist destruktiv (DB-Schema wird geloescht und neu erstellt).
+
+- `chmod +x restore.sh`
+- `./restore.sh --db backups/db_YYYYMMDD_HHMMSS.sql.gz --files backups/files_YYYYMMDD_HHMMSS.tar.gz`
+
 ## API (V1)
 
 Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
