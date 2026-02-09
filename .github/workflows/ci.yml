@@ -108,3 +108,66 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install e2e deps
+        working-directory: e2e
+        run: npm install
+
+      - name: Install Playwright (Chromium)
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Create .env for Docker Compose
+        run: |
+          cat > .env <<'EOF'
+          BASIC_AUTH_USERNAME=test-user
+          BASIC_AUTH_PASSWORD=test-pass
+          EOF
+
+      - name: Start stack
+        run: docker compose up -d --build db backend frontend
+
+      - name: Wait for services
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://localhost:18000/healthz >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:18000/healthz >/dev/null
+
+          for i in {1..60}; do
+            if curl -fsS http://localhost:15173 >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:15173 >/dev/null
+
+      - name: Run Playwright
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:15173
+        run: npm test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+
+      - name: Docker logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color --tail=200
