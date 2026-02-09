@@ -5,7 +5,7 @@ from datetime import date
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, String, Table, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, ForeignKey, Index, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,10 +23,18 @@ _bank_transaction_purchases = Table(
     Column("purchase_id", UUID(as_uuid=True), ForeignKey("purchases.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Keep these indexes explicit for migrations and query performance.
+Index("ix_bank_transaction_purchases_purchase_id", _bank_transaction_purchases.c.purchase_id)
+Index("ix_bank_transaction_purchases_bank_transaction_id", _bank_transaction_purchases.c.bank_transaction_id)
+
 
 class BankTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "bank_transactions"
-    __table_args__ = (UniqueConstraint("bank_account_id", "external_id", name="uq_bank_tx_account_external_id"),)
+    __table_args__ = (
+        UniqueConstraint("bank_account_id", "external_id", name="uq_bank_tx_account_external_id"),
+        Index("ix_bank_transactions_booked_date", "booked_date"),
+        Index("ix_bank_transactions_account_booked_date", "bank_account_id", "booked_date"),
+    )
 
     bank_account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

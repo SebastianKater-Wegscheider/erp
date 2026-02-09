@@ -12,6 +12,17 @@ Lean ERP für Gebrauchtwarenhandel (z.B. Videospiele) mit **FastAPI + PostgreSQL
 3. Swagger UI:
    - `http://localhost:18000/docs` (HTTP Basic Auth aus `.env`)
 
+## DB Migrations (Alembic)
+
+- Docker Compose startet den Backend-Service mit `alembic upgrade head` (Schema wird beim Container-Start aktualisiert).
+- Bestehende Datenbank (vor Einfuehrung von Alembic): einmalig stampen:
+  - `docker compose exec backend alembic -c /app/alembic.ini stamp e61db2bd6234`
+  - danach Backend neu starten: `docker compose restart backend`
+
+Neue Migration erzeugen:
+
+- `docker compose exec backend alembic -c /app/alembic.ini revision --autogenerate -m "..."` (legt Datei unter `backend/alembic/versions/` an)
+
 ## Frontend (Vite + shadcn/ui)
 
 1. `cd frontend`

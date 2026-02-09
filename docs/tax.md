@@ -71,4 +71,4 @@ Wenn ein Konvolut gekauft wird, kann die Aufteilung auf einzelne Artikel über *
 
 - Aktuell wird für die Marge **fix 20%** angenommen. Wenn ermäßigte Sätze relevant werden, muss das auf Positionsebene modelliert werden.
 - Bestehende Datensätze vor der Schema‑Erweiterung haben ggf. `0` in neuen Feldern (kein Backfill).
-- Schema‑Upgrades passieren derzeit per `ensure_schema()` beim Startup (MVP‑Stopgap); langfristig Alembic‑Migrationen.
+- Schema-Upgrades passieren via Alembic-Migrationen (`alembic upgrade head`).

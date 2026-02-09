@@ -5,7 +5,7 @@ from datetime import date
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, Date, ForeignKey, Integer, String, Table
+from sqlalchemy import Column, Date, ForeignKey, Index, Integer, String, Table
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,9 @@ _mileage_log_purchases = Table(
     Column("mileage_log_id", UUID(as_uuid=True), ForeignKey("mileage_logs.id", ondelete="CASCADE"), primary_key=True),
     Column("purchase_id", UUID(as_uuid=True), ForeignKey("purchases.id", ondelete="CASCADE"), primary_key=True),
 )
+
+# Reverse lookups (purchase -> logs) are common; keep this index explicit for migrations.
+Index("ix_mileage_log_purchases_purchase_id", _mileage_log_purchases.c.purchase_id)
 
 
 class MileageLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):

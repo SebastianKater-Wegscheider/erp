@@ -12,13 +12,8 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.db import SessionLocal, engine
-from app.core.schema import ensure_schema
 from app.core.security import require_basic_auth
-from app.models.base import Base
 from app.services.bank_transactions import sync_bank_transactions
-
-# Ensure models are imported before metadata creation
-import app.models  # noqa: F401
 
 
 logger = logging.getLogger(__name__)
@@ -60,9 +55,6 @@ def create_app() -> FastAPI:
     async def startup() -> None:
         settings.pdf_dir.mkdir(parents=True, exist_ok=True)
         settings.upload_dir.mkdir(parents=True, exist_ok=True)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            await ensure_schema(conn)
 
         async def bank_sync_loop() -> None:
             interval = max(60, settings.bank_sync_interval_seconds)

@@ -24,6 +24,7 @@ class FBAShipment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         fba_shipment_status_enum,
         nullable=False,
         default=FBAShipmentStatus.DRAFT,
+        index=True,
     )
 
     carrier: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -58,6 +59,7 @@ class FBAShipmentItem(UUIDPrimaryKeyMixin, Base):
         UUID(as_uuid=True),
         ForeignKey("inventory_items.id"),
         nullable=False,
+        index=True,
     )
 
     allocated_shipping_cost_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

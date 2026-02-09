@@ -1,5 +1,25 @@
 # History
 
+## 2026-02-09 - DB-Migrationen: Alembic Baseline + Compose-Integration
+
+### Ausgangslage
+- Schema-Upgrades liefen bisher ueber `create_all()` + `ensure_schema()` beim App-Startup (MVP-Stopgap).
+- Das ist schwer nachvollziehbar (kein Migrations-Log), und riskant bei Schema-Drift.
+
+### Technische Entscheidungen
+- Alembic eingefuehrt inkl. Baseline-Migration (`e61db2bd6234`) als Ausgangspunkt fuer kuenftige Schema-Aenderungen.
+- Backend macht keine DDL-Operationen mehr beim Startup; das Schema wird ueber Alembic verwaltet.
+- Docker Compose startet den Backend-Service mit `alembic upgrade head` vor Uvicorn.
+- Fehlende Indizes wurden in den Modellen explizit definiert, damit sie in Migrationen/Schema-Abgleich enthalten sind.
+
+### Ops / Migrationspfad
+- Bestehende Datenbanken (vor Alembic) muessen einmalig gestampt werden:
+  - `alembic stamp e61db2bd6234` (siehe README).
+
+### Risiken / Trade-offs
+- Einmaliger manueller Schritt fuer bestehende Deployments (Stamping).
+- Migrationslauf beim Container-Start kostet minimal Zeit, ist aber bei aktuellem Schema ein No-op.
+
 ## 2026-02-08 - Eigenbeleg ohne Unterschriftsblock, mit Nachweisdaten
 
 ### Ausgangslage
@@ -128,7 +148,7 @@
 - Verkaufsverfügbarkeit bleibt auf `AVAILABLE` beschränkt, um Doppelverkäufe während des FBA-Prozesses zu verhindern.
 
 ### Risiken / Trade-offs
-- Ohne vollwertige Migrationstoolchain (aktuell `ensure_schema`) müssen Enum- und Tabellenänderungen robust idempotent gehalten werden.
+- Zu diesem Zeitpunkt gab es keine vollwertige Migrationstoolchain (damals `ensure_schema`); seit 2026-02-09 werden Schema-Aenderungen ueber Alembic verwaltet.
 - Weighted-Verteilung braucht deterministische Rundung, damit Summe der Einzelbeträge exakt den Gesamtversandkosten entspricht.
 
 ## 2026-02-08 - Umsetzung abgeschlossen (MVP)
