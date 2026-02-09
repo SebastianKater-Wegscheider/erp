@@ -131,6 +131,7 @@ function ReferenceImageThumb({
       ].join(" ")}
       style={{ width: size, height: size }}
       onClick={(e) => {
+        e.stopPropagation();
         if (!hasSrc) e.preventDefault();
       }}
     >
@@ -169,9 +170,9 @@ function IdPill({
   value: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
-      <span className="text-gray-500 dark:text-gray-400">{label}:</span>
-      <span className="font-mono">{value}</span>
+    <span className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+      <span className="shrink-0 text-gray-500 dark:text-gray-400">{label}:</span>
+      <span className="min-w-0 break-all font-mono">{value}</span>
     </span>
   );
 }
@@ -345,12 +346,12 @@ export function MasterProductsPage() {
             Masterdaten (SKU) für Produkte. Hier anlegen, pflegen und bei Bedarf löschen.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => list.refetch()} disabled={list.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={openCreate}>
+          <Button className="w-full sm:w-auto" onClick={openCreate}>
             <Plus className="h-4 w-4" />
             Produkt anlegen
           </Button>
@@ -387,7 +388,7 @@ export function MasterProductsPage() {
 
             <div className="flex items-center gap-2">
               <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as MasterProductKind | "ALL")}>
-                <SelectTrigger className="w-[190px]">
+                <SelectTrigger className="w-full md:w-[190px]">
                   <SelectValue placeholder="Typ" />
                 </SelectTrigger>
                 <SelectContent>
@@ -408,156 +409,289 @@ export function MasterProductsPage() {
             </div>
           )}
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produkt</TableHead>
-                <TableHead>IDs</TableHead>
-                <TableHead className="text-right">
-                  <span className="sr-only">Aktionen</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {list.isPending &&
-                Array.from({ length: 6 }).map((_, i) => (
-                  <TableRow key={`skel-${i}`} className="animate-pulse">
-                    <TableCell>
-                      <div className="flex items-start gap-3">
-                        <div className="h-14 w-14 rounded-md bg-gray-100 dark:bg-gray-800" />
-                        <div className="space-y-2 pt-1">
-                          <div className="h-4 w-64 rounded bg-gray-200 dark:bg-gray-800" />
-                          <div className="h-3 w-48 rounded bg-gray-100 dark:bg-gray-800" />
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-2">
-                        <div className="h-3 w-40 rounded bg-gray-100 dark:bg-gray-800" />
-                        <div className="h-3 w-32 rounded bg-gray-100 dark:bg-gray-800" />
-                      </div>
-                    </TableCell>
-                    <TableCell />
-                  </TableRow>
-                ))}
+          <div className="space-y-2 md:hidden">
+            {list.isPending &&
+              Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={`skel-m-${i}`}
+                  className="animate-pulse rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="h-14 w-14 rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <div className="flex-1 space-y-2 pt-1">
+                      <div className="h-4 w-3/4 rounded bg-gray-200 dark:bg-gray-800" />
+                      <div className="h-3 w-1/2 rounded bg-gray-100 dark:bg-gray-800" />
+                      <div className="h-3 w-2/3 rounded bg-gray-100 dark:bg-gray-800" />
+                    </div>
+                  </div>
+                </div>
+              ))}
 
-              {!list.isPending &&
-                rows.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell>
-                      <div className="flex items-start gap-3">
-                        <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
+            {!list.isPending &&
+              rows.map((m) => (
+                <div
+                  key={m.id}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openEdit(m);
+                    }
+                  }}
+                  onClick={() => openEdit(m)}
+                  className={[
+                    "cursor-pointer rounded-md border border-gray-200 bg-white p-3 shadow-sm transition-colors",
+                    "hover:bg-gray-50 active:bg-gray-100",
+                    "dark:border-gray-800 dark:bg-gray-900 dark:hover:bg-gray-800/60 dark:active:bg-gray-800/80",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start gap-3">
+                    <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="min-w-0 truncate font-medium">{m.title}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-gray-900 dark:text-gray-100">{m.title}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
                             <Badge variant="outline" className="font-mono text-[11px]">
                               {m.sku}
                             </Badge>
                           </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                            <span>{m.platform}</span>
-                            <span className="text-gray-300 dark:text-gray-700">•</span>
-                            <span>{m.region}</span>
-                            {m.variant ? (
-                              <>
-                                <span className="text-gray-300 dark:text-gray-700">•</span>
-                                <span className="truncate">{m.variant}</span>
-                              </>
-                            ) : null}
-                          </div>
-
-                          {(m.manufacturer || m.model || m.genre || m.release_year) && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {m.manufacturer ? <MetaPill>{m.manufacturer}</MetaPill> : null}
-                              {m.model ? <MetaPill>{m.model}</MetaPill> : null}
-                              {m.genre ? <MetaPill>{m.genre}</MetaPill> : null}
-                              {m.release_year ? <MetaPill>{m.release_year}</MetaPill> : null}
-                            </div>
-                          )}
-
-                          {m.reference_image_url?.trim() ? (
-                            <a
-                              href={m.reference_image_url.trim()}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
-                              title={m.reference_image_url.trim()}
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              {shortUrlLabel(m.reference_image_url.trim())}
-                            </a>
-                          ) : null}
                         </div>
-                      </div>
-                    </TableCell>
 
-                    <TableCell className="text-sm">
-                      <div className="flex flex-wrap gap-1">
-                        {m.ean ? <IdPill label="EAN" value={m.ean} /> : <IdPill label="EAN" value="—" />}
-                        {m.asin ? <IdPill label="ASIN" value={m.asin} /> : <IdPill label="ASIN" value="—" />}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              aria-label="Aktionen"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                openEdit(m);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Bearbeiten
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                requestDelete(m);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Löschen
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                        <span>{m.platform}</span>
+                        <span className="text-gray-300 dark:text-gray-700">•</span>
+                        <span>{m.region}</span>
+                        {m.variant ? (
+                          <>
+                            <span className="text-gray-300 dark:text-gray-700">•</span>
+                            <span className="truncate">{m.variant}</span>
+                          </>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <IdPill label="EAN" value={m.ean ? m.ean : "—"} />
+                        <IdPill label="ASIN" value={m.asin ? m.asin : "—"} />
                       </div>
 
                       <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        UUID: <span className="font-mono text-gray-400 dark:text-gray-500">{m.id}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" aria-label="Aktionen">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              openEdit(m);
-                            }}
-                          >
-                            <Pencil className="h-4 w-4" />
-                            Bearbeiten
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              requestDelete(m);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Löschen
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-
-              {!rows.length && (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
-                    <div className="flex flex-col items-start gap-2 py-3">
-                      <div>Keine Produkte gefunden.</div>
-                      <div className="flex items-center gap-2">
-                        <Button type="button" variant="secondary" onClick={() => setSearch("")} disabled={!search.trim()}>
-                          Suche zurücksetzen
-                        </Button>
-                        <Button type="button" onClick={openCreate}>
-                          <Plus className="h-4 w-4" />
-                          Produkt anlegen
-                        </Button>
+                        UUID: <span className="break-all font-mono text-gray-400 dark:text-gray-500">{m.id}</span>
                       </div>
                     </div>
-                  </TableCell>
+                  </div>
+                </div>
+              ))}
+
+            {!list.isPending && !rows.length && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                <div className="flex flex-col items-start gap-2">
+                  <div>Keine Produkte gefunden.</div>
+                  <div className="flex w-full flex-col gap-2 sm:flex-row">
+                    <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setSearch("")} disabled={!search.trim()}>
+                      Suche zurücksetzen
+                    </Button>
+                    <Button type="button" className="w-full sm:w-auto" onClick={openCreate}>
+                      <Plus className="h-4 w-4" />
+                      Produkt anlegen
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Produkt</TableHead>
+                  <TableHead>IDs</TableHead>
+                  <TableHead className="text-right">
+                    <span className="sr-only">Aktionen</span>
+                  </TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {list.isPending &&
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <TableRow key={`skel-${i}`} className="animate-pulse">
+                      <TableCell>
+                        <div className="flex items-start gap-3">
+                          <div className="h-14 w-14 rounded-md bg-gray-100 dark:bg-gray-800" />
+                          <div className="space-y-2 pt-1">
+                            <div className="h-4 w-64 rounded bg-gray-200 dark:bg-gray-800" />
+                            <div className="h-3 w-48 rounded bg-gray-100 dark:bg-gray-800" />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <div className="h-3 w-40 rounded bg-gray-100 dark:bg-gray-800" />
+                          <div className="h-3 w-32 rounded bg-gray-100 dark:bg-gray-800" />
+                        </div>
+                      </TableCell>
+                      <TableCell />
+                    </TableRow>
+                  ))}
+
+                {!list.isPending &&
+                  rows.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell>
+                        <div className="flex items-start gap-3">
+                          <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="min-w-0 truncate font-medium">{m.title}</div>
+                              <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
+                              <Badge variant="outline" className="font-mono text-[11px]">
+                                {m.sku}
+                              </Badge>
+                            </div>
+
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                              <span>{m.platform}</span>
+                              <span className="text-gray-300 dark:text-gray-700">•</span>
+                              <span>{m.region}</span>
+                              {m.variant ? (
+                                <>
+                                  <span className="text-gray-300 dark:text-gray-700">•</span>
+                                  <span className="truncate">{m.variant}</span>
+                                </>
+                              ) : null}
+                            </div>
+
+                            {(m.manufacturer || m.model || m.genre || m.release_year) && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {m.manufacturer ? <MetaPill>{m.manufacturer}</MetaPill> : null}
+                                {m.model ? <MetaPill>{m.model}</MetaPill> : null}
+                                {m.genre ? <MetaPill>{m.genre}</MetaPill> : null}
+                                {m.release_year ? <MetaPill>{m.release_year}</MetaPill> : null}
+                              </div>
+                            )}
+
+                            {m.reference_image_url?.trim() ? (
+                              <a
+                                href={m.reference_image_url.trim()}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                                title={m.reference_image_url.trim()}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                {shortUrlLabel(m.reference_image_url.trim())}
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="text-sm">
+                        <div className="flex flex-wrap gap-1">
+                          {m.ean ? <IdPill label="EAN" value={m.ean} /> : <IdPill label="EAN" value="—" />}
+                          {m.asin ? <IdPill label="ASIN" value={m.asin} /> : <IdPill label="ASIN" value="—" />}
+                        </div>
+
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          UUID: <span className="font-mono text-gray-400 dark:text-gray-500">{m.id}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" aria-label="Aktionen">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                openEdit(m);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Bearbeiten
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                requestDelete(m);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Löschen
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+
+                {!rows.length && (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
+                      <div className="flex flex-col items-start gap-2 py-3">
+                        <div>Keine Produkte gefunden.</div>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="secondary" onClick={() => setSearch("")} disabled={!search.trim()}>
+                            Suche zurücksetzen
+                          </Button>
+                          <Button type="button" onClick={openCreate}>
+                            <Plus className="h-4 w-4" />
+                            Produkt anlegen
+                          </Button>
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 

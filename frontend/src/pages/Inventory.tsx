@@ -590,7 +590,7 @@ export function InventoryPage() {
 
             <div className="flex items-center gap-2">
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="w-[190px]">
+                <SelectTrigger className="w-full md:w-[190px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -605,20 +605,26 @@ export function InventoryPage() {
             </div>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produkt</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Alter</TableHead>
-                <TableHead>Zustand</TableHead>
-                <TableHead>Typ</TableHead>
-                <TableHead className="text-right">Kosten (EUR)</TableHead>
-                <TableHead className="text-right"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((it) => {
+          <div className="space-y-2 md:hidden">
+            {inv.isPending &&
+              Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={`skel-inv-${i}`}
+                  className="animate-pulse rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="h-14 w-14 rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <div className="flex-1 space-y-2 pt-1">
+                      <div className="h-4 w-3/4 rounded bg-gray-200 dark:bg-gray-800" />
+                      <div className="h-3 w-1/2 rounded bg-gray-100 dark:bg-gray-800" />
+                      <div className="h-3 w-2/3 rounded bg-gray-100 dark:bg-gray-800" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+            {!inv.isPending &&
+              rows.map((it) => {
                 const mp = mpById.get(it.master_product_id);
                 const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
                 const days =
@@ -629,148 +635,326 @@ export function InventoryPage() {
                 const itemImages = rowImagesByItemId.get(it.id) ?? [];
                 const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
                 const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
+
                 return (
-                  <TableRow key={it.id}>
-                    <TableCell>
-                      <div className="flex items-start gap-3">
-                        <ReferenceThumb
-                          url={itemPrimaryUrl ?? mp?.reference_image_url ?? null}
-                          alt={mp?.title ?? "Produkt"}
-                        />
+                  <div
+                    key={it.id}
+                    className="rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                  >
+                    <div className="flex items-start gap-3">
+                      <ReferenceThumb
+                        url={itemPrimaryUrl ?? mp?.reference_image_url ?? null}
+                        alt={mp?.title ?? "Produkt"}
+                        size={56}
+                      />
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
-                            {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
-                            {mp?.sku ? (
-                              <Badge variant="outline" className="font-mono text-[11px]">
-                                {mp.sku}
-                              </Badge>
-                            ) : null}
-                          </div>
-
-                          {mp && (
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                              <span>{mp.platform}</span>
-                              <span className="text-gray-300 dark:text-gray-700">•</span>
-                              <span>{mp.region}</span>
-                              {mp.variant ? (
-                                <>
-                                  <span className="text-gray-300 dark:text-gray-700">•</span>
-                                  <span className="truncate">{mp.variant}</span>
-                                </>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-gray-900 dark:text-gray-100">
+                              {mp ? mp.title : it.master_product_id}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
+                              {mp?.sku ? (
+                                <Badge variant="outline" className="font-mono text-[11px]">
+                                  {mp.sku}
+                                </Badge>
                               ) : null}
                             </div>
-                          )}
-
-                          {(it.serial_number || it.storage_location) && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
-                              {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
-                            </div>
-                          )}
-
-                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            ID: <span className="font-mono text-gray-400 dark:text-gray-500">{it.id}</span>
                           </div>
-                          {!!itemImages.length && (
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
+
+                          <div className="shrink-0">
+                            <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
+                          </div>
+                        </div>
+
+                        {mp && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                            <span>{mp.platform}</span>
+                            <span className="text-gray-300 dark:text-gray-700">•</span>
+                            <span>{mp.region}</span>
+                            {mp.variant ? (
+                              <>
+                                <span className="text-gray-300 dark:text-gray-700">•</span>
+                                <span className="truncate">{mp.variant}</span>
+                              </>
+                            ) : null}
+                          </div>
+                        )}
+
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <Badge variant={av.variant}>{av.label}</Badge>
+                          <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                          <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
+                        </div>
+
+                        <div className="mt-2">
+                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            {formatEur(totalCostCents)} €
+                          </div>
+                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                            EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                          </div>
+                        </div>
+
+                        {(it.serial_number || it.storage_location) && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
+                            {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
+                          </div>
+                        )}
+
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          ID: <span className="break-all font-mono text-gray-400 dark:text-gray-500">{it.id}</span>
+                        </div>
+
+                        {!!itemImages.length && (
+                          <div className="mt-3 space-y-2">
+                            <div className="flex items-center justify-between gap-3">
                               <Badge variant="outline">
                                 {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
                               </Badge>
-                              <div className="flex items-center gap-1">
-                                {itemImages.slice(0, 4).map((img) => {
-                                  const url = tablePreviewUrls[img.id];
-                                  const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
-                                  return (
-                                    <button
-                                      key={img.id}
-                                      type="button"
-                                      className="h-8 w-8 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
-                                      title={img.upload_path}
-                                      onClick={() => {
-                                        setTablePreviewItemId(it.id);
-                                        setTablePreviewImageId(img.id);
-                                      }}
-                                    >
-                                      {url ? (
-                                        <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
-                                      ) : canPreview ? (
-                                        <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
-                                      ) : (
-                                        <div className="flex h-full w-full items-center justify-center text-[9px] text-gray-500 dark:text-gray-400">
-                                          Datei
-                                        </div>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setTablePreviewItemId(it.id)}
-                              >
+                              <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
                                 Vorschau
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  for (const img of itemImages) {
-                                    void api.download(img.upload_path);
-                                  }
-                                }}
-                              >
-                                Alle herunterladen
-                              </Button>
                             </div>
+                            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                              {itemImages.slice(0, 4).map((img) => {
+                                const url = tablePreviewUrls[img.id];
+                                const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
+                                return (
+                                  <button
+                                    key={img.id}
+                                    type="button"
+                                    className="h-12 w-12 shrink-0 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+                                    title={img.upload_path}
+                                    onClick={() => {
+                                      setTablePreviewItemId(it.id);
+                                      setTablePreviewImageId(img.id);
+                                    }}
+                                  >
+                                    {url ? (
+                                      <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                                    ) : canPreview ? (
+                                      <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                                    ) : (
+                                      <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-500 dark:text-gray-400">
+                                        Datei
+                                      </div>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                              {itemImages.length > 4 && (
+                                <div className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                                  +{itemImages.length - 4}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            variant="outline"
+                            className="w-full sm:w-auto sm:flex-1"
+                            onClick={() => {
+                              setEditing(it);
+                              setEditStorageLocation(it.storage_location ?? "");
+                              setEditSerialNumber(it.serial_number ?? "");
+                            }}
+                          >
+                            Bearbeiten
+                          </Button>
+
+                          {!!itemImages.length && (
+                            <Button
+                              variant="secondary"
+                              className="w-full sm:w-auto sm:flex-1"
+                              onClick={() => setTablePreviewItemId(it.id)}
+                            >
+                              Fotos
+                            </Button>
                           )}
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={av.variant}>{av.label}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="font-medium">{formatEur(totalCostCents)} €</div>
-                      <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                        EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setEditing(it);
-                          setEditStorageLocation(it.storage_location ?? "");
-                          setEditSerialNumber(it.serial_number ?? "");
-                        }}
-                      >
-                        Bearbeiten
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </div>
                 );
               })}
-              {!rows.length && (
+
+            {!inv.isPending && !rows.length && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                Keine Daten.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
-                    Keine Daten.
-                  </TableCell>
+                  <TableHead>Produkt</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Alter</TableHead>
+                  <TableHead>Zustand</TableHead>
+                  <TableHead>Typ</TableHead>
+                  <TableHead className="text-right">Kosten (EUR)</TableHead>
+                  <TableHead className="text-right"></TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.map((it) => {
+                  const mp = mpById.get(it.master_product_id);
+                  const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
+                  const days =
+                    acquired ? Math.max(0, Math.floor((today.getTime() - acquired.getTime()) / (1000 * 60 * 60 * 24))) : null;
+                  const av = ageVariant(days);
+                  const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
+                  const hasAllocated = it.allocated_costs_cents > 0;
+                  const itemImages = rowImagesByItemId.get(it.id) ?? [];
+                  const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
+                  const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
+                  return (
+                    <TableRow key={it.id}>
+                      <TableCell>
+                        <div className="flex items-start gap-3">
+                          <ReferenceThumb
+                            url={itemPrimaryUrl ?? mp?.reference_image_url ?? null}
+                            alt={mp?.title ?? "Produkt"}
+                          />
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
+                              {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
+                              {mp?.sku ? (
+                                <Badge variant="outline" className="font-mono text-[11px]">
+                                  {mp.sku}
+                                </Badge>
+                              ) : null}
+                            </div>
+
+                            {mp && (
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                <span>{mp.platform}</span>
+                                <span className="text-gray-300 dark:text-gray-700">•</span>
+                                <span>{mp.region}</span>
+                                {mp.variant ? (
+                                  <>
+                                    <span className="text-gray-300 dark:text-gray-700">•</span>
+                                    <span className="truncate">{mp.variant}</span>
+                                  </>
+                                ) : null}
+                              </div>
+                            )}
+
+                            {(it.serial_number || it.storage_location) && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
+                                {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
+                              </div>
+                            )}
+
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              ID: <span className="font-mono text-gray-400 dark:text-gray-500">{it.id}</span>
+                            </div>
+                            {!!itemImages.length && (
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Badge variant="outline">
+                                  {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
+                                </Badge>
+                                <div className="flex items-center gap-1">
+                                  {itemImages.slice(0, 4).map((img) => {
+                                    const url = tablePreviewUrls[img.id];
+                                    const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
+                                    return (
+                                      <button
+                                        key={img.id}
+                                        type="button"
+                                        className="h-8 w-8 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+                                        title={img.upload_path}
+                                        onClick={() => {
+                                          setTablePreviewItemId(it.id);
+                                          setTablePreviewImageId(img.id);
+                                        }}
+                                      >
+                                        {url ? (
+                                          <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                                        ) : canPreview ? (
+                                          <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                                        ) : (
+                                          <div className="flex h-full w-full items-center justify-center text-[9px] text-gray-500 dark:text-gray-400">
+                                            Datei
+                                          </div>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
+                                  Vorschau
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    for (const img of itemImages) {
+                                      void api.download(img.upload_path);
+                                    }
+                                  }}
+                                >
+                                  Alle herunterladen
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={av.variant}>{av.label}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="font-medium">{formatEur(totalCostCents)} €</div>
+                        <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setEditing(it);
+                            setEditStorageLocation(it.storage_location ?? "");
+                            setEditSerialNumber(it.serial_number ?? "");
+                          }}
+                        >
+                          Bearbeiten
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {!rows.length && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Daten.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
