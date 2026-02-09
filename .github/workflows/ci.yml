@@ -79,6 +79,12 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://erp:erp@localhost:5432/erp
         run: python scripts/check_schema_drift.py
 
+      - name: DB invariants (enums)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://erp:erp@localhost:5432/erp
+        run: python scripts/check_db_invariants.py
+
   frontend:
     runs-on: ubuntu-latest
     steps:
