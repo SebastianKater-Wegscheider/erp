@@ -20,6 +20,23 @@
 - Einmaliger manueller Schritt fuer bestehende Deployments (Stamping).
 - Migrationslauf beim Container-Start kostet minimal Zeit, ist aber bei aktuellem Schema ein No-op.
 
+## 2026-02-09 - CI + Minimaler E2E Smoke Test
+
+### Ausgangslage
+- Backend-/Frontend-Aenderungen konnten ohne durchgehenden Automatismus unbemerkt regressieren.
+- Es gab keinen Smoke-Test, der UI + Backend zusammen prueft (z. B. Login + Dashboard).
+
+### Technische Entscheidungen
+- GitHub Actions CI eingefuehrt:
+  - Backend: Ruff + Pytest
+  - Migrations: `alembic upgrade head` + Schema-Drift-Check (Models vs. DB)
+  - Frontend: Typecheck + Tests + Build
+- Playwright E2E als minimaler Smoke-Test: Login + Dashboard laden.
+
+### Risiken / Trade-offs
+- E2E ist bewusst klein gehalten (Smoke), nicht als vollumfaengliche UI-Test-Suite.
+- Playwright Install/Browser-Download in CI erhoeht Laufzeit.
+
 ## 2026-02-08 - Eigenbeleg ohne Unterschriftsblock, mit Nachweisdaten
 
 ### Ausgangslage

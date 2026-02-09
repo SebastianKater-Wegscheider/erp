@@ -62,6 +62,17 @@ Warnung: Das Restore ist destruktiv (DB-Schema wird geloescht und neu erstellt).
 - `chmod +x restore.sh`
 - `./restore.sh --db backups/db_YYYYMMDD_HHMMSS.sql.gz --files backups/files_YYYYMMDD_HHMMSS.tar.gz`
 
+## E2E (Playwright)
+
+Minimaler Smoke-Test im Browser (Login + Dashboard laden):
+
+1. Stack starten: `docker compose up -d --build`
+2. E2E ausfuehren:
+   - `cd e2e`
+   - `npm install`
+   - `npx playwright install --with-deps chromium`
+   - `npm test`
+
 ## API (V1)
 
 Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
