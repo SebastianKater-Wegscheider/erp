@@ -261,3 +261,4 @@
 - Kostenverteilung: Historie auf Mobile als Card-List; Positionen im Formular als gestapelte Cards (UUID/Betrag) + full-width Actions.
 - Betriebsausgaben: Historie auf Mobile als Card-List inkl. prominentem Betrag + "Beleg oeffnen"; Upload-/Submit-Bereich auf Mobile ohne Overflow (gestapelt/full-width).
 - Fahrtenbuch: Historie auf Mobile als Card-List; Einkauf-Picker-Dialog rendert auf Mobile Cards statt 5-Spalten-Table (Add/Remove full-width), Desktop bleibt Table.
+- FBA Sendungen: Sendungs-Liste auf Mobile als Cards inkl. Actions; Artikel-Auswahl/Selected-Liste sowie Empfangsdialog auf Mobile als stacked Layouts statt Tabellen, Desktop bleibt unveraendert.

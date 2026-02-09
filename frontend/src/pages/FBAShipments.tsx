@@ -282,12 +282,12 @@ export function FBAShipmentsPage() {
             Inbound-Sendungen an Amazon verwalten, Versandkosten umlegen und Empfang abgleichen.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => shipments.refetch()} disabled={shipments.isFetching}>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <Button className="w-full sm:w-auto" variant="secondary" onClick={() => shipments.refetch()} disabled={shipments.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={openCreate}>
+          <Button className="w-full sm:w-auto" onClick={openCreate}>
             <Plus className="h-4 w-4" />
             Sendung erstellen
           </Button>
@@ -323,71 +323,137 @@ export function FBAShipmentsPage() {
             </div>
           )}
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Artikel</TableHead>
-                <TableHead>Versandkosten</TableHead>
-                <TableHead>Tracking</TableHead>
-                <TableHead className="text-right">Aktionen</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {listRows.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <div className="font-medium">{s.name}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{s.id}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={statusBadgeVariant(s.status)}>{optionLabel(SHIPMENT_STATUS_OPTIONS, s.status)}</Badge>
-                  </TableCell>
-                  <TableCell>{s.items.length}</TableCell>
-                  <TableCell>{formatEur(s.shipping_cost_cents)} €</TableCell>
-                  <TableCell>
-                    <div className="text-sm">{s.carrier || "-"}</div>
-                    <div className="font-mono text-xs text-gray-500 dark:text-gray-400">{s.tracking_number || "-"}</div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="inline-flex gap-2">
-                      {s.status === "DRAFT" && (
-                        <>
-                          <Button size="sm" variant="secondary" onClick={() => openEdit(s)}>
-                            <PackageOpen className="h-4 w-4" />
-                            Bearbeiten
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => markShipped.mutate(s.id)}
-                            disabled={markShipped.isPending}
-                            variant="default"
-                          >
-                            <PackageCheck className="h-4 w-4" />
-                            Versenden
-                          </Button>
-                        </>
-                      )}
-                      {s.status === "SHIPPED" && (
-                        <Button size="sm" onClick={() => openReceiveDialog(s)} disabled={markReceived.isPending}>
-                          <Check className="h-4 w-4" />
-                          Empfang buchen
-                        </Button>
-                      )}
+          <div className="md:hidden space-y-2">
+            {listRows.map((s) => (
+              <div
+                key={s.id}
+                className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-gray-900 dark:text-gray-100">{s.name}</div>
+                    <div className="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">{s.id}</div>
+                  </div>
+                  <Badge variant={statusBadgeVariant(s.status)}>{optionLabel(SHIPMENT_STATUS_OPTIONS, s.status)}</Badge>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div className="text-gray-600 dark:text-gray-300">
+                    Artikel: <span className="font-medium text-gray-900 dark:text-gray-100">{s.items.length}</span>
+                  </div>
+                  <div className="text-right text-gray-600 dark:text-gray-300">
+                    Versand: <span className="font-medium text-gray-900 dark:text-gray-100">{formatEur(s.shipping_cost_cents)} €</span>
+                  </div>
+                </div>
+
+                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  <div className="truncate">{s.carrier || "-"}</div>
+                  <div className="truncate font-mono">{s.tracking_number || "-"}</div>
+                </div>
+
+                <div className="mt-3">
+                  {s.status === "DRAFT" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" size="sm" className="w-full" variant="secondary" onClick={() => openEdit(s)}>
+                        <PackageOpen className="h-4 w-4" />
+                        Bearbeiten
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => markShipped.mutate(s.id)}
+                        disabled={markShipped.isPending}
+                        variant="default"
+                      >
+                        <PackageCheck className="h-4 w-4" />
+                        Versenden
+                      </Button>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!listRows.length && (
+                  )}
+                  {s.status === "SHIPPED" && (
+                    <Button type="button" size="sm" className="w-full" onClick={() => openReceiveDialog(s)} disabled={markReceived.isPending}>
+                      <Check className="h-4 w-4" />
+                      Empfang buchen
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {!listRows.length && (
+              <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+                Keine Sendungen vorhanden.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-sm text-gray-500 dark:text-gray-400">
-                    Keine Sendungen vorhanden.
-                  </TableCell>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Artikel</TableHead>
+                  <TableHead>Versandkosten</TableHead>
+                  <TableHead>Tracking</TableHead>
+                  <TableHead className="text-right">Aktionen</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {listRows.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell>
+                      <div className="font-medium">{s.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{s.id}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusBadgeVariant(s.status)}>{optionLabel(SHIPMENT_STATUS_OPTIONS, s.status)}</Badge>
+                    </TableCell>
+                    <TableCell>{s.items.length}</TableCell>
+                    <TableCell>{formatEur(s.shipping_cost_cents)} €</TableCell>
+                    <TableCell>
+                      <div className="text-sm">{s.carrier || "-"}</div>
+                      <div className="font-mono text-xs text-gray-500 dark:text-gray-400">{s.tracking_number || "-"}</div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="inline-flex gap-2">
+                        {s.status === "DRAFT" && (
+                          <>
+                            <Button size="sm" variant="secondary" onClick={() => openEdit(s)}>
+                              <PackageOpen className="h-4 w-4" />
+                              Bearbeiten
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => markShipped.mutate(s.id)}
+                              disabled={markShipped.isPending}
+                              variant="default"
+                            >
+                              <PackageCheck className="h-4 w-4" />
+                              Versenden
+                            </Button>
+                          </>
+                        )}
+                        {s.status === "SHIPPED" && (
+                          <Button size="sm" onClick={() => openReceiveDialog(s)} disabled={markReceived.isPending}>
+                            <Check className="h-4 w-4" />
+                            Empfang buchen
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!listRows.length && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Sendungen vorhanden.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -446,73 +512,125 @@ export function FBAShipmentsPage() {
                 />
               </div>
               <div className="max-h-56 overflow-auto rounded-md border border-gray-200 dark:border-gray-800">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Produkt</TableHead>
-                      <TableHead className="text-right">EK</TableHead>
-                      <TableHead className="text-right">Aktion</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {inventoryRows.map((it) => {
-                      const selected = selectedItemIds.includes(it.id);
-                      const mp = mpById.get(it.master_product_id);
-                      return (
-                        <TableRow key={it.id}>
-                          <TableCell className="font-mono text-xs">{it.id}</TableCell>
-                          <TableCell className="max-w-[28rem] truncate">{productLabel(mp)}</TableCell>
-                          <TableCell className="text-right">{formatEur(it.purchase_price_cents)} €</TableCell>
-                          <TableCell className="text-right">
-                            <Button size="sm" variant={selected ? "secondary" : "outline"} onClick={() => toggleItem(it.id)}>
-                              {selected ? "Entfernen" : "Hinzufügen"}
-                            </Button>
+                <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-800">
+                  {inventoryRows.map((it) => {
+                    const selected = selectedItemIds.includes(it.id);
+                    const mp = mpById.get(it.master_product_id);
+                    return (
+                      <div key={it.id} className="flex items-start justify-between gap-3 p-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{productLabel(mp)}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-mono">{it.id}</span>
+                            <span>EK: {formatEur(it.purchase_price_cents)} €</span>
+                          </div>
+                        </div>
+                        <Button type="button" size="sm" className="shrink-0" variant={selected ? "secondary" : "outline"} onClick={() => toggleItem(it.id)}>
+                          {selected ? "Entfernen" : "Hinzufügen"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                  {!inventoryRows.length && (
+                    <div className="p-3 text-sm text-gray-500 dark:text-gray-400">
+                      Keine passenden verfügbaren Artikel.
+                    </div>
+                  )}
+                </div>
+
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Produkt</TableHead>
+                        <TableHead className="text-right">EK</TableHead>
+                        <TableHead className="text-right">Aktion</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {inventoryRows.map((it) => {
+                        const selected = selectedItemIds.includes(it.id);
+                        const mp = mpById.get(it.master_product_id);
+                        return (
+                          <TableRow key={it.id}>
+                            <TableCell className="font-mono text-xs">{it.id}</TableCell>
+                            <TableCell className="max-w-[28rem] truncate">{productLabel(mp)}</TableCell>
+                            <TableCell className="text-right">{formatEur(it.purchase_price_cents)} €</TableCell>
+                            <TableCell className="text-right">
+                              <Button type="button" size="sm" variant={selected ? "secondary" : "outline"} onClick={() => toggleItem(it.id)}>
+                                {selected ? "Entfernen" : "Hinzufügen"}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {!inventoryRows.length && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                            Keine passenden verfügbaren Artikel.
                           </TableCell>
                         </TableRow>
-                      );
-                    })}
-                    {!inventoryRows.length && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
-                          Keine passenden verfügbaren Artikel.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </div>
 
             <div className="space-y-2">
               <Label>Ausgewählte Artikel ({selectedItemIds.length})</Label>
               <div className="max-h-56 overflow-auto rounded-md border border-gray-200 dark:border-gray-800">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Produkt</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedInventoryRows.map((it) => {
-                      const mp = mpById.get(it.master_product_id);
-                      return (
-                        <TableRow key={it.id}>
-                          <TableCell className="font-mono text-xs">{it.id}</TableCell>
-                          <TableCell>{productLabel(mp)}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {!selectedInventoryRows.length && (
+                <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-800">
+                  {selectedInventoryRows.map((it) => {
+                    const mp = mpById.get(it.master_product_id);
+                    return (
+                      <div key={it.id} className="flex items-start justify-between gap-3 p-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{productLabel(mp)}</div>
+                          <div className="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">{it.id}</div>
+                        </div>
+                        <Button type="button" size="sm" className="shrink-0" variant="outline" onClick={() => toggleItem(it.id)}>
+                          Entfernen
+                        </Button>
+                      </div>
+                    );
+                  })}
+                  {!selectedInventoryRows.length && (
+                    <div className="p-3 text-sm text-gray-500 dark:text-gray-400">
+                      Noch keine Artikel zugeordnet.
+                    </div>
+                  )}
+                </div>
+
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={2} className="text-sm text-gray-500 dark:text-gray-400">
-                          Noch keine Artikel zugeordnet.
-                        </TableCell>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Produkt</TableHead>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedInventoryRows.map((it) => {
+                        const mp = mpById.get(it.master_product_id);
+                        return (
+                          <TableRow key={it.id}>
+                            <TableCell className="font-mono text-xs">{it.id}</TableCell>
+                            <TableCell>{productLabel(mp)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {!selectedInventoryRows.length && (
+                        <TableRow>
+                          <TableCell colSpan={2} className="text-sm text-gray-500 dark:text-gray-400">
+                            Noch keine Artikel zugeordnet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </div>
 
@@ -522,11 +640,11 @@ export function FBAShipmentsPage() {
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={closeForm}>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
+              <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={closeForm}>
                 Schließen
               </Button>
-              <Button type="button" onClick={() => saveDraft.mutate()} disabled={!canSaveDraft || saveDraft.isPending}>
+              <Button className="w-full sm:w-auto" type="button" onClick={() => saveDraft.mutate()} disabled={!canSaveDraft || saveDraft.isPending}>
                 {editingId ? "Änderungen speichern" : "Sendung erstellen"}
               </Button>
             </div>
@@ -544,31 +662,31 @@ export function FBAShipmentsPage() {
           </DialogHeader>
 
           <div className="max-h-[55vh] overflow-auto rounded-md border border-gray-200 dark:border-gray-800">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Aktueller Status</TableHead>
-                  <TableHead>Status bei Empfang</TableHead>
-                  <TableHead>Notiz</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(receivingShipment?.items ?? []).map((line) => {
-                  const state = receiveStateByItemId[line.inventory_item_id] ?? { status: "RECEIVED", note: "" };
-                  return (
-                    <TableRow key={line.id}>
-                      <TableCell className="font-mono text-xs">{line.inventory_item_id}</TableCell>
-                      <TableCell>
-                        <Badge variant="warning">{inventoryStatusLabel("FBA_INBOUND")}</Badge>
-                      </TableCell>
-                      <TableCell>
+            <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-800">
+              {(receivingShipment?.items ?? []).map((line) => {
+                const state = receiveStateByItemId[line.inventory_item_id] ?? { status: "RECEIVED", note: "" };
+                return (
+                  <div key={line.id} className="space-y-2 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Artikel-ID</div>
+                        <div className="truncate font-mono text-xs text-gray-700 dark:text-gray-300">{line.inventory_item_id}</div>
+                      </div>
+                      <Badge variant="warning">{inventoryStatusLabel("FBA_INBOUND")}</Badge>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Status bei Empfang</div>
                         <Select
                           value={state.status}
                           onValueChange={(value) =>
                             setReceiveStateByItemId((prev) => ({
                               ...prev,
-                              [line.inventory_item_id]: { ...(prev[line.inventory_item_id] ?? { note: "" }), status: value as ReceiveState["status"] },
+                              [line.inventory_item_id]: {
+                                ...(prev[line.inventory_item_id] ?? { note: "" }),
+                                status: value as ReceiveState["status"],
+                              },
                             }))
                           }
                         >
@@ -581,8 +699,9 @@ export function FBAShipmentsPage() {
                             <SelectItem value="LOST">Verloren</SelectItem>
                           </SelectContent>
                         </Select>
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Notiz</div>
                         <Input
                           value={state.note}
                           onChange={(e) =>
@@ -594,12 +713,71 @@ export function FBAShipmentsPage() {
                           placeholder="Optional (z. B. Fall-ID / Amazon Ticket)"
                           disabled={state.status === "RECEIVED"}
                         />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Aktueller Status</TableHead>
+                    <TableHead>Status bei Empfang</TableHead>
+                    <TableHead>Notiz</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(receivingShipment?.items ?? []).map((line) => {
+                    const state = receiveStateByItemId[line.inventory_item_id] ?? { status: "RECEIVED", note: "" };
+                    return (
+                      <TableRow key={line.id}>
+                        <TableCell className="font-mono text-xs">{line.inventory_item_id}</TableCell>
+                        <TableCell>
+                          <Badge variant="warning">{inventoryStatusLabel("FBA_INBOUND")}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={state.status}
+                            onValueChange={(value) =>
+                              setReceiveStateByItemId((prev) => ({
+                                ...prev,
+                                [line.inventory_item_id]: { ...(prev[line.inventory_item_id] ?? { note: "" }), status: value as ReceiveState["status"] },
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="RECEIVED">Empfangen (FBA Lagernd)</SelectItem>
+                              <SelectItem value="DISCREPANCY">Abweichung</SelectItem>
+                              <SelectItem value="LOST">Verloren</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={state.note}
+                            onChange={(e) =>
+                              setReceiveStateByItemId((prev) => ({
+                                ...prev,
+                                [line.inventory_item_id]: { ...(prev[line.inventory_item_id] ?? { status: "RECEIVED" }), note: e.target.value },
+                              }))
+                            }
+                            placeholder="Optional (z. B. Fall-ID / Amazon Ticket)"
+                            disabled={state.status === "RECEIVED"}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           {markReceived.isError && (
