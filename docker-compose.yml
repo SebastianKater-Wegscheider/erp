@@ -31,6 +31,8 @@ services:
       # Keep backend in sync with local code (prevents stale images during dev).
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
+      # Ensure pytest config is available inside the container (avoids pytest-asyncio warnings).
+      - ./pytest.ini:/app/pytest.ini:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       db:
