@@ -860,12 +860,12 @@ export function PurchasesPage() {
             Einkäufe erfassen, Belege hochladen und Eigenbelege als PDF erstellen.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => list.refetch()} disabled={list.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={openCreateForm}>
+          <Button className="w-full sm:w-auto" onClick={openCreateForm}>
             <Plus className="h-4 w-4" />
             {editingPurchaseId ? "Neuer Einkauf" : "Einkauf erfassen"}
           </Button>
@@ -894,81 +894,110 @@ export function PurchasesPage() {
             </div>
           )}
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Datum</TableHead>
-                <TableHead>Art</TableHead>
-                <TableHead>Verkäufer</TableHead>
-                <TableHead className="text-right">Waren</TableHead>
-                <TableHead className="text-right">Nebenkosten</TableHead>
-                <TableHead className="text-right">Bezahlt</TableHead>
-                <TableHead className="text-right">Dokumente</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(list.data ?? []).map((p) => (
-                <TableRow key={p.id}>
-                  {(() => {
-                    const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
-                    const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
-                    return (
-                      <>
-                        <TableCell>{formatDateEuFromIso(p.purchase_date)}</TableCell>
-                        <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
-                        <TableCell>
-                          <div>{p.counterparty_name}</div>
-                          {p.source_platform ? (
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{p.source_platform}</div>
+          <div className="space-y-2 md:hidden">
+            {list.isPending &&
+              Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={`skel-p-${i}`}
+                  className="animate-pulse rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <div className="h-4 w-36 rounded bg-gray-200 dark:bg-gray-800" />
+                      <div className="h-3 w-56 rounded bg-gray-100 dark:bg-gray-800" />
+                      <div className="h-3 w-40 rounded bg-gray-100 dark:bg-gray-800" />
+                    </div>
+                    <div className="space-y-2 text-right">
+                      <div className="h-4 w-20 rounded bg-gray-200 dark:bg-gray-800" />
+                      <div className="h-3 w-24 rounded bg-gray-100 dark:bg-gray-800" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+            {!list.isPending &&
+              (list.data ?? []).map((p) => {
+                const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
+                const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
+                return (
+                  <div
+                    key={p.id}
+                    className="rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {formatDateEuFromIso(p.purchase_date)}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <Badge variant="secondary">{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</Badge>
+                          {p.document_number ? (
+                            <Badge variant="outline" className="font-mono text-[11px]">
+                              {p.document_number}
+                            </Badge>
                           ) : null}
-                        </TableCell>
-                        <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
-                        <TableCell className="text-right">{formatEur(extraCosts)} €</TableCell>
-                        <TableCell className="text-right">{formatEur(totalPaid)} €</TableCell>
-                      </>
-                    );
-                  })()}
-                  <TableCell className="text-right">
-                    <div className="inline-flex items-center justify-end gap-2">
+                        </div>
+
+                        <div className="mt-2">
+                          <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.counterparty_name}</div>
+                          {p.source_platform ? (
+                            <div className="truncate text-xs text-gray-500 dark:text-gray-400">{p.source_platform}</div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {formatEur(totalPaid)} €
+                        </div>
+                        <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          Waren {formatEur(p.total_amount_cents)} €
+                        </div>
+                        {!!extraCosts && (
+                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                            NK {formatEur(extraCosts)} €
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                       {p.pdf_path ? (
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="outline">PDF</Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Einkauf (PDF)</DialogTitle>
-                              <DialogDescription>{p.pdf_path}</DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter>
-                              <Button variant="secondary" onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}>
-                                Herunterladen
-                              </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
+                        <Button
+                          variant="outline"
+                          className="w-full sm:flex-1"
+                          onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}
+                        >
+                          PDF
+                        </Button>
                       ) : p.kind === "PRIVATE_DIFF" ? (
                         <Button
-                          size="sm"
                           variant="outline"
+                          className="w-full sm:flex-1"
                           onClick={() => generatePdf.mutate(p.id)}
                           disabled={generatePdf.isPending}
                         >
                           Eigenbeleg erstellen
                         </Button>
                       ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
-                      )}
-
-                      {!p.pdf_path && (
-                        <Button size="sm" variant="secondary" onClick={() => startEdit(p)} disabled={create.isPending || update.isPending}>
-                          Bearbeiten
+                        <Button variant="outline" className="w-full sm:flex-1" disabled>
+                          PDF —
                         </Button>
                       )}
-                      {p.pdf_path && (
+
+                      {!p.pdf_path ? (
                         <Button
-                          size="sm"
                           variant="secondary"
+                          className="w-full sm:flex-1"
+                          onClick={() => startEdit(p)}
+                          disabled={create.isPending || update.isPending}
+                        >
+                          Bearbeiten
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          className="w-full sm:flex-1"
                           onClick={() => reopenPurchase.mutate(p.id)}
                           disabled={reopenPurchase.isPending || create.isPending || update.isPending}
                         >
@@ -976,18 +1005,108 @@ export function PurchasesPage() {
                         </Button>
                       )}
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!list.data?.length && (
+                  </div>
+                );
+              })}
+
+            {!list.isPending && !list.data?.length && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                Keine Daten.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
-                    Keine Daten.
-                  </TableCell>
+                  <TableHead>Datum</TableHead>
+                  <TableHead>Art</TableHead>
+                  <TableHead>Verkäufer</TableHead>
+                  <TableHead className="text-right">Waren</TableHead>
+                  <TableHead className="text-right">Nebenkosten</TableHead>
+                  <TableHead className="text-right">Bezahlt</TableHead>
+                  <TableHead className="text-right">Dokumente</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {(list.data ?? []).map((p) => (
+                  <TableRow key={p.id}>
+                    {(() => {
+                      const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
+                      const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
+                      return (
+                        <>
+                          <TableCell>{formatDateEuFromIso(p.purchase_date)}</TableCell>
+                          <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
+                          <TableCell>
+                            <div>{p.counterparty_name}</div>
+                            {p.source_platform ? (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">{p.source_platform}</div>
+                            ) : null}
+                          </TableCell>
+                          <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
+                          <TableCell className="text-right">{formatEur(extraCosts)} €</TableCell>
+                          <TableCell className="text-right">{formatEur(totalPaid)} €</TableCell>
+                        </>
+                      );
+                    })()}
+                    <TableCell className="text-right">
+                      <div className="inline-flex items-center justify-end gap-2">
+                        {p.pdf_path ? (
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="outline">PDF</Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Einkauf (PDF)</DialogTitle>
+                                <DialogDescription>{p.pdf_path}</DialogDescription>
+                              </DialogHeader>
+                              <DialogFooter>
+                                <Button variant="secondary" onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}>
+                                  Herunterladen
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                        ) : p.kind === "PRIVATE_DIFF" ? (
+                          <Button size="sm" variant="outline" onClick={() => generatePdf.mutate(p.id)} disabled={generatePdf.isPending}>
+                            Eigenbeleg erstellen
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                        )}
+
+                        {!p.pdf_path && (
+                          <Button size="sm" variant="secondary" onClick={() => startEdit(p)} disabled={create.isPending || update.isPending}>
+                            Bearbeiten
+                          </Button>
+                        )}
+                        {p.pdf_path && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => reopenPurchase.mutate(p.id)}
+                            disabled={reopenPurchase.isPending || create.isPending || update.isPending}
+                          >
+                            Zur Bearbeitung öffnen
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!list.data?.length && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Daten.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
