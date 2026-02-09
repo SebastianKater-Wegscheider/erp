@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -163,9 +164,13 @@ async def test_create_and_update_private_purchase_source_metadata(db_session: As
     assert row.notes == "Mit Controller und Spiel"
     await db_session.rollback()
 
-    line = (
-        await db_session.execute(select(PurchaseLine).where(PurchaseLine.purchase_id == purchase_id))
-    ).scalar_one()
+    line = (await db_session.execute(select(PurchaseLine).where(PurchaseLine.purchase_id == purchase_id))).scalar_one()
+    # Rollback expires ORM instances; store fields we need before the next transaction.
+    line_id = line.id
+    line_master_product_id = line.master_product_id
+    line_condition = line.condition
+    line_purchase_type = line.purchase_type
+    await db_session.rollback()
     async with db_session.begin():
         await update_purchase(
             db_session,
@@ -182,10 +187,10 @@ async def test_create_and_update_private_purchase_source_metadata(db_session: As
                 payment_source=PaymentSource.BANK,
                 lines=[
                     PurchaseLineUpsert(
-                        id=line.id,
-                        master_product_id=line.master_product_id,
-                        condition=line.condition,
-                        purchase_type=line.purchase_type,
+                        id=line_id,
+                        master_product_id=line_master_product_id,
+                        condition=line_condition,
+                        purchase_type=line_purchase_type,
                         purchase_price_cents=1_500,
                     )
                 ],
@@ -821,7 +826,7 @@ async def test_purchase_credit_note_pdf_includes_image_attachments_in_context(mo
         settings = get_settings()
         img_rel = "uploads/evidence-test.png"
         (settings.app_storage_dir / "uploads").mkdir(parents=True, exist_ok=True)
-        (settings.app_storage_dir / img_rel).write_bytes(b"png")
+        Image.new("RGBA", (1, 1), (255, 0, 0, 255)).save(settings.app_storage_dir / img_rel, format="PNG")
 
         db_session.add(
             PurchaseAttachment(
@@ -861,6 +866,7 @@ async def test_reopen_private_purchase_unlocks_for_edit(monkeypatch, db_session:
             purchase_date=date(2026, 2, 8),
             lines=[(mp.id, 1_200)],
         )
+    purchase_id = purchase.id
 
     def fake_render_pdf(*, output_path: Path, **_kwargs) -> None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -869,7 +875,7 @@ async def test_reopen_private_purchase_unlocks_for_edit(monkeypatch, db_session:
     monkeypatch.setattr("app.services.purchases.render_pdf", fake_render_pdf)
 
     async with db_session.begin():
-        generated = await generate_purchase_credit_note_pdf(db_session, actor=ACTOR, purchase_id=purchase.id)
+        generated = await generate_purchase_credit_note_pdf(db_session, actor=ACTOR, purchase_id=purchase_id)
     assert generated.pdf_path is not None
 
     settings = get_settings()
@@ -877,21 +883,25 @@ async def test_reopen_private_purchase_unlocks_for_edit(monkeypatch, db_session:
     assert old_pdf_path.exists()
 
     async with db_session.begin():
-        reopened = await reopen_purchase_for_edit(db_session, actor=ACTOR, purchase_id=purchase.id)
+        reopened = await reopen_purchase_for_edit(db_session, actor=ACTOR, purchase_id=purchase_id)
     assert reopened.pdf_path is None
     assert not old_pdf_path.exists()
 
     purchase_row = (
-        await db_session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
     ).scalar_one()
     line = purchase_row.lines[0]
+    line_id = line.id
+    line_master_product_id = line.master_product_id
+    line_condition = line.condition
+    line_purchase_type = line.purchase_type
     await db_session.rollback()
 
     async with db_session.begin():
         updated = await update_purchase(
             db_session,
             actor=ACTOR,
-            purchase_id=purchase.id,
+            purchase_id=purchase_id,
             data=PurchaseUpdate(
                 kind=PurchaseKind.PRIVATE_DIFF,
                 purchase_date=date(2026, 2, 9),
@@ -901,10 +911,10 @@ async def test_reopen_private_purchase_unlocks_for_edit(monkeypatch, db_session:
                 payment_source=PaymentSource.BANK,
                 lines=[
                     PurchaseLineUpsert(
-                        id=line.id,
-                        master_product_id=line.master_product_id,
-                        condition=line.condition,
-                        purchase_type=line.purchase_type,
+                        id=line_id,
+                        master_product_id=line_master_product_id,
+                        condition=line_condition,
+                        purchase_type=line_purchase_type,
                         purchase_price_cents=1_300,
                     )
                 ],
@@ -1031,8 +1041,9 @@ async def test_reopen_finalized_sales_order_restores_draft_and_allows_refinalize
                 lines=[SalesOrderLineCreate(inventory_item_id=item_id, sale_gross_cents=1_900)],
             ),
         )
+    order_id = order.id
     async with db_session.begin():
-        finalized = await finalize_sales_order(db_session, actor=ACTOR, order_id=order.id)
+        finalized = await finalize_sales_order(db_session, actor=ACTOR, order_id=order_id)
     original_invoice_number = finalized.invoice_number
     assert original_invoice_number is not None
 
@@ -1042,14 +1053,14 @@ async def test_reopen_finalized_sales_order_restores_draft_and_allows_refinalize
 
     monkeypatch.setattr("app.services.sales.render_pdf", fake_render_pdf)
     async with db_session.begin():
-        with_pdf = await generate_sales_invoice_pdf(db_session, actor=ACTOR, order_id=order.id)
+        with_pdf = await generate_sales_invoice_pdf(db_session, actor=ACTOR, order_id=order_id)
     assert with_pdf.invoice_pdf_path is not None
     settings = get_settings()
     old_pdf_path = settings.app_storage_dir / with_pdf.invoice_pdf_path
     assert old_pdf_path.exists()
 
     async with db_session.begin():
-        reopened = await reopen_sales_order_for_edit(db_session, actor=ACTOR, order_id=order.id)
+        reopened = await reopen_sales_order_for_edit(db_session, actor=ACTOR, order_id=order_id)
     assert reopened.status == OrderStatus.DRAFT
     assert reopened.invoice_pdf_path is None
     assert reopened.invoice_number == original_invoice_number
@@ -1060,7 +1071,7 @@ async def test_reopen_finalized_sales_order_restores_draft_and_allows_refinalize
     await db_session.rollback()
 
     sale_ledger_rows = (
-        await db_session.execute(select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order.id))
+        await db_session.execute(select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order_id))
     ).scalars().all()
     assert sale_ledger_rows == []
     await db_session.rollback()
@@ -1069,7 +1080,7 @@ async def test_reopen_finalized_sales_order_restores_draft_and_allows_refinalize
         updated = await update_sales_order(
             db_session,
             actor=ACTOR,
-            order_id=order.id,
+            order_id=order_id,
             data=SalesOrderUpdate(
                 order_date=date(2026, 2, 11),
                 channel=OrderChannel.EBAY,
@@ -1084,11 +1095,11 @@ async def test_reopen_finalized_sales_order_restores_draft_and_allows_refinalize
     assert updated.buyer_name == "Buyer Updated"
 
     async with db_session.begin():
-        finalized_again = await finalize_sales_order(db_session, actor=ACTOR, order_id=order.id)
+        finalized_again = await finalize_sales_order(db_session, actor=ACTOR, order_id=order_id)
     assert finalized_again.status == OrderStatus.FINALIZED
     assert finalized_again.invoice_number == original_invoice_number
 
     sale_ledger = (
-        await db_session.execute(select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order.id))
+        await db_session.execute(select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order_id))
     ).scalar_one()
     assert sale_ledger.amount_cents == 2_000

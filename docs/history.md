@@ -263,3 +263,13 @@
 - Fahrtenbuch: Historie auf Mobile als Card-List; Einkauf-Picker-Dialog rendert auf Mobile Cards statt 5-Spalten-Table (Add/Remove full-width), Desktop bleibt Table.
 - FBA Sendungen: Sendungs-Liste auf Mobile als Cards inkl. Actions; Artikel-Auswahl/Selected-Liste sowie Empfangsdialog auf Mobile als stacked Layouts statt Tabellen, Desktop bleibt unveraendert.
 - Dashboard: Top/Flops (30T) auf Mobile als Cards (Gewinn prominent, KPIs als Badges), Desktop-Table bleibt unveraendert.
+
+## 2026-02-09 - Test-Suite Stabilisierung + zusaetzliche Abdeckung
+
+### Ausgangslage
+- Backend-Tests liefen, aber einzelne Flow-Tests waren instabil/rot durch Session-Rollbacks (SQLAlchemy expiriert ORM-Objekte bei `rollback()`), was in Async-Kontexten zu `MissingGreenlet` fuehren kann, wenn man danach Attribute aus ORM-Instanzen liest.
+- PDF-Evidence-Test schrieb ein "PNG" als Platzhalterbytes; seit Evidence-Images wirklich mit Pillow verarbeitet werden, muss das Test-Image valide sein.
+
+### Technische Entscheidungen
+- Tests lesen nach `rollback()` keine ORM-Attribute mehr, sondern arbeiten mit zwischengespeicherten IDs/Scalar-Feldern.
+- Evidence-Image im Test wird als echtes 1x1 PNG erzeugt (Pillow), damit der PDF-Flow realistisch bleibt.
