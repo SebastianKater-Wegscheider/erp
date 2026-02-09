@@ -260,3 +260,4 @@
 - Naechster Schritt: Restliche Views (Dashboard Top/Flops, FBA Sendungen, Kostenverteilung, Betriebsausgaben, Fahrtenbuch) auf Mobile ebenfalls als Card-Listen/Stacked-Layouts rendern; Desktop-Tables bleiben unveraendert.
 - Kostenverteilung: Historie auf Mobile als Card-List; Positionen im Formular als gestapelte Cards (UUID/Betrag) + full-width Actions.
 - Betriebsausgaben: Historie auf Mobile als Card-List inkl. prominentem Betrag + "Beleg oeffnen"; Upload-/Submit-Bereich auf Mobile ohne Overflow (gestapelt/full-width).
+- Fahrtenbuch: Historie auf Mobile als Card-List; Einkauf-Picker-Dialog rendert auf Mobile Cards statt 5-Spalten-Table (Add/Remove full-width), Desktop bleibt Table.

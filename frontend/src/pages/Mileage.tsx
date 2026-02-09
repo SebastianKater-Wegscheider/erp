@@ -146,8 +146,9 @@ export function MileagePage() {
             Fahrten erfassen, Einkäufe verknüpfen und den steuerlichen Betrag berechnen.
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <Button
+            className="w-full sm:w-auto"
             variant="secondary"
             onClick={() => {
               void list.refetch();
@@ -158,7 +159,7 @@ export function MileagePage() {
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button onClick={openForm}>
+          <Button className="w-full sm:w-auto" onClick={openForm}>
             <Plus className="h-4 w-4" />
             Fahrt erfassen
           </Button>
@@ -199,55 +200,115 @@ export function MileagePage() {
               {(list.error as Error).message}
             </div>
           )}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Datum</TableHead>
-                <TableHead>Strecke</TableHead>
-                <TableHead>Zweck</TableHead>
-                <TableHead className="text-right">Betrag</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell className="whitespace-nowrap">{formatDateEuFromIso(m.log_date)}</TableCell>
-                  <TableCell>
-                    <div className="font-medium">{m.start_location} → {m.destination}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{(m.distance_meters / 1000).toFixed(2)} km</div>
-                  </TableCell>
-                  <TableCell>
-                    {m.purchase_ids?.length ? (
-                      <>
-                        <div className="font-medium">
-                          {m.purchase_ids.length} Einkauf{m.purchase_ids.length === 1 ? "" : "e"}
+
+          <div className="md:hidden space-y-2">
+            {rows.map((m) => {
+              const kmLabel = `${(m.distance_meters / 1000).toFixed(2)} km`;
+              const purchaseRefs = (m.purchase_ids ?? [])
+                .map((id) => purchaseRefById.get(id))
+                .filter((p): p is PurchaseRefOut => !!p);
+              return (
+                <div
+                  key={m.id}
+                  className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{formatDateEuFromIso(m.log_date)}</div>
+                      <div className="mt-1 truncate font-medium text-gray-900 dark:text-gray-100">
+                        {m.start_location} → {m.destination}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{kmLabel}</div>
+
+                      {m.purchase_ids?.length ? (
+                        <div className="mt-2 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">
+                              {m.purchase_ids.length} Einkauf{m.purchase_ids.length === 1 ? "" : "e"}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {purchaseRefs
+                              .slice(0, 2)
+                              .map((p) => `${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name}`)
+                              .join(", ")}
+                            {purchaseRefs.length > 2 ? ` +${purchaseRefs.length - 2}` : ""}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {m.purchase_ids
-                            .map((id) => purchaseRefById.get(id))
-                            .filter((p): p is PurchaseRefOut => !!p)
-                            .slice(0, 2)
-                            .map((p) => `${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name}`)
-                            .join(", ")}
-                          {m.purchase_ids.length > 2 ? ` +${m.purchase_ids.length - 2}` : ""}
+                      ) : (
+                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-200">
+                          {m.purpose_text?.trim() || optionLabel(PURPOSE_OPTIONS, m.purpose)}
                         </div>
-                      </>
-                    ) : (
-                      m.purpose_text?.trim() || optionLabel(PURPOSE_OPTIONS, m.purpose)
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">{formatEur(m.amount_cents)} €</TableCell>
-                </TableRow>
-              ))}
-              {!rows.length && (
+                      )}
+                    </div>
+
+                    <div className="shrink-0 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {formatEur(m.amount_cents)} €
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {!rows.length && (
+              <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+                Keine Daten.
+              </div>
+            )}
+          </div>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
-                    Keine Daten.
-                  </TableCell>
+                  <TableHead>Datum</TableHead>
+                  <TableHead>Strecke</TableHead>
+                  <TableHead>Zweck</TableHead>
+                  <TableHead className="text-right">Betrag</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="whitespace-nowrap">{formatDateEuFromIso(m.log_date)}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">
+                        {m.start_location} → {m.destination}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{(m.distance_meters / 1000).toFixed(2)} km</div>
+                    </TableCell>
+                    <TableCell>
+                      {m.purchase_ids?.length ? (
+                        <>
+                          <div className="font-medium">
+                            {m.purchase_ids.length} Einkauf{m.purchase_ids.length === 1 ? "" : "e"}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {m.purchase_ids
+                              .map((id) => purchaseRefById.get(id))
+                              .filter((p): p is PurchaseRefOut => !!p)
+                              .slice(0, 2)
+                              .map((p) => `${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name}`)
+                              .join(", ")}
+                            {m.purchase_ids.length > 2 ? ` +${m.purchase_ids.length - 2}` : ""}
+                          </div>
+                        </>
+                      ) : (
+                        m.purpose_text?.trim() || optionLabel(PURPOSE_OPTIONS, m.purpose)
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">{formatEur(m.amount_cents)} €</TableCell>
+                  </TableRow>
+                ))}
+                {!rows.length && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                      Keine Daten.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -322,48 +383,102 @@ export function MileagePage() {
                         </div>
 
                         <div className="max-h-[55vh] overflow-auto rounded-md border border-gray-200 dark:border-gray-800">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Datum</TableHead>
-                                <TableHead>Gegenpartei</TableHead>
-                                <TableHead>Beleg</TableHead>
-                                <TableHead className="text-right">Betrag</TableHead>
-                                <TableHead />
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {filteredPurchaseRefs.map((p) => {
-                                const selected = purchaseIds.includes(p.id);
-                                return (
-                                  <TableRow key={p.id}>
-                                    <TableCell className="whitespace-nowrap">{formatDateEuFromIso(p.purchase_date)}</TableCell>
-                                    <TableCell className="font-medium">{p.counterparty_name}</TableCell>
-                                    <TableCell>{p.document_number ?? ""}</TableCell>
-                                    <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
-                                    <TableCell className="text-right">
-                                      {selected ? (
-                                        <Button type="button" variant="outline" size="sm" onClick={() => setPurchaseIds((prev) => prev.filter((id) => id !== p.id))}>
-                                          Entfernen
-                                        </Button>
-                                      ) : (
-                                        <Button type="button" size="sm" onClick={() => setPurchaseIds((prev) => [...prev, p.id])}>
-                                          Hinzufügen
-                                        </Button>
-                                      )}
+                          <div className="sm:hidden space-y-2 p-2">
+                            {filteredPurchaseRefs.map((p) => {
+                              const selected = purchaseIds.includes(p.id);
+                              return (
+                                <div
+                                  key={p.id}
+                                  className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400">{formatDateEuFromIso(p.purchase_date)}</div>
+                                      <div className="mt-1 truncate font-medium text-gray-900 dark:text-gray-100">{p.counterparty_name}</div>
+                                      {p.document_number ? (
+                                        <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">Beleg: {p.document_number}</div>
+                                      ) : null}
+                                    </div>
+                                    <div className="shrink-0 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                      {formatEur(p.total_amount_cents)} €
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3">
+                                    {selected ? (
+                                      <Button
+                                        type="button"
+                                        className="w-full"
+                                        variant="outline"
+                                        onClick={() => setPurchaseIds((prev) => prev.filter((id) => id !== p.id))}
+                                      >
+                                        Entfernen
+                                      </Button>
+                                    ) : (
+                                      <Button type="button" className="w-full" onClick={() => setPurchaseIds((prev) => [...prev, p.id])}>
+                                        Hinzufügen
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {!filteredPurchaseRefs.length && (
+                              <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+                                Keine Treffer.
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="hidden sm:block">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Datum</TableHead>
+                                  <TableHead>Gegenpartei</TableHead>
+                                  <TableHead>Beleg</TableHead>
+                                  <TableHead className="text-right">Betrag</TableHead>
+                                  <TableHead />
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {filteredPurchaseRefs.map((p) => {
+                                  const selected = purchaseIds.includes(p.id);
+                                  return (
+                                    <TableRow key={p.id}>
+                                      <TableCell className="whitespace-nowrap">{formatDateEuFromIso(p.purchase_date)}</TableCell>
+                                      <TableCell className="font-medium">{p.counterparty_name}</TableCell>
+                                      <TableCell>{p.document_number ?? ""}</TableCell>
+                                      <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
+                                      <TableCell className="text-right">
+                                        {selected ? (
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setPurchaseIds((prev) => prev.filter((id) => id !== p.id))}
+                                          >
+                                            Entfernen
+                                          </Button>
+                                        ) : (
+                                          <Button type="button" size="sm" onClick={() => setPurchaseIds((prev) => [...prev, p.id])}>
+                                            Hinzufügen
+                                          </Button>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                                {!filteredPurchaseRefs.length && (
+                                  <TableRow>
+                                    <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
+                                      Keine Treffer.
                                     </TableCell>
                                   </TableRow>
-                                );
-                              })}
-                              {!filteredPurchaseRefs.length && (
-                                <TableRow>
-                                  <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
-                                    Keine Treffer.
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
                         </div>
                       </DialogContent>
                     </Dialog>
@@ -397,11 +512,11 @@ export function MileagePage() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between">
-                <Button type="button" variant="secondary" onClick={closeForm} disabled={create.isPending}>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between">
+                <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={closeForm} disabled={create.isPending}>
                   Schließen
                 </Button>
-                <Button onClick={() => create.mutate()} disabled={!start.trim() || !destination.trim() || create.isPending}>
+                <Button className="w-full sm:w-auto" onClick={() => create.mutate()} disabled={!start.trim() || !destination.trim() || create.isPending}>
                   Erstellen
                 </Button>
               </div>
