@@ -187,22 +187,24 @@ export function Topbar() {
 
               <div className="flex flex-1 flex-col">
                 <div className="flex-1 overflow-auto px-2 py-3">
-                  <div className="px-2 pb-2">
-                    <Input
-                      value={mobileNavQuery}
-                      onChange={(e) => setMobileNavQuery(e.target.value)}
-                      placeholder="Suchen…"
-                      aria-label="Navigation durchsuchen"
-                    />
-                  </div>
+                  <div className="sticky top-0 z-10 -mx-2 bg-white/95 px-2 pb-2 pt-1 backdrop-blur dark:bg-gray-950/80">
+                    <div className="px-2 pb-2">
+                      <Input
+                        value={mobileNavQuery}
+                        onChange={(e) => setMobileNavQuery(e.target.value)}
+                        placeholder="Suchen…"
+                        aria-label="Navigation durchsuchen"
+                      />
+                    </div>
 
-                  <Link
-                    to={NAV_PRIMARY.to}
-                    onClick={() => setMobileNavOpen(false)}
-                    className={cnMobileLink(isActive(NAV_PRIMARY.to))}
-                  >
-                    {NAV_PRIMARY.label}
-                  </Link>
+                    <Link
+                      to={NAV_PRIMARY.to}
+                      onClick={() => setMobileNavOpen(false)}
+                      className={cnMobileLink(isActive(NAV_PRIMARY.to))}
+                    >
+                      {NAV_PRIMARY.label}
+                    </Link>
+                  </div>
 
                   {!filteredNavSections.length && mobileNavQuery.trim() && (
                     <div className="px-3 py-6 text-sm text-gray-500 dark:text-gray-400">Keine Treffer.</div>
@@ -249,18 +251,30 @@ export function Topbar() {
                 </div>
 
                 <div className="border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-800">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="w-full justify-center"
-                    onClick={() => {
-                      setMobileNavOpen(false);
-                      clearCredentials();
-                    }}
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Abmelden
-                  </Button>
+                  <div className="space-y-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-center"
+                      onClick={() => setTheme(toggleTheme())}
+                    >
+                      {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                      {theme === "dark" ? "Hell" : "Dunkel"}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full justify-center"
+                      onClick={() => {
+                        setMobileNavOpen(false);
+                        clearCredentials();
+                      }}
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Abmelden
+                    </Button>
+                  </div>
                 </div>
               </div>
             </DialogContent>

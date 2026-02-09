@@ -247,3 +247,4 @@
 - Dashboard/Performance: Chart-Wrapper auf `overflow-hidden` + Tooltip max-width/break-words, weil iOS Safari sonst durch absolut positionierte Tooltip-Elemente horizontales Panning zulassen kann.
 - Mobile Nav: Drawer breiter (viewport-basiert) + Safe-Area Insets; Search-Input fuer schnelle Navigation; Sections als Accordion (auto-open bei Suche); groessere Tap-Targets fuer Links.
 - Mobile Nav: `onOpenAutoFocus` deaktiviert, damit iOS beim Oeffnen nicht sofort die Tastatur aufklappt; Dialog-Close-Button nutzt Safe-Area Insets (Right/Top), damit nichts im Notch-Bereich "clipped".
+- Mobile Nav: Search + "Uebersicht" sticky im Drawer (schneller Wechsel beim Scrollen) und Theme-Toggle in den Drawer-Footer (one-handed).
