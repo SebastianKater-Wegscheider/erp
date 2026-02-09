@@ -245,3 +245,4 @@
 - Falls Overflow aus Portals/absolut positionierten Elementen kommt: gleicher Guard auf `#root` (clip/hidden), damit Safari die Scroll-Width nicht vergroessert.
 - Tables: `min-w-max` wieder entfernt; einige Views (Dashboard) sollen auf Mobile nicht horizontal scrollen, wenn die Inhalte eigentlich per Truncate passen.
 - Dashboard/Performance: Chart-Wrapper auf `overflow-hidden` + Tooltip max-width/break-words, weil iOS Safari sonst durch absolut positionierte Tooltip-Elemente horizontales Panning zulassen kann.
+- Mobile Nav: Drawer breiter (viewport-basiert) + Safe-Area Insets; Search-Input fuer schnelle Navigation; Sections als Accordion (auto-open bei Suche); groessere Tap-Targets fuer Links.
