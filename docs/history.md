@@ -255,3 +255,4 @@
 - Lagerbestand: Cards mit Status/Age/Condition/Cost + Fotos-Strip (horizontal scroll) und Buttons fuer Bearbeiten/Fotos; Status-Select full-width auf Mobile.
 - iOS Zoom-Bug: Purchases "Notizen" war ein raw `<textarea>` mit `text-sm` und hat Safari Auto-Zoom getriggert; auf Mobile jetzt >=16px + gleiche Styles wie `Input`.
 - Einkaeufe: Historie auf Mobile als Card-List (statt Table) mit klaren KPIs + Full-Width Actions; Desktop-Table bleibt unveraendert.
+- Bank: Transaktionen auf Mobile als Card-List (Status/Zuordnung/Amount prominent) + Actions full-width; Desktop-Table bleibt unveraendert.

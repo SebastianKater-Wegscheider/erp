@@ -146,10 +146,11 @@ export function BankPage() {
             Sync aus dem Bank-Provider und Zuordnung zu Einkäufen.
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Button
             type="button"
             variant="secondary"
+            className="w-full sm:w-auto"
             onClick={() => {
               void accounts.refetch();
               void purchases.refetch();
@@ -160,7 +161,7 @@ export function BankPage() {
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-          <Button type="button" onClick={() => sync.mutate()} disabled={sync.isPending}>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => sync.mutate()} disabled={sync.isPending}>
             Sync
           </Button>
         </div>
@@ -219,17 +220,8 @@ export function BankPage() {
           {transactions.isLoading ? (
             <div className="text-sm text-gray-500 dark:text-gray-400">Lade...</div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Datum</TableHead>
-                  <TableHead className="text-right">Betrag</TableHead>
-                  <TableHead>Details</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Zuordnung</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <div className="space-y-2 md:hidden">
                 {(transactions.data ?? []).map((t) => {
                   const amountClass =
                     t.amount_cents < 0
@@ -242,64 +234,154 @@ export function BankPage() {
                     t.value_date && t.value_date !== t.booked_date ? formatDateEuFromIso(t.value_date) : null;
 
                   return (
-                    <TableRow key={t.id}>
-                      <TableCell className="whitespace-nowrap">
-                        <div className="font-medium text-gray-900 dark:text-gray-100">{date}</div>
-                        {valueDate && <div className="text-xs text-gray-500 dark:text-gray-400">Valuta: {valueDate}</div>}
-                      </TableCell>
-                      <TableCell className={["whitespace-nowrap text-right font-medium", amountClass].join(" ")}>
-                        {formatEur(t.amount_cents)} {t.currency}
-                      </TableCell>
-                      <TableCell className="max-w-[520px]">
-                        <div className="truncate font-medium text-gray-900 dark:text-gray-100">{t.counterparty_name ?? ""}</div>
-                        <div className="truncate text-xs text-gray-500 dark:text-gray-400">{t.remittance_information ?? ""}</div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {t.is_pending ? <Badge variant="secondary">Pending</Badge> : <Badge variant="outline">Booked</Badge>}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        <div className="inline-flex items-center justify-end gap-2">
-                          {t.purchase_ids.length ? (
-                            <Badge variant="secondary">{t.purchase_ids.length} Einkauf(e)</Badge>
-                          ) : (
-                            <Badge variant="outline">Kein</Badge>
-                          )}
+                    <div
+                      key={t.id}
+                      className="rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{date}</div>
+                          {valueDate && <div className="text-xs text-gray-500 dark:text-gray-400">Valuta: {valueDate}</div>}
+                          <div className="mt-2">
+                            <div className="truncate font-medium text-gray-900 dark:text-gray-100">{t.counterparty_name ?? ""}</div>
+                            <div className="truncate text-xs text-gray-500 dark:text-gray-400">{t.remittance_information ?? ""}</div>
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 text-right">
+                          <div className={["text-sm font-semibold", amountClass].join(" ")}>
+                            {formatEur(t.amount_cents)} {t.currency}
+                          </div>
+                          <div className="mt-2 flex items-center justify-end gap-2">
+                            {t.is_pending ? <Badge variant="secondary">Pending</Badge> : <Badge variant="outline">Booked</Badge>}
+                            {t.purchase_ids.length ? (
+                              <Badge variant="secondary">{t.purchase_ids.length} Einkauf(e)</Badge>
+                            ) : (
+                              <Badge variant="outline">Kein</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full sm:flex-1"
+                          onClick={() => {
+                            setLinkTxId(t.id);
+                            setLinkOpen(true);
+                          }}
+                        >
+                          Zuordnen
+                        </Button>
+                        {t.purchase_ids.length ? (
                           <Button
                             type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setLinkTxId(t.id);
-                              setLinkOpen(true);
-                            }}
+                            variant="secondary"
+                            className="w-full sm:flex-1"
+                            onClick={() => link.mutate({ txId: t.id, purchaseIds: [] })}
+                            disabled={link.isPending}
                           >
-                            Zuordnen
+                            Entfernen
                           </Button>
-                          {t.purchase_ids.length ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => link.mutate({ txId: t.id, purchaseIds: [] })}
-                              disabled={link.isPending}
-                            >
-                              Entfernen
-                            </Button>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                        ) : null}
+                      </div>
+                    </div>
                   );
                 })}
+
                 {!transactions.data?.length && !transactions.isPending && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
-                      Keine Daten.
-                    </TableCell>
-                  </TableRow>
+                  <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                    Keine Daten.
+                  </div>
                 )}
-              </TableBody>
-            </Table>
+              </div>
+
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Datum</TableHead>
+                      <TableHead className="text-right">Betrag</TableHead>
+                      <TableHead>Details</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Zuordnung</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(transactions.data ?? []).map((t) => {
+                      const amountClass =
+                        t.amount_cents < 0
+                          ? "text-red-700 dark:text-red-300"
+                          : t.amount_cents > 0
+                            ? "text-emerald-700 dark:text-emerald-300"
+                            : "";
+                      const date = formatDateEuFromIso(t.booked_date);
+                      const valueDate =
+                        t.value_date && t.value_date !== t.booked_date ? formatDateEuFromIso(t.value_date) : null;
+
+                      return (
+                        <TableRow key={t.id}>
+                          <TableCell className="whitespace-nowrap">
+                            <div className="font-medium text-gray-900 dark:text-gray-100">{date}</div>
+                            {valueDate && <div className="text-xs text-gray-500 dark:text-gray-400">Valuta: {valueDate}</div>}
+                          </TableCell>
+                          <TableCell className={["whitespace-nowrap text-right font-medium", amountClass].join(" ")}>
+                            {formatEur(t.amount_cents)} {t.currency}
+                          </TableCell>
+                          <TableCell className="max-w-[520px]">
+                            <div className="truncate font-medium text-gray-900 dark:text-gray-100">{t.counterparty_name ?? ""}</div>
+                            <div className="truncate text-xs text-gray-500 dark:text-gray-400">{t.remittance_information ?? ""}</div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {t.is_pending ? <Badge variant="secondary">Pending</Badge> : <Badge variant="outline">Booked</Badge>}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right">
+                            <div className="inline-flex items-center justify-end gap-2">
+                              {t.purchase_ids.length ? (
+                                <Badge variant="secondary">{t.purchase_ids.length} Einkauf(e)</Badge>
+                              ) : (
+                                <Badge variant="outline">Kein</Badge>
+                              )}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setLinkTxId(t.id);
+                                  setLinkOpen(true);
+                                }}
+                              >
+                                Zuordnen
+                              </Button>
+                              {t.purchase_ids.length ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => link.mutate({ txId: t.id, purchaseIds: [] })}
+                                  disabled={link.isPending}
+                                >
+                                  Entfernen
+                                </Button>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {!transactions.data?.length && !transactions.isPending && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
+                          Keine Daten.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
