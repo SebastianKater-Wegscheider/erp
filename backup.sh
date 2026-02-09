@@ -3,15 +3,46 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+load_dotenv() {
+  local env_file="$1"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Trim leading/trailing whitespace.
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+
+    # Parse KEY=VALUE (VALUE may contain spaces).
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local val="${BASH_REMATCH[2]}"
+
+      # Strip surrounding quotes if present.
+      if [[ "${#val}" -ge 2 && "${val:0:1}" == "\"" && "${val: -1}" == "\"" ]]; then
+        val="${val:1:${#val}-2}"
+      elif [[ "${#val}" -ge 2 && "${val:0:1}" == "'" && "${val: -1}" == "'" ]]; then
+        val="${val:1:${#val}-2}"
+      fi
+
+      export "$key=$val"
+    fi
+  done <"$env_file"
+}
+
 if [[ -f "${ROOT_DIR}/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env"
-  set +a
+  load_dotenv "${ROOT_DIR}/.env"
 fi
 
 BACKUP_DIR="${BACKUP_DIR:-${ROOT_DIR}/backups}"
 DATA_DIR="${DATA_DIR:-${ROOT_DIR}/data}"
+
+# `.env.example` uses container paths (`/backups`, `/data`). When running this script on
+# the host, fall back to the repo folders if those container paths don't exist.
+if [[ "${BACKUP_DIR}" == "/backups" && ! -d "/backups" ]]; then
+  BACKUP_DIR="${ROOT_DIR}/backups"
+fi
+if [[ "${DATA_DIR}" == "/data" && ! -d "/data" ]]; then
+  DATA_DIR="${ROOT_DIR}/data"
+fi
 TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 
 mkdir -p "${BACKUP_DIR}"

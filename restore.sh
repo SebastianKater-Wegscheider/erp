@@ -3,11 +3,33 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+load_dotenv() {
+  local env_file="$1"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Trim leading/trailing whitespace.
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+
+    # Parse KEY=VALUE (VALUE may contain spaces).
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local val="${BASH_REMATCH[2]}"
+
+      # Strip surrounding quotes if present.
+      if [[ "${#val}" -ge 2 && "${val:0:1}" == "\"" && "${val: -1}" == "\"" ]]; then
+        val="${val:1:${#val}-2}"
+      elif [[ "${#val}" -ge 2 && "${val:0:1}" == "'" && "${val: -1}" == "'" ]]; then
+        val="${val:1:${#val}-2}"
+      fi
+
+      export "$key=$val"
+    fi
+  done <"$env_file"
+}
+
 if [[ -f "${ROOT_DIR}/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env"
-  set +a
+  load_dotenv "${ROOT_DIR}/.env"
 fi
 
 usage() {
@@ -43,6 +65,12 @@ while [[ $# -gt 0 ]]; do
       usage; exit 1 ;;
   esac
 done
+
+# `.env.example` uses a container path (`/data`). When running this script on the host,
+# fall back to the repo folder if that container path doesn't exist.
+if [[ "${DATA_DIR}" == "/data" && ! -d "/data" ]]; then
+  DATA_DIR="${ROOT_DIR}/data"
+fi
 
 if [[ -z "${DB_DUMP_PATH}" ]]; then
   echo "--db is required." >&2

@@ -3,11 +3,33 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+load_dotenv() {
+  local env_file="$1"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Trim leading/trailing whitespace.
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+
+    # Parse KEY=VALUE (VALUE may contain spaces).
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local val="${BASH_REMATCH[2]}"
+
+      # Strip surrounding quotes if present.
+      if [[ "${#val}" -ge 2 && "${val:0:1}" == "\"" && "${val: -1}" == "\"" ]]; then
+        val="${val:1:${#val}-2}"
+      elif [[ "${#val}" -ge 2 && "${val:0:1}" == "'" && "${val: -1}" == "'" ]]; then
+        val="${val:1:${#val}-2}"
+      fi
+
+      export "$key=$val"
+    fi
+  done <"$env_file"
+}
+
 if [[ -f "${ROOT_DIR}/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env"
-  set +a
+  load_dotenv "${ROOT_DIR}/.env"
 fi
 
 usage() {
@@ -62,6 +84,11 @@ if [[ "${RUN_BACKUP}" == "1" ]]; then
 fi
 
 BACKUP_DIR="${BACKUP_DIR:-${ROOT_DIR}/backups}"
+# `.env.example` uses a container path (`/backups`). When running this script on the host,
+# fall back to the repo folder if that container path doesn't exist.
+if [[ "${BACKUP_DIR}" == "/backups" && ! -d "/backups" ]]; then
+  BACKUP_DIR="${ROOT_DIR}/backups"
+fi
 DB_DUMP_PATH="$(ls -1t "${BACKUP_DIR}"/db_*.sql.gz 2>/dev/null | head -n 1 || true)"
 FILES_ARCHIVE_PATH="$(ls -1t "${BACKUP_DIR}"/files_*.tar.gz 2>/dev/null | head -n 1 || true)"
 
@@ -106,14 +133,31 @@ gunzip -c "${DB_DUMP_PATH}" | "${COMPOSE[@]}" exec -T db sh -lc "
 
 echo "Validating restore..."
 "${COMPOSE[@]}" exec -T db sh -lc "
-  psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -c \"select version_num from alembic_version;\"
-  psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -c \"select to_regclass('public.purchases') is not null as has_purchases;\"
-  psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -c \"select to_regclass('public.inventory_items') is not null as has_inventory_items;\"
-" >/dev/null
+  set -e
+
+  has_purchases=\$(psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -tAc \"select to_regclass('public.purchases') is not null\" | tr -d '[:space:]')
+  if [ \"\$has_purchases\" != \"t\" ]; then
+    echo \"Missing table: purchases\" >&2
+    exit 1
+  fi
+
+  has_inventory_items=\$(psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -tAc \"select to_regclass('public.inventory_items') is not null\" | tr -d '[:space:]')
+  if [ \"\$has_inventory_items\" != \"t\" ]; then
+    echo \"Missing table: inventory_items\" >&2
+    exit 1
+  fi
+
+  # If this is a legacy backup (pre-Alembic), the version table may not exist yet.
+  has_alembic=\$(psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -tAc \"select to_regclass('public.alembic_version') is not null\" | tr -d '[:space:]')
+  if [ \"\$has_alembic\" = \"t\" ]; then
+    psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -c \"select version_num from alembic_version;\"
+  else
+    echo \"Note: legacy backup (no alembic_version table).\" >&2
+  fi
+"
 
 if [[ "${KEEP_DB}" == "1" ]]; then
   echo "Drill DB kept: ${drill_db}"
 else
   echo "Drill completed successfully."
 fi
-
