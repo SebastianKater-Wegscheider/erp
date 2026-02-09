@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.db import SessionLocal, engine
+from app.core.db import SessionLocal
 from app.core.security import require_basic_auth
 from app.services.bank_transactions import sync_bank_transactions
 

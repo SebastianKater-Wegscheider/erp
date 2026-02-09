@@ -395,7 +395,7 @@ async def update_purchase(
         for pl in purchase.lines
     }
     existing_ids = set(existing_lines_by_id.keys())
-    payload_ids = {l.id for l in data.lines if l.id is not None}
+    payload_ids = {line.id for line in data.lines if line.id is not None}
 
     unknown_ids = payload_ids - existing_ids
     if unknown_ids:

@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import uuid
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.models.purchase import Purchase
 
 
 class PurchaseAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -26,4 +31,4 @@ class PurchaseAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(String(40), nullable=False, default="OTHER")
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    purchase: Mapped["Purchase"] = relationship(back_populates="attachments")
+    purchase: Mapped[Purchase] = relationship(back_populates="attachments")

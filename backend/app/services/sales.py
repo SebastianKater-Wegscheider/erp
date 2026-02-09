@@ -353,7 +353,7 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
     if order.status == OrderStatus.CANCELLED:
         raise ValueError("Cancelled orders cannot be edited")
 
-    inv_ids = [l.inventory_item_id for l in data.lines]
+    inv_ids = [line.inventory_item_id for line in data.lines]
     if len(set(inv_ids)) != len(inv_ids):
         raise ValueError("Duplicate inventory_item_id in lines")
 
@@ -370,7 +370,7 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
         "lines_count": len(order.lines),
     }
 
-    line_by_item: dict[uuid.UUID, SalesOrderLine] = {l.inventory_item_id: l for l in order.lines}
+    line_by_item: dict[uuid.UUID, SalesOrderLine] = {line.inventory_item_id: line for line in order.lines}
     existing_item_ids = set(line_by_item.keys())
     new_item_ids = set(inv_ids)
 

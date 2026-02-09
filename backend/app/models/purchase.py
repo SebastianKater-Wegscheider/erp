@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Date, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,6 +12,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.enums import InventoryCondition, PaymentSource, PurchaseKind, PurchaseType
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.sql_enums import inventory_condition_enum, payment_source_enum, purchase_kind_enum, purchase_type_enum
+
+if TYPE_CHECKING:
+    from app.models.purchase_attachment import PurchaseAttachment
 
 
 class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -41,7 +46,7 @@ class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     receipt_upload_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     lines: Mapped[list["PurchaseLine"]] = relationship(back_populates="purchase", cascade="all, delete-orphan")
-    attachments: Mapped[list["PurchaseAttachment"]] = relationship(
+    attachments: Mapped[list[PurchaseAttachment]] = relationship(
         back_populates="purchase",
         cascade="all, delete-orphan",
     )
