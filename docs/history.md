@@ -273,3 +273,4 @@
 ### Technische Entscheidungen
 - Tests lesen nach `rollback()` keine ORM-Attribute mehr, sondern arbeiten mit zwischengespeicherten IDs/Scalar-Feldern.
 - Evidence-Image im Test wird als echtes 1x1 PNG erzeugt (Pillow), damit der PDF-Flow realistisch bleibt.
+- Zusaetzlicher Unit-Test fuer `_slice_image_for_pdf`: stellt sicher, dass kurze Bilder nicht gesliced werden und hohe Screenshots in mehrere PNG-Teile zerlegt werden.
