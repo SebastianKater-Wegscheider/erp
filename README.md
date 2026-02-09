@@ -62,6 +62,11 @@ Warnung: Das Restore ist destruktiv (DB-Schema wird geloescht und neu erstellt).
 - `chmod +x restore.sh`
 - `./restore.sh --db backups/db_YYYYMMDD_HHMMSS.sql.gz --files backups/files_YYYYMMDD_HHMMSS.tar.gz`
 
+Backup/Restore-Drill (sicher, nutzt eine temporaere neue DB und laesst die Haupt-DB unangetastet):
+
+- `chmod +x backup_restore_drill.sh`
+- `./backup_restore_drill.sh`
+
 ## E2E (Playwright)
 
 Minimaler Smoke-Test im Browser (Login + Dashboard laden):
