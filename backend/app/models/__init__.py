@@ -7,8 +7,15 @@ from app.models.fba_shipment import FBAShipment, FBAShipmentItem
 from app.models.inventory_item import InventoryItem
 from app.models.inventory_item_image import InventoryItemImage
 from app.models.ledger_entry import LedgerEntry
+from app.models.amazon_scrape import (
+    AmazonProductMetricsLatest,
+    AmazonScrapeBestPrice,
+    AmazonScrapeRun,
+    AmazonScrapeSalesRank,
+)
 from app.models.master_product import MasterProduct
 from app.models.mileage_log import MileageLog
+from app.models.job_lock import JobLock
 from app.models.opex_expense import OpexExpense
 from app.models.purchase import Purchase, PurchaseLine
 from app.models.purchase_attachment import PurchaseAttachment
@@ -16,6 +23,10 @@ from app.models.sales import SalesOrder, SalesOrderLine
 from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
 
 __all__ = [
+    "AmazonProductMetricsLatest",
+    "AmazonScrapeBestPrice",
+    "AmazonScrapeRun",
+    "AmazonScrapeSalesRank",
     "AuditLog",
     "BankAccount",
     "BankTransaction",
@@ -26,6 +37,7 @@ __all__ = [
     "FBAShipmentItem",
     "InventoryItem",
     "InventoryItemImage",
+    "JobLock",
     "LedgerEntry",
     "MasterProduct",
     "MileageLog",
