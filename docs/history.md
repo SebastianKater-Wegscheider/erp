@@ -37,6 +37,28 @@
 - E2E ist bewusst klein gehalten (Smoke), nicht als vollumfaengliche UI-Test-Suite.
 - Playwright Install/Browser-Download in CI erhoeht Laufzeit.
 
+## 2026-02-10 - Amazon ASIN Scrape: Used-Competition, Offer-Counts, Verlauf + FBA Margin Schaetzung
+
+### Ausgangslage
+- Amazon-Preisdaten sind fuer Reselling vor allem als Vergleich gegen Used-Listings relevant (nicht nur Neu/Buybox).
+- Im Produktstamm waren zwar bereits einzelne Condition-Buckets gespeichert, die UI-Zusammenfassung zeigte aber primaer `Neu`/`Wie neu` und wirkte dadurch oft "leer", obwohl Used-Angebote existierten.
+- Fuer operative Entscheidungen (Beschaffung/Preisfindung/Bestandsbewertung) fehlte eine einheitliche, schnelle Sicht: Marktpreis, Angebotstiefe (Offers) und Entwicklung ueber Zeit.
+
+### Business-Entscheidungen
+- In der MasterProducts-Liste steht im Vordergrund: `Used best` (Minimum ueber Used-Grades) + Buybox + Offer-Counts.
+- Details werden bewusst "on demand" per Row-Expand (Accordion) gezeigt, damit die Liste scannable bleibt, aber Tiefeninfo und Verlauf verfuegbar sind.
+- Inventory und Purchases bekommen eine einfache, konsistente Marktwert-/Marge-Schaetzung auf Basis der Amazon-Daten, um Opportunitaeten (Arbitrage) schneller zu sehen.
+
+### Technische Entscheidungen
+- `amazon_product_metrics_latest` wird um Buybox-Total und Offer-Counts erweitert (Snapshot-Usecase); Fehler/Blocks ueberschreiben die letzten gueltigen Werte nicht.
+- Historie fuer Charts wird nicht als weitere Tabelle modelliert, sondern aus `amazon_scrape_runs` + `amazon_scrape_best_prices` aggregiert (min Used-Total pro Run).
+- FBA-Fee/Shipping wird als globales, ENV-override-faehiges Profil im Backend bereitgestellt (API-Endpoint), damit die Frontend-Berechnungen ohne Rebuild bei Bedarf angepasst werden koennen.
+
+### Risiken / Trade-offs
+- Scraping ist volatil und kann blocken; UI und Scheduler muessen mit teilweisen/fehlenden Daten umgehen.
+- Fee-Schaetzung ist bewusst ein heuristisches Modell (globales Default-Profil), nicht ein produkt-/kategorie-spezifisches Fee-Calc.
+- Offer-Counts sind vom Liefer-ZIP und Amazon-Experiments abhaengig; werden als "Signal" genutzt, nicht als auditierbare Kennzahl.
+
 ## 2026-02-08 - Eigenbeleg ohne Unterschriftsblock, mit Nachweisdaten
 
 ### Ausgangslage
