@@ -278,23 +278,24 @@ async def persist_scrape_result(
     session.add(run)
 
     # Child rows (ranks + best prices).
-    if data is not None and isinstance(data.get("sales_ranks"), list):
-        for i, entry in enumerate(data["sales_ranks"]):
-            if not isinstance(entry, dict):
-                continue
-            rank = entry.get("rank")
-            category = entry.get("category")
-            if not isinstance(rank, int) or not isinstance(category, str):
-                continue
-            session.add(
-                AmazonScrapeSalesRank(
-                    run_id=run_id,
-                    idx=i,
-                    rank=rank,
-                    category=category,
-                    raw=str(entry.get("raw")) if entry.get("raw") is not None else None,
+    if data is not None:
+        if isinstance(data.get("sales_ranks"), list):
+            for i, entry in enumerate(data["sales_ranks"]):
+                if not isinstance(entry, dict):
+                    continue
+                rank = entry.get("rank")
+                category = entry.get("category")
+                if not isinstance(rank, int) or not isinstance(category, str):
+                    continue
+                session.add(
+                    AmazonScrapeSalesRank(
+                        run_id=run_id,
+                        idx=i,
+                        rank=rank,
+                        category=category,
+                        raw=str(entry.get("raw")) if entry.get("raw") is not None else None,
+                    )
                 )
-            )
 
         best = compute_best_prices(data.get("offers"))
         for bucket, best_price in best.items():

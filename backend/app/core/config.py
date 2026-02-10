@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     amazon_scraper_max_backoff_seconds: int = Field(21600, alias="AMAZON_SCRAPER_MAX_BACKOFF_SECONDS")
     amazon_scraper_lock_ttl_seconds: int = Field(300, alias="AMAZON_SCRAPER_LOCK_TTL_SECONDS")
 
+    # Amazon fee estimates (global defaults; for margin heuristics, not accounting).
+    amazon_fba_referral_fee_bp: int = Field(1500, alias="AMAZON_FBA_REFERRAL_FEE_BP")
+    amazon_fba_fulfillment_fee_cents: int = Field(350, alias="AMAZON_FBA_FULFILLMENT_FEE_CENTS")
+    amazon_fba_inbound_shipping_cents: int = Field(0, alias="AMAZON_FBA_INBOUND_SHIPPING_CENTS")
+
     @field_validator("company_name", mode="before")
     @classmethod
     def _normalize_company_name(cls, v: object) -> object:

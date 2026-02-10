@@ -176,3 +176,47 @@ async def test_persist_scrape_result_buybox_fallback_total(db_session: AsyncSess
     latest = await db_session.get(AmazonProductMetricsLatest, mp_id)
     assert latest is not None
     assert latest.buybox_total_cents == 1150
+
+
+@pytest.mark.asyncio
+async def test_persist_scrape_result_persists_best_prices_without_sales_ranks(db_session: AsyncSession) -> None:
+    mp_id = uuid.uuid4()
+    mp = MasterProduct(
+        id=mp_id,
+        sku=master_product_sku_from_id(mp_id),
+        kind="GAME",
+        title="Test Product",
+        platform="PS2",
+        region="EU",
+        variant="",
+        asin="B000FC2BTQ",
+    )
+    db_session.add(mp)
+    await db_session.commit()
+
+    finished_at = datetime(2026, 2, 10, 20, 0, 10, tzinfo=UTC)
+    data = {
+        "ts_utc": "2026-02-10T20:00:00Z",
+        "marketplace": "amazon.de",
+        "asin": "B000FC2BTQ",
+        "blocked": False,
+        "offers_truncated": False,
+        # Deliberately omit `sales_ranks` to ensure offers are still persisted.
+        "offers": [
+            {"condition_group": "used", "condition_raw": "Gebraucht - Sehr gut", "price_total": "8.00", "currency": "EUR", "page": 1, "position": 1, "seller_name": "D"},
+        ],
+    }
+
+    async with db_session.begin():
+        run_id = await persist_scrape_result(
+            session=db_session,
+            master_product_id=mp_id,
+            asin="B000FC2BTQ",
+            data=data,
+            error=None,
+            finished_at=finished_at,
+        )
+
+    prices = (await db_session.execute(select(AmazonScrapeBestPrice).where(AmazonScrapeBestPrice.run_id == run_id))).scalars().all()
+    by_bucket = {p.condition_bucket: p.price_total_cents for p in prices}
+    assert by_bucket[BUCKET_USED_VERY_GOOD] == 800

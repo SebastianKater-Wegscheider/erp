@@ -3,15 +3,17 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.models.amazon_scrape import AmazonScrapeRun
+from app.models.amazon_scrape import AmazonScrapeBestPrice, AmazonScrapeRun
 from app.models.master_product import MasterProduct
 from app.schemas.amazon_scrape import (
+    AmazonFeeProfileOut,
+    AmazonScrapeHistoryPointOut,
     AmazonScrapeRunOut,
     AmazonScrapeStatusOut,
     AmazonScrapeTriggerIn,
@@ -31,6 +33,68 @@ async def amazon_scrape_status() -> AmazonScrapeStatusOut:
     settings = get_settings()
     counts = await amazon_scrape_due_counts(settings)
     return AmazonScrapeStatusOut(enabled=settings.amazon_scraper_enabled, **counts)
+
+
+@router.get("/fee-profile", response_model=AmazonFeeProfileOut)
+async def amazon_fee_profile() -> AmazonFeeProfileOut:
+    settings = get_settings()
+    return AmazonFeeProfileOut(
+        referral_fee_bp=settings.amazon_fba_referral_fee_bp,
+        fulfillment_fee_cents=settings.amazon_fba_fulfillment_fee_cents,
+        inbound_shipping_cents=settings.amazon_fba_inbound_shipping_cents,
+    )
+
+
+@router.get("/history", response_model=list[AmazonScrapeHistoryPointOut])
+async def amazon_scrape_history(
+    master_product_id: uuid.UUID,
+    limit: int = 60,
+    session: AsyncSession = Depends(get_session),
+) -> list[AmazonScrapeHistoryPointOut]:
+    limit = max(1, min(200, int(limit)))
+    used_buckets = ("USED_LIKE_NEW", "USED_VERY_GOOD", "USED_GOOD", "USED_ACCEPTABLE")
+
+    used_best = (
+        select(
+            AmazonScrapeBestPrice.run_id.label("run_id"),
+            func.min(AmazonScrapeBestPrice.price_total_cents).label("used_best_cents"),
+        )
+        .where(AmazonScrapeBestPrice.condition_bucket.in_(used_buckets))
+        .group_by(AmazonScrapeBestPrice.run_id)
+        .subquery()
+    )
+
+    rows = (
+        (
+            await session.execute(
+                select(
+                    AmazonScrapeRun.started_at,
+                    AmazonScrapeRun.ok,
+                    AmazonScrapeRun.blocked,
+                    used_best.c.used_best_cents,
+                )
+                .where(AmazonScrapeRun.master_product_id == master_product_id)
+                .outerjoin(used_best, used_best.c.run_id == AmazonScrapeRun.id)
+                .order_by(AmazonScrapeRun.started_at.desc())
+                .limit(limit)
+            )
+        )
+        .all()
+    )
+
+    # UI expects ascending time series.
+    out = [
+        AmazonScrapeHistoryPointOut(
+            started_at=started_at,
+            ok=bool(ok),
+            blocked=bool(blocked),
+            used_best_cents=int(used_best_cents) if used_best_cents is not None else None,
+        )
+        for started_at, ok, blocked, used_best_cents in rows
+        if started_at is not None
+    ]
+    out.reverse()
+    return out
 
 
 @router.post("/trigger", response_model=AmazonScrapeTriggerOut, status_code=202)

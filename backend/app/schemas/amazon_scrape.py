@@ -63,3 +63,15 @@ class AmazonScrapeRunOut(BaseModel):
     sales_ranks: list[AmazonScrapeSalesRankOut]
     best_prices: list[AmazonScrapeBestPriceOut]
 
+
+class AmazonScrapeHistoryPointOut(BaseModel):
+    started_at: datetime
+    ok: bool
+    blocked: bool
+    used_best_cents: int | None
+
+
+class AmazonFeeProfileOut(BaseModel):
+    referral_fee_bp: int = Field(ge=0)
+    fulfillment_fee_cents: int = Field(ge=0)
+    inbound_shipping_cents: int = Field(ge=0)
