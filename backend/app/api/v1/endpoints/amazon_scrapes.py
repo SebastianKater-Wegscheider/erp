@@ -44,6 +44,7 @@ async def trigger_amazon_scrape(
     asin = (mp.asin or "").strip()
     if not asin:
         raise HTTPException(status_code=400, detail="Master product has no ASIN")
+    mp_id = mp.id
 
     try:
         # `session.get()` above implicitly starts a transaction; avoid holding it across the network scrape.
@@ -51,7 +52,7 @@ async def trigger_amazon_scrape(
         run_id = await scrape_master_product_once(
             session=session,
             settings=settings,
-            master_product_id=mp.id,
+            master_product_id=mp_id,
             asin=asin,
         )
         await session.commit()
