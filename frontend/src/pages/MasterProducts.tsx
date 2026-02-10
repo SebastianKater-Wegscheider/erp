@@ -1,9 +1,10 @@
-import { ExternalLink, Image as ImageIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, ExternalLink, Image as ImageIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { useApi } from "../lib/api";
+import { computeUsedBest } from "../lib/amazon";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -52,6 +53,11 @@ type MasterProduct = {
   amazon_price_used_good_cents?: number | null;
   amazon_price_used_acceptable_cents?: number | null;
   amazon_price_collectible_cents?: number | null;
+
+  amazon_buybox_total_cents?: number | null;
+  amazon_offers_count_total?: number | null;
+  amazon_offers_count_priced_total?: number | null;
+  amazon_offers_count_used_priced_total?: number | null;
 
   amazon_next_retry_at?: string | null;
   amazon_consecutive_failures?: number | null;
@@ -141,6 +147,164 @@ function isAmazonStale(m: MasterProduct): boolean {
 function fmtMaybeEur(cents?: number | null): string {
   if (cents === null || cents === undefined) return "—";
   return `${formatEur(cents)} €`;
+}
+
+type AmazonHistoryPoint = {
+  started_at: string;
+  ok: boolean;
+  blocked: boolean;
+  used_best_cents: number | null;
+};
+
+type AmazonScrapeRunOut = {
+  id: string;
+  started_at: string;
+  finished_at?: string | null;
+  ok: boolean;
+  blocked: boolean;
+  block_reason?: string | null;
+  offers_truncated: boolean;
+  error?: string | null;
+  dp_url?: string | null;
+  offer_listing_url?: string | null;
+};
+
+function Sparkline({
+  points,
+  width = 180,
+  height = 34,
+}: {
+  points: Array<number | null>;
+  width?: number;
+  height?: number;
+}) {
+  const xs = points.map((_, i) => (points.length <= 1 ? 0 : (i / (points.length - 1)) * (width - 2) + 1));
+  const ysRaw = points.filter((p): p is number => typeof p === "number");
+  const min = ysRaw.length ? Math.min(...ysRaw) : 0;
+  const max = ysRaw.length ? Math.max(...ysRaw) : 0;
+  const span = Math.max(1, max - min);
+
+  function yFor(v: number): number {
+    const t = (v - min) / span;
+    return (1 - t) * (height - 2) + 1;
+  }
+
+  const segments: string[] = [];
+  let cur: string[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const v = points[i];
+    if (typeof v !== "number") {
+      if (cur.length >= 2) segments.push(`M ${cur[0]} L ${cur.slice(1).join(" ")}`);
+      cur = [];
+      continue;
+    }
+    const x = xs[i];
+    const y = yFor(v);
+    cur.push(`${x.toFixed(2)} ${y.toFixed(2)}`);
+  }
+  if (cur.length >= 2) segments.push(`M ${cur[0]} L ${cur.slice(1).join(" ")}`);
+
+  const d = segments.join(" ");
+  const hasData = ysRaw.length >= 2;
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="block">
+      <rect x="0" y="0" width={width} height={height} rx="6" className="fill-gray-50 dark:fill-gray-950/30" />
+      {hasData ? (
+        <path d={d} fill="none" strokeWidth="2" className="stroke-amber-500 dark:stroke-amber-400" />
+      ) : (
+        <path
+          d={`M 1 ${(height / 2).toFixed(2)} L ${(width - 1).toFixed(2)} ${(height / 2).toFixed(2)}`}
+          fill="none"
+          strokeWidth="2"
+          className="stroke-gray-200 dark:stroke-gray-800"
+        />
+      )}
+    </svg>
+  );
+}
+
+function AmazonDetails({
+  masterProductId,
+  lastRunId,
+  expanded,
+}: {
+  masterProductId: string;
+  lastRunId: string | null | undefined;
+  expanded: boolean;
+}) {
+  const api = useApi();
+
+  const history = useQuery({
+    queryKey: ["amazon-history", masterProductId],
+    enabled: expanded,
+    queryFn: () =>
+      api.request<AmazonHistoryPoint[]>(
+        `/amazon-scrapes/history?master_product_id=${encodeURIComponent(masterProductId)}&limit=60`,
+      ),
+  });
+
+  const run = useQuery({
+    queryKey: ["amazon-run", lastRunId ?? ""],
+    enabled: expanded && !!lastRunId,
+    queryFn: () => api.request<AmazonScrapeRunOut>(`/amazon-scrapes/runs/${encodeURIComponent(lastRunId!)}`),
+  });
+
+  const usedSeries = (history.data ?? []).map((p) => p.used_best_cents);
+
+  return (
+    <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-950/30 dark:text-gray-200">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-medium text-gray-900 dark:text-gray-100">Amazon Details</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+            {run.data?.offer_listing_url ? (
+              <a
+                href={run.data.offer_listing_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                title={run.data.offer_listing_url}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Offer listing
+              </a>
+            ) : null}
+            {run.data?.dp_url ? (
+              <a
+                href={run.data.dp_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                title={run.data.dp_url}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                PDP
+              </a>
+            ) : null}
+            {run.data?.offers_truncated ? <Badge variant="warning">offers_truncated</Badge> : null}
+          </div>
+          {run.isError ? (
+            <div className="mt-1 text-[11px] text-red-700 dark:text-red-300">Run: {(run.error as Error).message}</div>
+          ) : null}
+          {history.isError ? (
+            <div className="mt-1 text-[11px] text-red-700 dark:text-red-300">
+              History: {(history.error as Error).message}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="shrink-0">
+          <div className="text-[11px] text-gray-500 dark:text-gray-400">Used best (History)</div>
+          <div className="mt-1">
+            <Sparkline points={usedSeries} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function tryParseEurCents(input: string): number | null {
@@ -250,6 +414,7 @@ export function MasterProductsPage() {
   const [amazonBlockedOnly, setAmazonBlockedOnly] = useState(false);
   const [amazonMaxNew, setAmazonMaxNew] = useState("");
   const [amazonMaxLikeNew, setAmazonMaxLikeNew] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, true>>({});
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
@@ -415,6 +580,19 @@ export function MasterProductsPage() {
         .includes(q),
     );
   }, [amazonBlockedOnly, amazonMaxLikeNew, amazonMaxNew, amazonStaleOnly, kindFilter, list.data, search]);
+
+  function isExpanded(id: string): boolean {
+    return !!expanded[id];
+  }
+
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+  }
 
   const totalCount = list.data?.length ?? 0;
 
@@ -650,6 +828,18 @@ export function MasterProductsPage() {
                             ) : (
                               <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
                             )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={isExpanded(m.id) ? "Amazon Details einklappen" : "Amazon Details ausklappen"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpanded(m.id);
+                              }}
+                            >
+                              {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
                           </div>
 
                           <div className="text-xs text-gray-700 dark:text-gray-200">
@@ -661,10 +851,56 @@ export function MasterProductsPage() {
                           </div>
 
                           <div className="text-xs text-gray-700 dark:text-gray-200">
-                            Neu {fmtMaybeEur(m.amazon_price_new_cents)}{" "}
-                            <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                            Wie neu {fmtMaybeEur(m.amazon_price_used_like_new_cents)}
+                            {(() => {
+                              const used = computeUsedBest(m);
+                              return (
+                                <>
+                                  Used best {used.cents !== null ? `${fmtMaybeEur(used.cents)} (${used.label})` : "—"}{" "}
+                                  <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
+                                  Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}{" "}
+                                  <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
+                                  Offers {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}
+                                  {typeof m.amazon_offers_count_used_priced_total === "number"
+                                    ? ` (used: ${m.amazon_offers_count_used_priced_total})`
+                                    : ""}
+                                </>
+                              );
+                            })()}
                           </div>
+
+                          {isExpanded(m.id) ? (
+                            <div
+                              className="pt-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                            >
+                              <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-700 dark:text-gray-200">
+                                <div>Neu: {fmtMaybeEur(m.amazon_price_new_cents)}</div>
+                                <div>Wie neu: {fmtMaybeEur(m.amazon_price_used_like_new_cents)}</div>
+                                <div>Sehr gut: {fmtMaybeEur(m.amazon_price_used_very_good_cents)}</div>
+                                <div>Gut: {fmtMaybeEur(m.amazon_price_used_good_cents)}</div>
+                                <div>Akzeptabel: {fmtMaybeEur(m.amazon_price_used_acceptable_cents)}</div>
+                                <div>Sammlerst.: {fmtMaybeEur(m.amazon_price_collectible_cents)}</div>
+                                <div>
+                                  Offers priced:{" "}
+                                  {typeof m.amazon_offers_count_priced_total === "number" ? m.amazon_offers_count_priced_total : "—"}
+                                </div>
+                                <div>
+                                  Next retry:{" "}
+                                  {m.amazon_next_retry_at
+                                    ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+                                    : "—"}
+                                </div>
+                              </div>
+
+                              {m.amazon_last_error ? (
+                                <div className="mt-2 text-[11px] text-red-700 dark:text-red-300">Last error: {m.amazon_last_error}</div>
+                              ) : null}
+
+                              <AmazonDetails masterProductId={m.id} lastRunId={m.amazon_last_run_id} expanded={true} />
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
 
@@ -743,7 +979,8 @@ export function MasterProductsPage() {
 
                 {!list.isPending &&
                   rows.map((m) => (
-                    <TableRow key={m.id}>
+                    <Fragment key={m.id}>
+                      <TableRow>
                       <TableCell>
                         <div className="flex items-start gap-3">
                           <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
@@ -824,6 +1061,18 @@ export function MasterProductsPage() {
                               ) : (
                                 <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
                               )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={isExpanded(m.id) ? "Amazon Details einklappen" : "Amazon Details ausklappen"}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  toggleExpanded(m.id);
+                                }}
+                              >
+                                {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              </Button>
                             </div>
 
                             <div className="text-xs text-gray-700 dark:text-gray-200">
@@ -835,9 +1084,21 @@ export function MasterProductsPage() {
                             </div>
 
                             <div className="text-xs text-gray-700 dark:text-gray-200">
-                              Neu {fmtMaybeEur(m.amazon_price_new_cents)}{" "}
-                              <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                              Wie neu {fmtMaybeEur(m.amazon_price_used_like_new_cents)}
+                              {(() => {
+                                const used = computeUsedBest(m);
+                                return (
+                                  <>
+                                    Used best {used.cents !== null ? `${fmtMaybeEur(used.cents)} (${used.label})` : "—"}{" "}
+                                    <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
+                                    Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}{" "}
+                                    <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
+                                    Offers {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}
+                                    {typeof m.amazon_offers_count_used_priced_total === "number"
+                                      ? ` (used: ${m.amazon_offers_count_used_priced_total})`
+                                      : ""}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         )}
@@ -885,6 +1146,48 @@ export function MasterProductsPage() {
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
+                      {m.asin && isExpanded(m.id) ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="bg-gray-50/60 py-0 dark:bg-gray-950/30">
+                            <div className="py-3">
+                              <div className="grid grid-cols-4 gap-2 text-[11px] text-gray-700 dark:text-gray-200">
+                                <div>Neu: {fmtMaybeEur(m.amazon_price_new_cents)}</div>
+                                <div>Wie neu: {fmtMaybeEur(m.amazon_price_used_like_new_cents)}</div>
+                                <div>Sehr gut: {fmtMaybeEur(m.amazon_price_used_very_good_cents)}</div>
+                                <div>Gut: {fmtMaybeEur(m.amazon_price_used_good_cents)}</div>
+                                <div>Akzeptabel: {fmtMaybeEur(m.amazon_price_used_acceptable_cents)}</div>
+                                <div>Sammlerst.: {fmtMaybeEur(m.amazon_price_collectible_cents)}</div>
+                                <div>Buybox: {fmtMaybeEur(m.amazon_buybox_total_cents)}</div>
+                                <div>Offers: {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}</div>
+                                <div>
+                                  Offers priced:{" "}
+                                  {typeof m.amazon_offers_count_priced_total === "number" ? m.amazon_offers_count_priced_total : "—"}
+                                </div>
+                                <div>
+                                  Used priced:{" "}
+                                  {typeof m.amazon_offers_count_used_priced_total === "number"
+                                    ? m.amazon_offers_count_used_priced_total
+                                    : "—"}
+                                </div>
+                                <div>
+                                  Next retry:{" "}
+                                  {m.amazon_next_retry_at
+                                    ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+                                    : "—"}
+                                </div>
+                                <div>Failures: {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"}</div>
+                              </div>
+
+                              {m.amazon_last_error ? (
+                                <div className="mt-2 text-[11px] text-red-700 dark:text-red-300">Last error: {m.amazon_last_error}</div>
+                              ) : null}
+
+                              <AmazonDetails masterProductId={m.id} lastRunId={m.amazon_last_run_id} expanded={true} />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </Fragment>
                   ))}
 
                 {!rows.length && (
