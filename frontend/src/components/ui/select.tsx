@@ -4,6 +4,8 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 
+let lastSelectTriggerEl: HTMLElement | null = null;
+
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
@@ -11,7 +13,7 @@ const SelectValue = SelectPrimitive.Value;
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onPointerDown, onKeyDown, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
@@ -19,6 +21,17 @@ const SelectTrigger = React.forwardRef<
       "flex h-10 w-full items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-[16px] shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:focus:ring-gray-700 sm:h-9 sm:text-sm",
       className,
     )}
+    onPointerDown={(event) => {
+      lastSelectTriggerEl = event.currentTarget;
+      onPointerDown?.(event);
+    }}
+    onKeyDown={(event) => {
+      // Capture for keyboard-opened selects as well.
+      if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown" || event.key === "ArrowUp") {
+        lastSelectTriggerEl = event.currentTarget;
+      }
+      onKeyDown?.(event);
+    }}
     {...props}
   >
     {children}
@@ -32,27 +45,45 @@ SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
-  <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      className={cn(
-        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-gray-200 bg-white text-gray-950 shadow-md dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100",
-        className,
-      )}
-      position={position}
-      {...props}
-    >
-      <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
-        <ChevronUp className="h-4 w-4" />
-      </SelectPrimitive.ScrollUpButton>
-      <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
-      <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
-        <ChevronDown className="h-4 w-4" />
-      </SelectPrimitive.ScrollDownButton>
-    </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
-));
+>(({ className, children, position = "popper", onCloseAutoFocus, ...props }, ref) => {
+  return (
+    <SelectPrimitive.Portal>
+      <SelectPrimitive.Content
+        ref={ref}
+        {...props}
+        className={cn(
+          "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-gray-200 bg-white text-gray-950 shadow-md dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100",
+          className,
+        )}
+        position={position}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          if (event.defaultPrevented) return;
+
+          // Prevent Radix from restoring focus in a way that can scroll the viewport.
+          event.preventDefault();
+
+          const el = lastSelectTriggerEl;
+          if (!el) return;
+          lastSelectTriggerEl = null;
+          try {
+            el.focus({ preventScroll: true });
+          } catch {
+            el.focus();
+          }
+        }}
+      >
+        <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
+          <ChevronUp className="h-4 w-4" />
+        </SelectPrimitive.ScrollUpButton>
+        <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
+        <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
+          <ChevronDown className="h-4 w-4" />
+        </SelectPrimitive.ScrollDownButton>
+      </SelectPrimitive.Content>
+    </SelectPrimitive.Portal>
+  );
+});
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectItem = React.forwardRef<
