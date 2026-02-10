@@ -7,10 +7,10 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base
 
 
-class AmazonScrapeRun(TimestampMixin, Base):
+class AmazonScrapeRun(Base):
     __tablename__ = "amazon_scrape_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -109,4 +109,3 @@ class AmazonProductMetricsLatest(Base):
 
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
