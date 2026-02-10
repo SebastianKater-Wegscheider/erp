@@ -107,5 +107,10 @@ class AmazonProductMetricsLatest(Base):
     price_used_acceptable_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     price_collectible_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    buybox_total_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    offers_count_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    offers_count_priced_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    offers_count_used_priced_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

@@ -82,5 +82,10 @@ class MasterProductOutWithAmazon(MasterProductOut):
     amazon_price_used_acceptable_cents: int | None = None
     amazon_price_collectible_cents: int | None = None
 
+    amazon_buybox_total_cents: int | None = None
+    amazon_offers_count_total: int | None = None
+    amazon_offers_count_priced_total: int | None = None
+    amazon_offers_count_used_priced_total: int | None = None
+
     amazon_next_retry_at: datetime | None = None
     amazon_consecutive_failures: int | None = None

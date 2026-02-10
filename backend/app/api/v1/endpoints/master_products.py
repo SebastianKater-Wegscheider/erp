@@ -76,6 +76,10 @@ async def list_master_products(session: AsyncSession = Depends(get_session)) -> 
                 amazon_price_used_good_cents=getattr(latest, "price_used_good_cents", None),
                 amazon_price_used_acceptable_cents=getattr(latest, "price_used_acceptable_cents", None),
                 amazon_price_collectible_cents=getattr(latest, "price_collectible_cents", None),
+                amazon_buybox_total_cents=getattr(latest, "buybox_total_cents", None),
+                amazon_offers_count_total=getattr(latest, "offers_count_total", None),
+                amazon_offers_count_priced_total=getattr(latest, "offers_count_priced_total", None),
+                amazon_offers_count_used_priced_total=getattr(latest, "offers_count_used_priced_total", None),
                 amazon_next_retry_at=getattr(latest, "next_retry_at", None),
                 amazon_consecutive_failures=getattr(latest, "consecutive_failures", None),
             )
@@ -119,6 +123,10 @@ async def get_master_product(
         amazon_price_used_good_cents=getattr(latest, "price_used_good_cents", None),
         amazon_price_used_acceptable_cents=getattr(latest, "price_used_acceptable_cents", None),
         amazon_price_collectible_cents=getattr(latest, "price_collectible_cents", None),
+        amazon_buybox_total_cents=getattr(latest, "buybox_total_cents", None),
+        amazon_offers_count_total=getattr(latest, "offers_count_total", None),
+        amazon_offers_count_priced_total=getattr(latest, "offers_count_priced_total", None),
+        amazon_offers_count_used_priced_total=getattr(latest, "offers_count_used_priced_total", None),
         amazon_next_retry_at=getattr(latest, "next_retry_at", None),
         amazon_consecutive_failures=getattr(latest, "consecutive_failures", None),
     )

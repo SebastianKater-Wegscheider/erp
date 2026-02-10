@@ -44,6 +44,13 @@ ALL_BUCKETS: tuple[ConditionBucket, ...] = (
     BUCKET_COLLECTIBLE,
 )
 
+USED_BUCKETS: tuple[ConditionBucket, ...] = (
+    BUCKET_USED_LIKE_NEW,
+    BUCKET_USED_VERY_GOOD,
+    BUCKET_USED_GOOD,
+    BUCKET_USED_ACCEPTABLE,
+)
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -117,6 +124,38 @@ def _best_total_cents_for_offer(offer: dict[str, Any]) -> int | None:
     if item is None or shipping is None:
         return None
     return item + shipping
+
+
+def _best_total_cents_for_buybox(buybox: Any) -> int | None:
+    if not isinstance(buybox, dict):
+        return None
+    total = parse_money_to_cents(buybox.get("total"))
+    if total is not None:
+        return total
+    item = parse_money_to_cents(buybox.get("price_item"))
+    shipping = parse_money_to_cents(buybox.get("shipping"))
+    if item is None or shipping is None:
+        return None
+    return item + shipping
+
+
+def _offer_counts(offers: Any) -> tuple[int | None, int | None, int | None]:
+    if not isinstance(offers, list):
+        return None, None, None
+    total = len(offers)
+    priced_total = 0
+    used_priced_total = 0
+    for o in offers:
+        if not isinstance(o, dict):
+            continue
+        total_cents = _best_total_cents_for_offer(o)
+        if total_cents is None:
+            continue
+        priced_total += 1
+        bucket = bucket_from_offer(condition_group=o.get("condition_group"), condition_raw=o.get("condition_raw"))
+        if bucket in USED_BUCKETS:
+            used_priced_total += 1
+    return total, priced_total, used_priced_total
 
 
 @dataclass(frozen=True)
@@ -312,6 +351,12 @@ async def persist_scrape_result(
         latest.price_collectible_cents = (
             best.get(BUCKET_COLLECTIBLE).total_cents if BUCKET_COLLECTIBLE in best else None
         )
+
+        latest.buybox_total_cents = _best_total_cents_for_buybox(data.get("buybox"))
+        offers_count_total, offers_count_priced_total, offers_count_used_priced_total = _offer_counts(data.get("offers"))
+        latest.offers_count_total = offers_count_total
+        latest.offers_count_priced_total = offers_count_priced_total
+        latest.offers_count_used_priced_total = offers_count_used_priced_total
 
         latest.last_success_at = finished_at
         latest.next_retry_at = None
