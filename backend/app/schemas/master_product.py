@@ -59,3 +59,28 @@ class MasterProductOut(BaseModel):
     reference_image_url: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class MasterProductOutWithAmazon(MasterProductOut):
+    amazon_last_attempt_at: datetime | None = None
+    amazon_last_success_at: datetime | None = None
+    amazon_last_run_id: UUID | None = None
+
+    amazon_blocked_last: bool | None = None
+    amazon_block_reason_last: str | None = None
+    amazon_last_error: str | None = None
+
+    amazon_rank_overall: int | None = None
+    amazon_rank_overall_category: str | None = None
+    amazon_rank_specific: int | None = None
+    amazon_rank_specific_category: str | None = None
+
+    amazon_price_new_cents: int | None = None
+    amazon_price_used_like_new_cents: int | None = None
+    amazon_price_used_very_good_cents: int | None = None
+    amazon_price_used_good_cents: int | None = None
+    amazon_price_used_acceptable_cents: int | None = None
+    amazon_price_collectible_cents: int | None = None
+
+    amazon_next_retry_at: datetime | None = None
+    amazon_consecutive_failures: int | None = None
