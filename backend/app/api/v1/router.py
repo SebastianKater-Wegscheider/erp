@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.api.v1.endpoints import (
+    amazon_scrapes,
     bank,
     cost_allocations,
     fba_shipments,
@@ -24,6 +25,7 @@ api_router = APIRouter(dependencies=[Depends(require_basic_auth)])
 api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(files.router, prefix="/files", tags=["files"])
 
+api_router.include_router(amazon_scrapes.router, prefix="/amazon-scrapes", tags=["amazon-scrapes"])
 api_router.include_router(master_products.router, prefix="/master-products", tags=["master-products"])
 api_router.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(fba_shipments.router, prefix="/fba-shipments", tags=["fba-shipments"])
