@@ -89,8 +89,6 @@ def bucket_from_offer(*, condition_group: Any, condition_raw: Any) -> ConditionB
 
     if cg == "collectible" or "sammlerst" in cr:
         return BUCKET_COLLECTIBLE
-    if cg == "new" or "neu" in cr:
-        return BUCKET_NEW
 
     # Amazon.de condition strings are typically German.
     if "wie neu" in cr:
@@ -101,6 +99,8 @@ def bucket_from_offer(*, condition_group: Any, condition_raw: Any) -> ConditionB
         return BUCKET_USED_ACCEPTABLE
     if "gut" in cr:
         return BUCKET_USED_GOOD
+    if cg == "new" or ("neu" in cr and "wie neu" not in cr):
+        return BUCKET_NEW
 
     if cg == "used":
         # Used without a specific grade is too ambiguous to bucket.
@@ -423,4 +423,3 @@ async def delay(seconds: float) -> None:
     if seconds <= 0:
         return
     await asyncio.sleep(seconds)
-
