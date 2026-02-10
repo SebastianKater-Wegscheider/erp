@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { useTaxProfile } from "../lib/taxProfile";
+import { AmazonFeeProfile, estimateFbaPayout, estimateMargin, estimateMarketPriceForInventoryCondition } from "../lib/amazon";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -29,6 +30,12 @@ type MasterProduct = {
   asin?: string | null;
   manufacturer?: string | null;
   model?: string | null;
+
+  amazon_price_new_cents?: number | null;
+  amazon_price_used_like_new_cents?: number | null;
+  amazon_price_used_very_good_cents?: number | null;
+  amazon_price_used_good_cents?: number | null;
+  amazon_price_used_acceptable_cents?: number | null;
 };
 
 type PurchaseOut = {
@@ -170,6 +177,39 @@ function parseMoneyInputToCents(input: string): number | null {
   } catch {
     return null;
   }
+}
+
+function allocateProportional(totalCents: number, weights: number[]): number[] {
+  if (totalCents < 0) return weights.map(() => 0);
+  if (!weights.length) return [];
+
+  const w = weights.map((x) => (Number.isFinite(x) && x > 0 ? Math.floor(x) : 0));
+  const totalWeight = w.reduce((a, b) => a + b, 0);
+  if (totalWeight === 0) {
+    const base = Math.floor(totalCents / w.length);
+    const rem = totalCents - base * w.length;
+    const out = w.map(() => base);
+    for (let i = 0; i < rem; i++) out[i] += 1;
+    return out;
+  }
+
+  const shares: number[] = [];
+  const remainders: number[] = [];
+  let allocated = 0;
+  for (const wi of w) {
+    const num = totalCents * wi;
+    const share = Math.floor(num / totalWeight);
+    shares.push(share);
+    allocated += share;
+    remainders.push(num % totalWeight);
+  }
+
+  const remainder = totalCents - allocated;
+  if (remainder) {
+    const indices = Array.from({ length: w.length }, (_, i) => i).sort((a, b) => remainders[b] - remainders[a]);
+    for (const i of indices.slice(0, remainder)) shares[i] += 1;
+  }
+  return shares;
 }
 
 function newLineId(): string {
@@ -431,6 +471,23 @@ export function PurchasesPage() {
     queryKey: ["master-products"],
     queryFn: () => api.request<MasterProduct[]>("/master-products"),
   });
+
+  const feeProfile = useQuery({
+    queryKey: ["amazon-fee-profile"],
+    queryFn: () => api.request<AmazonFeeProfile>("/amazon-scrapes/fee-profile"),
+  });
+
+  const feeProfileValue: AmazonFeeProfile = feeProfile.data ?? {
+    referral_fee_bp: 1500,
+    fulfillment_fee_cents: 350,
+    inbound_shipping_cents: 0,
+  };
+
+  const masterById = useMemo(() => {
+    const map = new Map<string, MasterProduct>();
+    (master.data ?? []).forEach((m) => map.set(m.id, m));
+    return map;
+  }, [master.data]);
 
   const list = useQuery({
     queryKey: ["purchases"],
@@ -1484,61 +1541,96 @@ export function PurchasesPage() {
                     <TableRow>
                       <TableHead>Produkt</TableHead>
                       <TableHead>Zustand</TableHead>
+                      <TableHead className="text-right">Amazon</TableHead>
                       <TableHead className="text-right">EK (EUR)</TableHead>
                       <TableHead className="text-right"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {lines.map((l) => (
-                      <TableRow key={l.ui_id}>
-                        <TableCell>
-                          <MasterProductCombobox
-                            value={l.master_product_id}
-                            options={master.data ?? []}
-                            loading={master.isPending}
-                            placeholder="Suchen (SKU, Titel, EAN, …) oder neu anlegen…"
-                            onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, master_product_id: v } : x)))}
-                            onCreateNew={(seed) => openQuickCreate(l.ui_id, seed)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={l.condition}
-                            onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, condition: v } : x)))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {CONDITION_OPTIONS.map((c) => (
-                                <SelectItem key={c.value} value={c.value}>
-                                  {c.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            className="text-right"
-                            value={l.purchase_price}
-                            onChange={(e) =>
-                              setLines((s) =>
-                                s.map((x) => (x.ui_id === l.ui_id ? { ...x, purchase_price: e.target.value } : x)),
-                              )
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.ui_id !== l.ui_id))}>
-                            Entfernen
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {(() => {
+                      const weights = lines.map((l) => parseMoneyInputToCents(l.purchase_price) ?? 0);
+                      const shipAlloc = allocateProportional(kind === "PRIVATE_DIFF" ? shippingCostCents : 0, weights);
+                      const buyerAlloc = allocateProportional(kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0, weights);
+                      const feeTitle = `FBA Fees: referral ${(feeProfileValue.referral_fee_bp / 100).toFixed(2)}% + fulfillment ${formatEur(feeProfileValue.fulfillment_fee_cents)} € + inbound ${formatEur(feeProfileValue.inbound_shipping_cents)} €`;
+
+                      return lines.map((l, idx) => {
+                        const mp = l.master_product_id ? masterById.get(l.master_product_id) ?? null : null;
+                        const market = estimateMarketPriceForInventoryCondition(mp, l.condition);
+                        const payout = estimateFbaPayout(market.cents, feeProfileValue);
+                        const purchaseCents = parseMoneyInputToCents(l.purchase_price);
+                        const costBasis =
+                          typeof purchaseCents === "number" ? purchaseCents + (shipAlloc[idx] ?? 0) + (buyerAlloc[idx] ?? 0) : null;
+                        const margin = estimateMargin(payout.payout_cents, costBasis);
+
+                        return (
+                          <TableRow key={l.ui_id}>
+                            <TableCell>
+                              <MasterProductCombobox
+                                value={l.master_product_id}
+                                options={master.data ?? []}
+                                loading={master.isPending}
+                                placeholder="Suchen (SKU, Titel, EAN, …) oder neu anlegen…"
+                                onValueChange={(v) =>
+                                  setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, master_product_id: v } : x)))
+                                }
+                                onCreateNew={(seed) => openQuickCreate(l.ui_id, seed)}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                value={l.condition}
+                                onValueChange={(v) => setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, condition: v } : x)))}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {CONDITION_OPTIONS.map((c) => (
+                                    <SelectItem key={c.value} value={c.value}>
+                                      {c.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="text-right text-xs" title={feeTitle}>
+                              <div title="Amazon Market Value (Condition-mapped; fallback: Used best)">
+                                {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
+                              </div>
+                              <div
+                                className={
+                                  margin === null
+                                    ? "text-gray-400 dark:text-gray-500"
+                                    : margin >= 0
+                                      ? "text-emerald-700 dark:text-emerald-300"
+                                      : "text-red-700 dark:text-red-300"
+                                }
+                                title="Margin estimate = payout - cost basis (EK + estimated NK allocation)"
+                              >
+                                {margin === null ? "—" : `${formatEur(margin)} €`}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                className="text-right"
+                                value={l.purchase_price}
+                                onChange={(e) =>
+                                  setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, purchase_price: e.target.value } : x)))
+                                }
+                              />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.ui_id !== l.ui_id))}>
+                                Entfernen
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      });
+                    })()}
                     {!lines.length && (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                        <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
                           Noch keine Positionen.
                         </TableCell>
                       </TableRow>

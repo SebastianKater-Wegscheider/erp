@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { useApi } from "../lib/api";
+import { AmazonFeeProfile, estimateFbaPayout, estimateMargin, estimateMarketPriceForInventoryCondition } from "../lib/amazon";
 import { formatEur } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -38,6 +39,12 @@ type MasterProduct = {
   region: string;
   variant?: string;
   reference_image_url?: string | null;
+
+  amazon_price_new_cents?: number | null;
+  amazon_price_used_like_new_cents?: number | null;
+  amazon_price_used_very_good_cents?: number | null;
+  amazon_price_used_good_cents?: number | null;
+  amazon_price_used_acceptable_cents?: number | null;
 };
 
 type InventoryImage = {
@@ -222,6 +229,19 @@ export function InventoryPage() {
     queryKey: ["master-products"],
     queryFn: () => api.request<MasterProduct[]>("/master-products"),
   });
+
+  const feeProfile = useQuery({
+    queryKey: ["amazon-fee-profile"],
+    queryFn: () => api.request<AmazonFeeProfile>("/amazon-scrapes/fee-profile"),
+  });
+
+  const feeProfileValue: AmazonFeeProfile = feeProfile.data ?? {
+    referral_fee_bp: 1500,
+    fulfillment_fee_cents: 350,
+    inbound_shipping_cents: 0,
+  };
+
+  const feeTitle = `FBA Fees: referral ${(feeProfileValue.referral_fee_bp / 100).toFixed(2)}% + fulfillment ${formatEur(feeProfileValue.fulfillment_fee_cents)} € + inbound ${formatEur(feeProfileValue.inbound_shipping_cents)} €`;
 
   const inv = useQuery({
     queryKey: ["inventory", q, status],
@@ -632,6 +652,9 @@ export function InventoryPage() {
                 const av = ageVariant(days);
                 const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
                 const hasAllocated = it.allocated_costs_cents > 0;
+                const market = estimateMarketPriceForInventoryCondition(mp, it.condition);
+                const payout = estimateFbaPayout(market.cents, feeProfileValue);
+                const margin = estimateMargin(payout.payout_cents, totalCostCents);
                 const itemImages = rowImagesByItemId.get(it.id) ?? [];
                 const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
                 const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
@@ -695,6 +718,28 @@ export function InventoryPage() {
                           </div>
                           <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                             EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 text-xs text-gray-700 dark:text-gray-200" title={feeTitle}>
+                          <div title="Amazon Market Value (Condition-mapped; fallback: Used best)">
+                            Amazon market:{" "}
+                            {typeof market.cents === "number" ? `${formatEur(market.cents)} € (${market.label})` : "—"}
+                          </div>
+                          <div title="FBA payout estimate = market - (referral fee + fulfillment fee + inbound shipping)">
+                            FBA payout: {typeof payout.payout_cents === "number" ? `${formatEur(payout.payout_cents)} €` : "—"}
+                          </div>
+                          <div
+                            className={
+                              margin === null
+                                ? "text-gray-500 dark:text-gray-400"
+                                : margin >= 0
+                                  ? "text-emerald-700 dark:text-emerald-300"
+                                  : "text-red-700 dark:text-red-300"
+                            }
+                            title="Margin estimate = payout - cost basis (EK + NK)"
+                          >
+                            Margin: {margin === null ? "—" : `${formatEur(margin)} €`}
                           </div>
                         </div>
 
@@ -800,6 +845,7 @@ export function InventoryPage() {
                   <TableHead>Alter</TableHead>
                   <TableHead>Zustand</TableHead>
                   <TableHead>Typ</TableHead>
+                  <TableHead className="text-right">Amazon</TableHead>
                   <TableHead className="text-right">Kosten (EUR)</TableHead>
                   <TableHead className="text-right"></TableHead>
                 </TableRow>
@@ -813,6 +859,9 @@ export function InventoryPage() {
                   const av = ageVariant(days);
                   const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
                   const hasAllocated = it.allocated_costs_cents > 0;
+                  const market = estimateMarketPriceForInventoryCondition(mp, it.condition);
+                  const payout = estimateFbaPayout(market.cents, feeProfileValue);
+                  const margin = estimateMargin(payout.payout_cents, totalCostCents);
                   const itemImages = rowImagesByItemId.get(it.id) ?? [];
                   const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
                   const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
@@ -924,6 +973,26 @@ export function InventoryPage() {
                       <TableCell>
                         <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
                       </TableCell>
+                      <TableCell className="text-right text-xs" title={feeTitle}>
+                        <div title="Amazon Market Value (Condition-mapped; fallback: Used best)">
+                          {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
+                        </div>
+                        <div className="text-gray-500 dark:text-gray-400" title="FBA payout estimate">
+                          {typeof payout.payout_cents === "number" ? `${formatEur(payout.payout_cents)} €` : "—"}
+                        </div>
+                        <div
+                          className={
+                            margin === null
+                              ? "text-gray-400 dark:text-gray-500"
+                              : margin >= 0
+                                ? "text-emerald-700 dark:text-emerald-300"
+                                : "text-red-700 dark:text-red-300"
+                          }
+                          title="Margin estimate = payout - cost basis (EK + NK)"
+                        >
+                          {margin === null ? "—" : `${formatEur(margin)} €`}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="font-medium">{formatEur(totalCostCents)} €</div>
                         <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
@@ -947,7 +1016,7 @@ export function InventoryPage() {
                 })}
                 {!rows.length && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
+                    <TableCell colSpan={8} className="text-sm text-gray-500 dark:text-gray-400">
                       Keine Daten.
                     </TableCell>
                   </TableRow>
