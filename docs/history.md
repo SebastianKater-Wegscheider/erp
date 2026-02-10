@@ -59,6 +59,20 @@
 - Fee-Schaetzung ist bewusst ein heuristisches Modell (globales Default-Profil), nicht ein produkt-/kategorie-spezifisches Fee-Calc.
 - Offer-Counts sind vom Liefer-ZIP und Amazon-Experiments abhaengig; werden als "Signal" genutzt, nicht als auditierbare Kennzahl.
 
+## 2026-02-10 - Verkaeufe: Edit-Form in Modal statt Inline (Scroll-Jump Fix)
+
+### Ausgangslage
+- Beim Bearbeiten eines Verkaufs sprang der Viewport beim Auswaehlen in Dropdowns (Radix Select/Combobox) wiederholt nach oben.
+- Das hat das Editieren praktisch unbenutzbar gemacht, weil Eingaben nicht stabil im Sichtbereich blieben.
+
+### Technische Entscheidung
+- Die Sales-Create/Edit-Form wird in einen Dialog (Modal) verschoben, statt inline im Page-Flow zu stehen.
+- Damit ist die Interaktion vom Page-Scroll entkoppelt; Dropdown-Focus/Portal-Behavior kann den Viewport nicht mehr "wegziehen".
+
+### Risiken / Trade-offs
+- Modal hat mehr "UI Weight" und braucht gute `max-height`/Scroll-Handling im Dialog-Body.
+- Schliessen des Modals verwirft ungespeicherte Eingaben (wie zuvor beim Schliessen der Inline-Form).
+
 ## 2026-02-08 - Eigenbeleg ohne Unterschriftsblock, mit Nachweisdaten
 
 ### Ausgangslage
