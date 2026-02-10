@@ -1,5 +1,5 @@
 import { Plus, RefreshCw } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
@@ -95,7 +95,6 @@ function orderStatusLabel(status: string): string {
 export function SalesPage() {
   const api = useApi();
   const qc = useQueryClient();
-  const formRef = useRef<HTMLDivElement | null>(null);
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -290,7 +289,6 @@ export function SalesPage() {
     create.reset();
     update.reset();
     setFormOpen(true);
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function cancelEdit() {
@@ -309,7 +307,6 @@ export function SalesPage() {
   function openCreateForm() {
     cancelEdit();
     setFormOpen(true);
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function closeForm() {
@@ -886,12 +883,21 @@ export function SalesPage() {
         </CardContent>
       </Card>
 
-      {(formOpen || editingOrderId) && (
-        <Card ref={formRef}>
-          <CardHeader>
-            <CardTitle>{editingOrderId ? "Auftrag bearbeiten" : "Auftrag erstellen"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <Dialog
+        open={formOpen || !!editingOrderId}
+        onOpenChange={(open) => {
+          if (!open) closeForm();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingOrderId ? "Auftrag bearbeiten" : "Auftrag erstellen"}</DialogTitle>
+            <DialogDescription>
+              {editingOrderId ? `ID: ${editingOrderId}` : "Entwurf anlegen, Positionen befuellen und spaeter abschliessen."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-4">
               <div className="space-y-2">
                 <Label>Datum</Label>
@@ -1077,9 +1083,9 @@ export function SalesPage() {
                 {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
