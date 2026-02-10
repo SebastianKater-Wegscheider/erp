@@ -235,6 +235,33 @@
 
 ### Technische Entscheidungen
 - Neue dedizierte Backend-Endpunkte für Reopen (Purchase + Sales), statt impliziter Freischaltung über `PUT`.
+
+## 2026-02-10 - Amazon (ASIN) Daily Scrape: BSR + Bestpreise je Zustand
+
+### Ausgangslage
+- Im Produktstamm existieren ASINs, aber aktuelle Marktsignale fehlen (Bestseller-Rank, Angebotspreise nach Zustand).
+- Ein separater interner Scraper-Service liefert pro ASIN Buybox, Offers und Sales Ranks (best-effort; gelegentlich `blocked=true`).
+
+### Business-Entscheidungen
+- Jedes Master-Produkt mit ASIN soll mindestens einmal pro 24 Stunden erfolgreich gescraped werden.
+- Gespeichert werden:
+  - Bestseller-Rank (overall und kategoriespezifisch) inkl. vollständiger Rank-Liste zur Nachvollziehbarkeit.
+  - Günstigste Preise pro Zustand (neu, gebraucht: wie neu/sehr gut/gut/akzeptabel, sammlerstueck).
+- Die Daten sollen im Produktstamm sichtbar und filterbar sein, damit Sourcing/Preisentscheidungen schneller werden.
+
+### Technische Entscheidungen
+- Persistenz als Kombination aus:
+  - Historie: jeder Scrape-Lauf als eigener Datensatz (Debuggability, Trend-Analysen).
+  - Snapshot: eine "latest" Tabelle pro Master-Produkt für schnelle UI/Filter.
+- Preislogik: "günstigster Preis" basiert auf Total inkl. Versand (primär `price_total`, sonst `price_item + price_shipping` wenn beides vorhanden).
+- Robustheit:
+  - `blocked=true` zaehlt nicht als "fresh"; Scheduler nutzt Retry mit exponentiellem Backoff + Jitter.
+  - Scheduler arbeitet sequentiell (Scraper ist single-flight und 429-busy möglich).
+  - Multi-Instance-Schutz ueber DB-basierten Lock (portabel, keine Postgres-only Advisory Locks).
+
+### Risiken / Trade-offs
+- Scraping ist volatil (A/B Tests, DOM-Aenderungen, Blocking). Historie und Block-Status helfen beim Debugging.
+- Snapshot-Optimierung (UI) ist zusaetzliche Redundanz, reduziert aber Join-Komplexitaet und Last.
 - Reopen Sales führt technische Rückabwicklung durch:
   - `SalesOrder.status -> DRAFT`
   - `invoice_pdf_path -> NULL`
