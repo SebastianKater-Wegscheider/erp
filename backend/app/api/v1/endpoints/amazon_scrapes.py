@@ -46,14 +46,16 @@ async def trigger_amazon_scrape(
         raise HTTPException(status_code=400, detail="Master product has no ASIN")
 
     try:
-        async with session.begin():
-            run_id = await scrape_master_product_once(
-                session=session,
-                settings=settings,
-                master_product_id=mp.id,
-                asin=asin,
-            )
-            run = await session.get(AmazonScrapeRun, run_id)
+        # `session.get()` above implicitly starts a transaction; avoid holding it across the network scrape.
+        await session.rollback()
+        run_id = await scrape_master_product_once(
+            session=session,
+            settings=settings,
+            master_product_id=mp.id,
+            asin=asin,
+        )
+        await session.commit()
+        run = await session.get(AmazonScrapeRun, run_id)
     except ScraperBusyError:
         raise HTTPException(status_code=429, detail="Scraper busy")
 
@@ -119,4 +121,3 @@ async def get_amazon_scrape_run(
             for b in (run.best_prices or [])
         ],
     )
-
