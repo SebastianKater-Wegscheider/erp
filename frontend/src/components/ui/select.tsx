@@ -5,6 +5,7 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 let lastSelectTriggerEl: HTMLElement | null = null;
+let lastSelectScroll: { x: number; y: number } | null = null;
 
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
@@ -23,12 +24,14 @@ const SelectTrigger = React.forwardRef<
     )}
     onPointerDown={(event) => {
       lastSelectTriggerEl = event.currentTarget;
+      lastSelectScroll = { x: window.scrollX, y: window.scrollY };
       onPointerDown?.(event);
     }}
     onKeyDown={(event) => {
       // Capture for keyboard-opened selects as well.
       if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown" || event.key === "ArrowUp") {
         lastSelectTriggerEl = event.currentTarget;
+        lastSelectScroll = { x: window.scrollX, y: window.scrollY };
       }
       onKeyDown?.(event);
     }}
@@ -64,12 +67,20 @@ const SelectContent = React.forwardRef<
           event.preventDefault();
 
           const el = lastSelectTriggerEl;
+          const scroll = lastSelectScroll;
           if (!el) return;
           lastSelectTriggerEl = null;
+          lastSelectScroll = null;
           try {
             el.focus({ preventScroll: true });
           } catch {
             el.focus();
+          }
+
+          // Some browsers can still jump the viewport when a portal closes.
+          // Restoring the scroll position keeps the edit form stable while interacting with dropdowns.
+          if (scroll) {
+            requestAnimationFrame(() => window.scrollTo(scroll.x, scroll.y));
           }
         }}
       >
