@@ -1,5 +1,29 @@
 # History
 
+## 2026-02-11 - Einkaeufe UX Redesign: Dialog-Flow, progressive Felder, staged Evidenz-Uploads
+
+### Ausgangslage
+- Der Inline-Create/Edit-Flow in `Belege > Einkaeufe` ist bei langen Formularen langsam und fehleranfaellig.
+- Beim Oeffnen/Schliessen von Dropdowns springt der Viewport teilweise nach oben und unterbricht die Datenerfassung.
+- Evidenzanhaenge sind aktuell nur als "ein Typ + mehrere Dateien" nutzbar und erst nach dem ersten Save moeglich.
+- Felder wie Geburtsdatum/Ausweisnummer sind im Tagesgeschaeft selten relevant, stehen aber sehr prominent.
+
+### Business-Entscheidungen
+- Einkaufs-Erfassung und Bearbeitung laufen in einem Modal-Dialog mit klaren Teilbereichen statt als lange Inline-Form.
+- Primare Eingaben (Datum, Gegenpartei, Zahlungsquelle, Plattform, Betraege, Positionen) werden priorisiert; seltene Identitaetsfelder werden als "Erweitert" nach hinten verlagert.
+- Plattformwahl wird gefuehrt ueber Dropdown (inkl. "Andere..." fuer Freitext), damit Eingaben schneller und konsistenter sind.
+- Evidenzanhaenge folgen einem 2-Stufen-Flow: Dateien sofort hochladen, danach Typ/Notiz je Datei mappen und dann gesammelt am Einkauf verknuepfen.
+
+### Technische Entscheidungen
+- Purchases-Form wird analog zu Sales in einen Dialog mit Tabs ueberfuehrt (Eckdaten, Positionen, Nachweise).
+- Select-Scroll-Restore wird gehaertet: neben `window`-Scroll wird auch der naechste scrollbare Container des Triggers beim Close wiederhergestellt.
+- Neue Frontend-Stage fuer Uploads (`queued/uploading/uploaded/error`) inkl. Retry, Remove, Bulk-Kind-Set und Chunking beim Attach-POST (max 30 pro Request).
+- Bei Create werden bereits hochgeladene/mappte Dateien nach erfolgreichem Einkauf automatisch verknuepft.
+
+### Risiken / Trade-offs
+- Im MVP werden unreferenzierte Uploads bei Dialog-Abbruch toleriert; die UI warnt vor nicht verknuepften Dateien.
+- Der Dialog erhoeht UI-Weight, reduziert dafuer Scroll-/Focus-Reibung signifikant und stabilisiert den Erfassungsprozess.
+
 ## 2026-02-09 - DB-Migrationen: Alembic Baseline + Compose-Integration
 
 ### Ausgangslage
