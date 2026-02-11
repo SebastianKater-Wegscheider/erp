@@ -3,25 +3,27 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 # Pillow is optional at runtime; without it we skip cropping/slicing evidence images.
 
-from app.core.enums import DocumentType, InventoryStatus, PurchaseKind, PurchaseType
+from app.core.enums import DocumentType, InventoryStatus, MileagePurpose, PurchaseKind, PurchaseType
 from app.core.config import get_settings
 from app.models.cost_allocation import CostAllocationLine
 from app.models.inventory_item import InventoryItem
 from app.models.inventory_item_image import InventoryItemImage
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
+from app.models.mileage_log import MileageLog, _mileage_log_purchases
 from app.models.purchase import Purchase, PurchaseLine
 from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrderLine
 from app.schemas.purchase import PurchaseCreate, PurchaseUpdate
+from app.schemas.purchase_mileage import PurchaseMileageUpsert
 from app.services.audit import audit_log
 from app.services.documents import next_document_number
-from app.services.money import format_eur, split_gross_to_net_and_tax
+from app.services.money import format_eur, mileage_amount_cents, meters_from_km, split_gross_to_net_and_tax
 from app.services.pdf import render_pdf
 from app.services.vat import allocate_proportional
 
@@ -877,3 +879,150 @@ async def reopen_purchase_for_edit(
         after={"pdf_path": purchase.pdf_path, "document_number": purchase.document_number},
     )
     return purchase
+
+
+async def get_purchase_primary_mileage(
+    session: AsyncSession,
+    *,
+    purchase_id: uuid.UUID,
+) -> MileageLog | None:
+    purchase = await session.get(Purchase, purchase_id)
+    if purchase is None:
+        raise ValueError("Purchase not found")
+    if purchase.primary_mileage_log_id is None:
+        return None
+    return (
+        await session.execute(
+            select(MileageLog)
+            .where(MileageLog.id == purchase.primary_mileage_log_id)
+            .options(selectinload(MileageLog.purchases))
+        )
+    ).scalar_one_or_none()
+
+
+async def upsert_purchase_primary_mileage(
+    session: AsyncSession,
+    *,
+    actor: str,
+    purchase_id: uuid.UUID,
+    data: PurchaseMileageUpsert,
+    rate_cents_per_km: int,
+) -> MileageLog:
+    purchase = await session.get(Purchase, purchase_id)
+    if purchase is None:
+        raise ValueError("Purchase not found")
+
+    distance_meters = meters_from_km(data.km)
+    amount_cents = mileage_amount_cents(distance_meters=distance_meters, rate_cents_per_km=rate_cents_per_km)
+
+    mileage_log: MileageLog | None = None
+    action = "create"
+    if purchase.primary_mileage_log_id is not None:
+        mileage_log = (
+            await session.execute(
+                select(MileageLog)
+                .where(MileageLog.id == purchase.primary_mileage_log_id)
+                .options(selectinload(MileageLog.purchases))
+            )
+        ).scalar_one_or_none()
+        action = "update"
+
+    if mileage_log is None:
+        mileage_log = MileageLog(
+            log_date=data.log_date,
+            start_location=data.start_location,
+            destination=data.destination,
+            purpose=MileagePurpose.BUYING,
+            purpose_text=_optional_str(data.purpose_text),
+            distance_meters=distance_meters,
+            rate_cents_per_km=rate_cents_per_km,
+            amount_cents=amount_cents,
+            purchase_id=purchase.id,
+        )
+        session.add(mileage_log)
+        await session.flush()
+    else:
+        mileage_log.log_date = data.log_date
+        mileage_log.start_location = data.start_location
+        mileage_log.destination = data.destination
+        mileage_log.purpose = MileagePurpose.BUYING
+        mileage_log.purpose_text = _optional_str(data.purpose_text)
+        mileage_log.distance_meters = distance_meters
+        mileage_log.rate_cents_per_km = rate_cents_per_km
+        mileage_log.amount_cents = amount_cents
+        mileage_log.purchase_id = purchase.id
+
+    await session.execute(
+        delete(_mileage_log_purchases).where(_mileage_log_purchases.c.mileage_log_id == mileage_log.id)
+    )
+    await session.execute(
+        insert(_mileage_log_purchases),
+        [{"mileage_log_id": mileage_log.id, "purchase_id": purchase.id}],
+    )
+
+    purchase.primary_mileage_log_id = mileage_log.id
+    await session.flush()
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="purchase",
+        entity_id=purchase.id,
+        action="upsert_primary_mileage",
+        after={
+            "primary_mileage_log_id": str(mileage_log.id),
+            "mileage_action": action,
+            "distance_meters": mileage_log.distance_meters,
+            "amount_cents": mileage_log.amount_cents,
+        },
+    )
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="mileage",
+        entity_id=mileage_log.id,
+        action=action,
+        after={
+            "purchase_id": str(purchase.id),
+            "distance_meters": mileage_log.distance_meters,
+            "amount_cents": mileage_log.amount_cents,
+            "purpose": mileage_log.purpose,
+            "purpose_text": mileage_log.purpose_text,
+        },
+    )
+
+    return (
+        await session.execute(
+            select(MileageLog).where(MileageLog.id == mileage_log.id).options(selectinload(MileageLog.purchases))
+        )
+    ).scalar_one()
+
+
+async def delete_purchase_primary_mileage(
+    session: AsyncSession,
+    *,
+    actor: str,
+    purchase_id: uuid.UUID,
+) -> None:
+    purchase = await session.get(Purchase, purchase_id)
+    if purchase is None:
+        raise ValueError("Purchase not found")
+
+    mileage_log_id = purchase.primary_mileage_log_id
+    purchase.primary_mileage_log_id = None
+    if mileage_log_id is None:
+        return
+
+    mileage_log = await session.get(MileageLog, mileage_log_id)
+    if mileage_log is not None:
+        await session.delete(mileage_log)
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="purchase",
+        entity_id=purchase.id,
+        action="delete_primary_mileage",
+        before={"primary_mileage_log_id": str(mileage_log_id)},
+        after={"primary_mileage_log_id": None},
+    )

@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import get_session
+from app.core.config import get_settings
 from app.core.security import require_basic_auth
+from app.schemas.mileage import MileageOut
 from app.models.purchase import Purchase
 from app.models.purchase_attachment import PurchaseAttachment
 from app.schemas.purchase_attachment import (
@@ -17,10 +19,14 @@ from app.schemas.purchase_attachment import (
     PurchaseAttachmentOut,
 )
 from app.schemas.purchase import PurchaseCreate, PurchaseOut, PurchaseRefOut, PurchaseUpdate
+from app.schemas.purchase_mileage import PurchaseMileageUpsert
 from app.services.purchases import (
     create_purchase,
+    delete_purchase_primary_mileage,
     generate_purchase_credit_note_pdf,
+    get_purchase_primary_mileage,
     reopen_purchase_for_edit,
+    upsert_purchase_primary_mileage,
     update_purchase,
 )
 
@@ -152,6 +158,54 @@ async def get_purchase(purchase_id: uuid.UUID, session: AsyncSession = Depends(g
     if row is None:
         raise HTTPException(status_code=404, detail="Not found")
     return PurchaseOut.model_validate(row)
+
+
+@router.get("/{purchase_id}/mileage", response_model=MileageOut | None)
+async def get_purchase_mileage(
+    purchase_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> MileageOut | None:
+    try:
+        row = await get_purchase_primary_mileage(session, purchase_id=purchase_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return MileageOut.model_validate(row) if row is not None else None
+
+
+@router.put("/{purchase_id}/mileage", response_model=MileageOut)
+async def upsert_purchase_mileage(
+    purchase_id: uuid.UUID,
+    data: PurchaseMileageUpsert,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> MileageOut:
+    settings = get_settings()
+    try:
+        async with session.begin():
+            row = await upsert_purchase_primary_mileage(
+                session,
+                actor=actor,
+                purchase_id=purchase_id,
+                data=data,
+                rate_cents_per_km=settings.mileage_rate_cents_per_km,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=404 if str(e) == "Purchase not found" else 409, detail=str(e)) from e
+    return MileageOut.model_validate(row)
+
+
+@router.delete("/{purchase_id}/mileage", status_code=204)
+async def delete_purchase_mileage(
+    purchase_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> Response:
+    try:
+        async with session.begin():
+            await delete_purchase_primary_mileage(session, actor=actor, purchase_id=purchase_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return Response(status_code=204)
 
 
 @router.put("/{purchase_id}", response_model=PurchaseOut)

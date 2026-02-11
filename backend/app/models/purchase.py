@@ -14,6 +14,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.sql_enums import inventory_condition_enum, payment_source_enum, purchase_kind_enum, purchase_type_enum
 
 if TYPE_CHECKING:
+    from app.models.mileage_log import MileageLog
     from app.models.purchase_attachment import PurchaseAttachment
 
 
@@ -50,6 +51,13 @@ class Purchase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="purchase",
         cascade="all, delete-orphan",
     )
+    primary_mileage_log_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("mileage_logs.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+    )
+    primary_mileage_log: Mapped[MileageLog | None] = relationship("MileageLog", foreign_keys=[primary_mileage_log_id])
 
 
 class PurchaseLine(UUIDPrimaryKeyMixin, Base):
