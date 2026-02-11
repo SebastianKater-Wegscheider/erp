@@ -704,3 +704,18 @@
 - Amazon-Status-Spalte verschlankt (Badges + letzter Erfolg), BSR und Used-best als getrennte rechtsbuendige Spalten mit `tabular-nums`.
 - 3-Punkte-Menu im Amazon-View entfernt; Quick-Links (`Scrape`, `Bearbeiten`, `Löschen`) in die linke Produktspalte verlegt.
 - Detail-Toggle in die rechte Spalte verschoben; Expanded-Row `colSpan` entsprechend angepasst.
+
+## 2026-02-11 - Einkaeufe Modal: Combobox-Layering + ruhigere Identitaetssektion
+
+### Ausgangslage
+- In der Einkaufsbearbeitung war der Produkt-Combobox-Dropdown in Positionszeilen visuell ausserhalb des Modals und teils nicht klickbar.
+- Gleichzeitig wirkte der Block fuer Identitaetsdaten zwischen den Zahlungsfeldern zu dominant/unruhig.
+
+### Business-Entscheidung
+- Interaktionen im Modal muessen innerhalb des Modals bleiben und verlässlich klickbar sein.
+- Low-prio Felder (Identitaetsdaten) sollen klar de-emphasized sein und nur bei Bedarf erscheinen.
+
+### Technische Entscheidung
+- `MasterProductCombobox` portalt sein Dropdown jetzt bevorzugt in den Dialog-Container statt blind in `document.body`; Z-Layer wurde auf `z-[70]` angehoben.
+- Ergebnis: Dropdown bleibt im Modal-Interaktionskontext und ist nicht mehr vom Modal-Overlay blockiert.
+- Identitaetsdaten-Block in `Purchases` visuell entschlackt: kompakter Header + kleine Toggle-Aktion (`ghost`, `sm`), Felder nur bei Expand sichtbar.

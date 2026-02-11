@@ -297,6 +297,7 @@ function MasterProductCombobox({
   const selected = useMemo(() => options.find((m) => m.id === value) ?? null, [options, value]);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState<string>(() => (selected ? masterProductLabel(selected) : ""));
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
   const [menuPos, setMenuPos] = useState<
     | {
         left: number;
@@ -311,6 +312,22 @@ function MasterProductCombobox({
   useEffect(() => {
     if (!open) setQ(selected ? masterProductLabel(selected) : "");
   }, [open, selected]);
+
+  useEffect(() => {
+    if (!open) {
+      setPortalContainer(null);
+      return;
+    }
+    const root = rootRef.current;
+    if (!root) {
+      setPortalContainer(document.body);
+      return;
+    }
+    const inDialog =
+      (root.closest("[data-radix-dialog-content]") as HTMLElement | null) ??
+      (root.closest("[role='dialog']") as HTMLElement | null);
+    setPortalContainer(inDialog ?? document.body);
+  }, [open]);
 
   useEffect(() => {
     function onPointerDown(ev: PointerEvent) {
@@ -408,7 +425,7 @@ function MasterProductCombobox({
         createPortal(
           <div
             ref={menuRef}
-            className="z-[45] overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-950"
+            className="z-[70] overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-950"
             style={{
               position: "fixed",
               left: menuPos.left,
@@ -497,7 +514,7 @@ function MasterProductCombobox({
               </button>
             </div>
           </div>,
-          document.body,
+          portalContainer ?? document.body,
         )}
     </div>
   );
@@ -1703,15 +1720,15 @@ export function PurchasesPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-medium">Identitaetsdaten (selten benoetigt)</div>
-                          <Button type="button" variant="outline" onClick={() => setIdentityFieldsOpen((open) => !open)}>
-                            {identityFieldsOpen ? "Ausblenden" : "Einblenden"}
+                      <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Identitaetsdaten nur bei Bedarf</div>
+                          <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setIdentityFieldsOpen((open) => !open)}>
+                            {identityFieldsOpen ? "Identitaet ausblenden" : "Identitaet einblenden"}
                           </Button>
                         </div>
-                        {identityFieldsOpen && (
-                          <div className="mt-3 grid gap-4 md:grid-cols-2">
+                        {identityFieldsOpen ? (
+                          <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
                               <Label>Geburtsdatum (optional)</Label>
                               <Input type="date" value={counterpartyBirthdate} onChange={(e) => setCounterpartyBirthdate(e.target.value)} />
@@ -1721,7 +1738,7 @@ export function PurchasesPage() {
                               <Input value={counterpartyIdNumber} onChange={(e) => setCounterpartyIdNumber(e.target.value)} placeholder="z.B. Reisepass / Personalausweis" />
                             </div>
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </>
                   )}
