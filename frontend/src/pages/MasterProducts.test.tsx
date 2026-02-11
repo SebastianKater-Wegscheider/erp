@@ -93,15 +93,18 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("shows Amazon signals only in Amazon mode", async () => {
+it("shows Amazon health in Amazon Status mode and reveals signals in details", async () => {
   renderPage("/master-products?view=catalog");
 
   await screen.findAllByText("With ASIN Product");
   expect(screen.queryByText("fresh")).toBeNull();
   expect(screen.queryByText("Abverkauf")).toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "Amazon" }));
+  fireEvent.click(screen.getByRole("button", { name: "Amazon Status" }));
   expect(await screen.findAllByText("fresh")).not.toHaveLength(0);
+  expect(screen.queryByText("Abverkauf")).toBeNull();
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Details ausklappen" })[0]);
   expect(await screen.findAllByText("Abverkauf")).not.toHaveLength(0);
 });
 
@@ -135,7 +138,7 @@ it("hides EAN chips in Amazon mode and keeps ASIN copy chip", async () => {
   await screen.findAllByText("With ASIN Product");
   expect(screen.queryAllByText(/EAN:/).length).toBeGreaterThan(0);
 
-  fireEvent.click(screen.getByRole("button", { name: "Amazon" }));
+  fireEvent.click(screen.getByRole("button", { name: "Amazon Status" }));
   expect(await screen.findAllByText(/ASIN:/)).not.toHaveLength(0);
   expect(screen.queryAllByText(/EAN:/)).toHaveLength(0);
 });

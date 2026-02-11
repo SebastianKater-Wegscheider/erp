@@ -36,6 +36,10 @@ type CompanyDashboardOut = {
   inventory_draft_count: number;
   inventory_reserved_count: number;
   inventory_returned_count: number;
+  inventory_missing_photos_count: number;
+  inventory_missing_storage_location_count: number;
+  inventory_amazon_stale_count: number;
+  inventory_old_stock_90d_count: number;
   negative_profit_orders_30d_count: number;
   master_products_missing_asin_count: number;
 
@@ -458,6 +462,30 @@ export function DashboardPage() {
                   <InboxRow to="/inventory?status=DRAFT" label="Lager: Entwürfe" count={data.inventory_draft_count} />
                   <InboxRow to="/inventory?status=RESERVED" label="Lager: Reserviert" count={data.inventory_reserved_count} warn={data.inventory_reserved_count > 0} />
                   <InboxRow to="/inventory?status=RETURNED" label="Lager: Retouren" count={data.inventory_returned_count} warn={data.inventory_returned_count > 0} />
+                  <InboxRow
+                    to="/inventory?queue=PHOTOS_MISSING&view=ops"
+                    label="Lager: Fotos fehlen"
+                    count={data.inventory_missing_photos_count}
+                    warn={data.inventory_missing_photos_count > 0}
+                  />
+                  <InboxRow
+                    to="/inventory?queue=STORAGE_MISSING&view=ops"
+                    label="Lager: Lagerplatz fehlt"
+                    count={data.inventory_missing_storage_location_count}
+                    warn={data.inventory_missing_storage_location_count > 0}
+                  />
+                  <InboxRow
+                    to="/inventory?queue=AMAZON_STALE&view=overview"
+                    label="Lager: Amazon stale"
+                    count={data.inventory_amazon_stale_count}
+                    warn={data.inventory_amazon_stale_count > 0}
+                  />
+                  <InboxRow
+                    to="/inventory?queue=OLD_STOCK_90D&view=overview"
+                    label="Lager: Altbestand >90T"
+                    count={data.inventory_old_stock_90d_count}
+                    warn={data.inventory_old_stock_90d_count > 0}
+                  />
                   <InboxRow to="/master-products?missing=asin&view=catalog" label="Produkte ohne ASIN" count={data.master_products_missing_asin_count} warn={data.master_products_missing_asin_count > 0} />
                   <InboxRow
                     to="/sales"

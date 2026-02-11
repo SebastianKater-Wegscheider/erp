@@ -110,12 +110,28 @@ const MASTER_KIND_LABEL: Record<string, string> = {
 };
 
 type InventoryViewMode = "overview" | "ops";
+type InventoryQueue = "ALL" | "PHOTOS_MISSING" | "STORAGE_MISSING" | "AMAZON_STALE" | "OLD_STOCK_90D";
 
 const INVENTORY_VIEW_KEY = "inventory:view";
+const INVENTORY_QUEUE_OPTIONS: Array<{ value: InventoryQueue; label: string }> = [
+  { value: "ALL", label: "Alle" },
+  { value: "PHOTOS_MISSING", label: "Fotos fehlen" },
+  { value: "STORAGE_MISSING", label: "Lagerplatz fehlt" },
+  { value: "AMAZON_STALE", label: "Amazon stale" },
+  { value: "OLD_STOCK_90D", label: "Altbestand >90T" },
+];
 
 function normalizeInventoryViewMode(value?: string | null): InventoryViewMode | null {
   if (value === "overview" || value === "ops") return value;
   return null;
+}
+
+function normalizeInventoryQueue(value?: string | null): InventoryQueue {
+  if (value === "PHOTOS_MISSING") return "PHOTOS_MISSING";
+  if (value === "STORAGE_MISSING") return "STORAGE_MISSING";
+  if (value === "AMAZON_STALE") return "AMAZON_STALE";
+  if (value === "OLD_STOCK_90D") return "OLD_STOCK_90D";
+  return "ALL";
 }
 
 function readPersistedInventoryViewMode(): InventoryViewMode | null {
@@ -326,14 +342,19 @@ function MetaPill({ label, value }: { label: string; value: string }) {
 export function InventoryPage() {
   const api = useApi();
   const qc = useQueryClient();
-  const [searchParams] = useSearchParams();
-  const [q, setQ] = useState("");
-  const [viewMode, setViewMode] = useState<InventoryViewMode>(() => readPersistedInventoryViewMode() ?? "overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [q, setQ] = useState(() => searchParams.get("q") ?? "");
+  const [viewMode, setViewMode] = useState<InventoryViewMode>(() => {
+    const fromUrl = normalizeInventoryViewMode(searchParams.get("view"));
+    if (fromUrl) return fromUrl;
+    return readPersistedInventoryViewMode() ?? "overview";
+  });
   const [status, setStatus] = useState<string>(() => {
     const s = (searchParams.get("status") ?? "").toUpperCase();
     if (s && INVENTORY_STATUS_OPTIONS.some((o) => o.value === s)) return s;
     return "ALL";
   });
+  const [queue, setQueue] = useState<InventoryQueue>(() => normalizeInventoryQueue(searchParams.get("queue")));
 
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [editStorageLocation, setEditStorageLocation] = useState("");
@@ -351,6 +372,79 @@ export function InventoryPage() {
   useEffect(() => {
     persistInventoryViewMode(viewMode);
   }, [viewMode]);
+
+  useEffect(() => {
+    const fromUrl = normalizeInventoryViewMode(searchParams.get("view"));
+    if (fromUrl && fromUrl !== viewMode) setViewMode(fromUrl);
+  }, [searchParams, viewMode]);
+
+  useEffect(() => {
+    const qFromUrl = searchParams.get("q") ?? "";
+    if (qFromUrl !== q) setQ(qFromUrl);
+
+    const statusFromUrl = (() => {
+      const s = (searchParams.get("status") ?? "").toUpperCase();
+      if (s && INVENTORY_STATUS_OPTIONS.some((o) => o.value === s)) return s;
+      return "ALL";
+    })();
+    if (statusFromUrl !== status) setStatus(statusFromUrl);
+
+    const queueFromUrl = normalizeInventoryQueue(searchParams.get("queue"));
+    if (queueFromUrl !== queue) setQueue(queueFromUrl);
+  }, [q, queue, searchParams, status]);
+
+  function updateInventorySearchParams(
+    mutator: (next: URLSearchParams) => void,
+    options?: { replace?: boolean },
+  ) {
+    const next = new URLSearchParams(searchParams);
+    mutator(next);
+    setSearchParams(next, { replace: options?.replace ?? false });
+  }
+
+  function setSearchQuery(nextQ: string) {
+    setQ(nextQ);
+    updateInventorySearchParams(
+      (next) => {
+        const trimmed = nextQ.trim();
+        if (trimmed) next.set("q", trimmed);
+        else next.delete("q");
+      },
+      { replace: true },
+    );
+  }
+
+  function setStatusFilter(nextStatus: string) {
+    setStatus(nextStatus);
+    updateInventorySearchParams(
+      (next) => {
+        if (nextStatus === "ALL") next.delete("status");
+        else next.set("status", nextStatus);
+      },
+      { replace: true },
+    );
+  }
+
+  function setQueueFilter(nextQueue: InventoryQueue) {
+    setQueue(nextQueue);
+    updateInventorySearchParams(
+      (next) => {
+        if (nextQueue === "ALL") next.delete("queue");
+        else next.set("queue", nextQueue);
+      },
+      { replace: true },
+    );
+  }
+
+  function setViewModePersisted(nextMode: InventoryViewMode) {
+    setViewMode(nextMode);
+    updateInventorySearchParams(
+      (next) => {
+        next.set("view", nextMode);
+      },
+      { replace: true },
+    );
+  }
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -371,10 +465,10 @@ export function InventoryPage() {
   const feeTitle = `FBA Fees: referral ${(feeProfileValue.referral_fee_bp / 100).toFixed(2)}% + fulfillment ${formatEur(feeProfileValue.fulfillment_fee_cents)} € + inbound ${formatEur(feeProfileValue.inbound_shipping_cents)} €`;
 
   const inv = useQuery({
-    queryKey: ["inventory", q, status],
+    queryKey: ["inventory", q, status, queue],
     queryFn: () =>
       api.request<InventoryItem[]>(
-        `/inventory?limit=50&offset=0${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}${status !== "ALL" ? `&status=${status}` : ""}`,
+        `/inventory?limit=50&offset=0${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}${status !== "ALL" ? `&status=${status}` : ""}${queue !== "ALL" ? `&queue=${queue}` : ""}`,
       ),
   });
 
@@ -681,7 +775,9 @@ export function InventoryPage() {
         <div>
           <div className="text-xl font-semibold">Lagerbestand</div>
           <div className="text-sm text-gray-500 dark:text-gray-400">
-            Lagerartikel durchsuchen, filtern und Details (SN, Lagerplatz, Bilder) pflegen.
+            {viewMode === "overview"
+              ? "Priorisieren nach Marktpreis, Abverkauf und Marge."
+              : "Operative Pflege für SN, Lagerplatz, Bilder und Artikelzustand."}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -720,17 +816,17 @@ export function InventoryPage() {
                 type="button"
                 size="sm"
                 variant={viewMode === "overview" ? "secondary" : "ghost"}
-                onClick={() => setViewMode("overview")}
+                onClick={() => setViewModePersisted("overview")}
               >
-                Übersicht
+                Priorisieren
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant={viewMode === "ops" ? "secondary" : "ghost"}
-                onClick={() => setViewMode("ops")}
+                onClick={() => setViewModePersisted("ops")}
               >
-                Ops
+                Pflege
               </Button>
             </div>
           </div>
@@ -743,19 +839,19 @@ export function InventoryPage() {
                 <Input
                   placeholder="SKU/Titel/EAN/ASIN…"
                   value={q}
-                  onChange={(e) => setQ(e.target.value)}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9"
                 />
               </div>
               {q.trim() && (
-                <Button type="button" variant="ghost" size="icon" onClick={() => setQ("")} aria-label="Suche löschen">
+                <Button type="button" variant="ghost" size="icon" onClick={() => setSearchQuery("")} aria-label="Suche löschen">
                   <X className="h-4 w-4" />
                 </Button>
               )}
             </div>
 
             <div className="flex items-center gap-2">
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-full md:w-[190px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -769,6 +865,20 @@ export function InventoryPage() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {INVENTORY_QUEUE_OPTIONS.map((opt) => (
+              <Button
+                key={opt.value}
+                type="button"
+                size="sm"
+                variant={queue === opt.value ? "secondary" : "outline"}
+                onClick={() => setQueueFilter(opt.value)}
+              >
+                {opt.label}
+              </Button>
+            ))}
           </div>
 
           <div className="space-y-2 md:hidden">

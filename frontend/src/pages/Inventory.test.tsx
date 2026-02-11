@@ -88,7 +88,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("defaults to Übersicht and shows KPI columns without inline IDs", async () => {
+it("defaults to Priorisieren and shows KPI columns without inline IDs", async () => {
   renderPage("/inventory");
 
   await screen.findAllByText("Mario Kart 64");
@@ -98,11 +98,11 @@ it("defaults to Übersicht and shows KPI columns without inline IDs", async () =
   expect(screen.queryAllByText(/^ID:/)).toHaveLength(0);
 });
 
-it("switches to Ops mode and hides KPI labels", async () => {
+it("switches to Pflege mode and hides KPI labels", async () => {
   renderPage("/inventory");
 
   await screen.findAllByText("Mario Kart 64");
-  fireEvent.click(screen.getByRole("button", { name: "Ops" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pflege" }));
 
   expect(await screen.findAllByText("Kosten (EUR)")).not.toHaveLength(0);
   expect(screen.queryAllByText("Marktpreis")).toHaveLength(0);
@@ -111,3 +111,13 @@ it("switches to Ops mode and hides KPI labels", async () => {
   expect(screen.queryAllByText(/^ID:/)).toHaveLength(0);
 });
 
+it("applies queue and view from URL for deep links", async () => {
+  renderPage("/inventory?queue=PHOTOS_MISSING&view=ops");
+
+  await screen.findAllByText("Mario Kart 64");
+  expect(screen.getByRole("button", { name: "Pflege" })).toBeInTheDocument();
+  const inventoryCalls = requestMock.mock.calls
+    .map(([path]) => path)
+    .filter((path): path is string => typeof path === "string" && path.startsWith("/inventory?"));
+  expect(inventoryCalls.some((path) => path.includes("queue=PHOTOS_MISSING"))).toBe(true);
+});
