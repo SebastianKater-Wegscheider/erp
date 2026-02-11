@@ -131,6 +131,8 @@ const EMPTY_FORM: MasterProductFormState = {
 };
 
 const MASTER_PRODUCTS_VIEW_KEY = "master-products:view";
+const TABLE_ACTION_CELL_CLASS = "w-[4.75rem] text-right align-middle";
+const TABLE_ACTION_GROUP_CLASS = "inline-flex w-full items-center justify-end";
 
 function kindLabel(kind: MasterProductKind): string {
   return KIND_OPTIONS.find((k) => k.value === kind)?.label ?? kind;
@@ -1444,77 +1446,79 @@ export function MasterProductsPage() {
                           </TableCell>
                         )}
 
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" aria-label="Aktionen">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                disabled={!m.asin || scrapeNow.isPending}
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  scrapeNow.mutate(m.id);
-                                }}
-                              >
-                                <RefreshCw className="h-4 w-4" />
-                                Amazon scrape jetzt
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  openEdit(m);
-                                }}
-                              >
-                                <Pencil className="h-4 w-4" />
-                                Bearbeiten
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  void copyToClipboard(m.id);
-                                }}
-                              >
-                                <Copy className="h-4 w-4" />
-                                UUID kopieren
-                              </DropdownMenuItem>
-                              {m.ean ? (
+                        <TableCell className={TABLE_ACTION_CELL_CLASS}>
+                          <div className={TABLE_ACTION_GROUP_CLASS}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Aktionen">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  disabled={!m.asin || scrapeNow.isPending}
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    scrapeNow.mutate(m.id);
+                                  }}
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                  Amazon scrape jetzt
+                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onSelect={(e) => {
                                     e.preventDefault();
-                                    void copyToClipboard(m.ean ?? "");
+                                    openEdit(m);
                                   }}
                                 >
-                                  <Copy className="h-4 w-4" />
-                                  EAN kopieren
+                                  <Pencil className="h-4 w-4" />
+                                  Bearbeiten
                                 </DropdownMenuItem>
-                              ) : null}
-                              {m.asin ? (
                                 <DropdownMenuItem
                                   onSelect={(e) => {
                                     e.preventDefault();
-                                    void copyToClipboard(m.asin ?? "");
+                                    void copyToClipboard(m.id);
                                   }}
                                 >
                                   <Copy className="h-4 w-4" />
-                                  ASIN kopieren
+                                  UUID kopieren
                                 </DropdownMenuItem>
-                              ) : null}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  requestDelete(m);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Löschen
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                {m.ean ? (
+                                  <DropdownMenuItem
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      void copyToClipboard(m.ean ?? "");
+                                    }}
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                    EAN kopieren
+                                  </DropdownMenuItem>
+                                ) : null}
+                                {m.asin ? (
+                                  <DropdownMenuItem
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      void copyToClipboard(m.asin ?? "");
+                                    }}
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                    ASIN kopieren
+                                  </DropdownMenuItem>
+                                ) : null}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    requestDelete(m);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Löschen
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
                       {viewMode === "amazon" && m.asin && isExpanded(m.id) ? (

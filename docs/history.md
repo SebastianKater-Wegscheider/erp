@@ -608,3 +608,4 @@
 ### Technische Entscheidung
 - Zeilen in `inventory overview` und `master-products` werden auf konsistente Spacing-/Badge-/Meta-Patterns umgestellt.
 - Custom-Pill-Mischformen werden reduziert zugunsten einheitlicher Badge/Text-Muster (gleichere Hoehen, weniger visuelles Rauschen).
+- Row-Action-Zellen (`Bearbeiten`/`Aktionen`/`PDF`) erhalten feste Slot-Breiten und einheitliche Button-Hoehen, damit die rechte Tabellenspalte ueber alle Seiten visuell sauber ausgerichtet bleibt.

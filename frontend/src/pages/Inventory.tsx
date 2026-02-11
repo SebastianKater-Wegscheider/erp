@@ -119,6 +119,8 @@ const INVENTORY_VIEW_KEY = "inventory:view";
 const OVERVIEW_METRIC_CELL_CLASS = "w-[11.25rem] text-right";
 const OVERVIEW_METRIC_CARD_CLASS =
   "inline-flex w-full min-h-[4.75rem] flex-col items-end justify-between rounded-lg border border-gray-200/90 bg-gray-50/80 px-2.5 py-2 text-right dark:border-gray-800 dark:bg-gray-900/50";
+const TABLE_ACTION_CELL_CLASS = "w-[10rem] text-right align-middle";
+const TABLE_ACTION_GROUP_CLASS = "inline-flex w-full items-center justify-end gap-1.5";
 const INVENTORY_QUEUE_OPTIONS: Array<{ value: InventoryQueue; label: string }> = [
   { value: "ALL", label: "Alle" },
   { value: "PHOTOS_MISSING", label: "Fotos fehlen" },
@@ -1368,11 +1370,12 @@ export function InventoryPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="inline-flex items-center gap-2">
+                        <TableCell className={TABLE_ACTION_CELL_CLASS}>
+                          <div className={TABLE_ACTION_GROUP_CLASS}>
                             <Button
                               size="sm"
                               variant="outline"
+                              className="min-w-[6.5rem]"
                               onClick={() => {
                                 setEditing(it);
                                 setEditStorageLocation(it.storage_location ?? "");
@@ -1383,7 +1386,7 @@ export function InventoryPage() {
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" aria-label="Aktionen">
+                                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Aktionen">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -1567,10 +1570,12 @@ export function InventoryPage() {
                             EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="inline-flex items-center gap-2">
+                        <TableCell className={TABLE_ACTION_CELL_CLASS}>
+                          <div className={TABLE_ACTION_GROUP_CLASS}>
                             <Button
+                              size="sm"
                               variant="outline"
+                              className="min-w-[6.5rem]"
                               onClick={() => {
                                 setEditing(it);
                                 setEditStorageLocation(it.storage_location ?? "");
@@ -1581,7 +1586,7 @@ export function InventoryPage() {
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" aria-label="Aktionen">
+                                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Aktionen">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>

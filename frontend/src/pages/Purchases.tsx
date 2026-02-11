@@ -148,6 +148,10 @@ const PURCHASE_ATTACHMENT_KIND_OPTIONS: Array<{ value: string; label: string }> 
 
 const PLATFORM_NONE = "__NONE__";
 const PLATFORM_OTHER = "__OTHER__";
+const PURCHASE_TABLE_ACTION_CELL_CLASS = "w-[22rem] text-right align-middle";
+const PURCHASE_TABLE_ACTION_GROUP_CLASS = "inline-flex w-full items-center justify-end gap-2";
+const PURCHASE_TABLE_DOC_SLOT_CLASS = "flex min-w-[9.5rem] justify-end";
+const PURCHASE_TABLE_MAIN_SLOT_CLASS = "flex min-w-[11.5rem] justify-end";
 
 function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
   return options.find((o) => o.value === value)?.label ?? value;
@@ -1257,48 +1261,61 @@ export function PurchasesPage() {
                         </>
                       );
                     })()}
-                    <TableCell className="text-right">
-                      <div className="inline-flex items-center justify-end gap-2">
-                        {p.pdf_path ? (
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="outline">PDF</Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Einkauf (PDF)</DialogTitle>
-                                <DialogDescription>{p.pdf_path}</DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <Button variant="secondary" onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}>
-                                  Herunterladen
+                    <TableCell className={PURCHASE_TABLE_ACTION_CELL_CLASS}>
+                      <div className={PURCHASE_TABLE_ACTION_GROUP_CLASS}>
+                        <div className={PURCHASE_TABLE_DOC_SLOT_CLASS}>
+                          {p.pdf_path ? (
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button size="sm" variant="outline" className="min-w-[6.5rem]">
+                                  PDF
                                 </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                        ) : p.kind === "PRIVATE_DIFF" ? (
-                          <Button size="sm" variant="outline" onClick={() => generatePdf.mutate(p.id)} disabled={generatePdf.isPending}>
-                            Eigenbeleg erstellen
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
-                        )}
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Einkauf (PDF)</DialogTitle>
+                                  <DialogDescription>{p.pdf_path}</DialogDescription>
+                                </DialogHeader>
+                                <DialogFooter>
+                                  <Button variant="secondary" onClick={() => api.download(p.pdf_path!, p.pdf_path!.split("/").pop()!)}>
+                                    Herunterladen
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          ) : p.kind === "PRIVATE_DIFF" ? (
+                            <Button size="sm" variant="outline" className="min-w-[9.5rem]" onClick={() => generatePdf.mutate(p.id)} disabled={generatePdf.isPending}>
+                              Eigenbeleg erstellen
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                          )}
+                        </div>
 
-                        {!p.pdf_path && (
-                          <Button size="sm" variant="secondary" onClick={() => startEdit(p)} disabled={create.isPending || update.isPending}>
-                            Bearbeiten
-                          </Button>
-                        )}
-                        {p.pdf_path && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => reopenPurchase.mutate(p.id)}
-                            disabled={reopenPurchase.isPending || create.isPending || update.isPending}
-                          >
-                            Zur Bearbeitung öffnen
-                          </Button>
-                        )}
+                        <div className={PURCHASE_TABLE_MAIN_SLOT_CLASS}>
+                          {!p.pdf_path && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="min-w-[7.5rem]"
+                              onClick={() => startEdit(p)}
+                              disabled={create.isPending || update.isPending}
+                            >
+                              Bearbeiten
+                            </Button>
+                          )}
+                          {p.pdf_path && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="min-w-[11.5rem]"
+                              onClick={() => reopenPurchase.mutate(p.id)}
+                              disabled={reopenPurchase.isPending || create.isPending || update.isPending}
+                            >
+                              Zur Bearbeitung öffnen
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>
