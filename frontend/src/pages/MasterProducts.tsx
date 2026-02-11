@@ -1108,8 +1108,8 @@ export function MasterProductsPage() {
                             const sell = estimateSellThroughFromBsr(m);
                             const sellRange = formatSellThroughRange(sell.range_days);
                             const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
-                            const rank = typeof m.amazon_rank_specific === "number" ? m.amazon_rank_specific : m.amazon_rank_overall;
-                            const rankCat = m.amazon_rank_specific_category ?? m.amazon_rank_overall_category ?? null;
+                            const rank = typeof m.amazon_rank_overall === "number" ? m.amazon_rank_overall : m.amazon_rank_specific;
+                            const rankCat = m.amazon_rank_overall_category ?? m.amazon_rank_specific_category ?? null;
                             const usedOffers =
                               typeof m.amazon_offers_count_used_priced_total === "number"
                                 ? m.amazon_offers_count_used_priced_total
@@ -1379,8 +1379,8 @@ export function MasterProductsPage() {
                                   const sell = estimateSellThroughFromBsr(m);
                                   const sellRange = formatSellThroughRange(sell.range_days);
                                   const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
-                                  const rank = typeof m.amazon_rank_specific === "number" ? m.amazon_rank_specific : m.amazon_rank_overall;
-                                  const rankCat = m.amazon_rank_specific_category ?? m.amazon_rank_overall_category ?? null;
+                                  const rank = typeof m.amazon_rank_overall === "number" ? m.amazon_rank_overall : m.amazon_rank_specific;
+                                  const rankCat = m.amazon_rank_overall_category ?? m.amazon_rank_specific_category ?? null;
                                   const usedOffers =
                                     typeof m.amazon_offers_count_used_priced_total === "number"
                                       ? m.amazon_offers_count_used_priced_total

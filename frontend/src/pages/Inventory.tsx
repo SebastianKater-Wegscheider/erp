@@ -808,9 +808,9 @@ export function InventoryPage() {
                 const sellRange = formatSellThroughRange(sell.range_days);
                 const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
                 const bsrRank = mp
-                  ? typeof mp.amazon_rank_specific === "number"
-                    ? mp.amazon_rank_specific
-                    : mp.amazon_rank_overall
+                  ? typeof mp.amazon_rank_overall === "number"
+                    ? mp.amazon_rank_overall
+                    : mp.amazon_rank_specific
                   : null;
 
                 return (
@@ -1144,9 +1144,9 @@ export function InventoryPage() {
                     const sellRange = formatSellThroughRange(sell.range_days);
                     const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
                     const bsrRank = mp
-                      ? typeof mp.amazon_rank_specific === "number"
-                        ? mp.amazon_rank_specific
-                        : mp.amazon_rank_overall
+                      ? typeof mp.amazon_rank_overall === "number"
+                        ? mp.amazon_rank_overall
+                        : mp.amazon_rank_specific
                       : null;
                     const bsrLabel = typeof bsrRank === "number" ? `BSR #${bsrRank}` : "BSR —";
                     const itemImages = rowImagesByItemId.get(it.id) ?? [];
