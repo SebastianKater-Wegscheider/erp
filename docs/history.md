@@ -672,3 +672,19 @@
 - Zeilen in `inventory overview` und `master-products` werden auf konsistente Spacing-/Badge-/Meta-Patterns umgestellt.
 - Custom-Pill-Mischformen werden reduziert zugunsten einheitlicher Badge/Text-Muster (gleichere Hoehen, weniger visuelles Rauschen).
 - Row-Action-Zellen (`Bearbeiten`/`Aktionen`/`PDF`) erhalten feste Slot-Breiten und einheitliche Button-Hoehen, damit die rechte Tabellenspalte ueber alle Seiten visuell sauber ausgerichtet bleibt.
+
+## 2026-02-11 - Amazon Bild-URL-Fallback fuer stabile Produktbilder
+
+### Ausgangslage
+- Amazon-Scrapes liefen wieder an, aber viele frisch gescrapte ASINs hatten weiterhin keine `reference_image_url`.
+- Analyse: Der externe Scraper liefert bei erfolgreichen Runs nicht konsistent ein Bildfeld zurueck.
+
+### Business-Entscheidung
+- Produktbilder sollen auch dann aktualisiert werden, wenn der Scraper keine explizite Bild-URL liefert.
+- Prioritaet ist robuste Datenauffuellung fuer die UI statt perfekter Bildquelle pro Marketplace-Edgecase.
+
+### Technische Entscheidung
+- In `persist_scrape_result` wird nach dem normalen Bildfeld-Parsing ein ASIN-basierter Fallback verwendet:
+  `https://images-eu.ssl-images-amazon.com/images/P/{ASIN}.01.LZZZZZZZ.jpg`.
+- Der Fallback greift nur, wenn keine Bild-URL im Payload gefunden wurde.
+- Testabdeckung ergaenzt: neuer Test stellt sicher, dass bei fehlendem Bildfeld der ASIN-Fallback in `MasterProduct.reference_image_url` geschrieben wird.

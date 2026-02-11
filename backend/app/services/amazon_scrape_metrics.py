@@ -292,6 +292,13 @@ def _extract_image_url(data: dict[str, Any]) -> str | None:
     return None
 
 
+def _asin_image_fallback_url(asin: str | None) -> str | None:
+    value = (asin or "").strip().upper()
+    if len(value) != 10:
+        return None
+    return f"https://images-eu.ssl-images-amazon.com/images/P/{value}.01.LZZZZZZZ.jpg"
+
+
 async def persist_scrape_result(
     *,
     session: AsyncSession,
@@ -411,10 +418,10 @@ async def persist_scrape_result(
         latest.next_retry_at = None
         latest.consecutive_failures = 0
 
-        image_url = _extract_image_url(data)
-        if image_url is not None:
-            mp = await session.get(MasterProduct, master_product_id)
-            if mp is not None:
+        mp = await session.get(MasterProduct, master_product_id)
+        if mp is not None:
+            image_url = _extract_image_url(data) or _asin_image_fallback_url(mp.asin)
+            if image_url is not None:
                 mp.reference_image_url = image_url
     else:
         # failure or blocked: keep last_success_at intact, schedule retry externally

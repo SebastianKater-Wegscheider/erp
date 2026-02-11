@@ -184,6 +184,49 @@ async def test_persist_scrape_result_buybox_fallback_total(db_session: AsyncSess
 
 
 @pytest.mark.asyncio
+async def test_persist_scrape_result_image_fallback_from_asin(db_session: AsyncSession) -> None:
+    mp_id = uuid.uuid4()
+    mp = MasterProduct(
+        id=mp_id,
+        sku=master_product_sku_from_id(mp_id),
+        kind="GAME",
+        title="Test Product",
+        platform="PS2",
+        region="EU",
+        variant="",
+        asin="B000FC2BTQ",
+    )
+    db_session.add(mp)
+    await db_session.commit()
+
+    finished_at = datetime(2026, 2, 10, 20, 0, 10, tzinfo=UTC)
+    data = {
+        "ts_utc": "2026-02-10T20:00:00Z",
+        "marketplace": "amazon.de",
+        "asin": "B000FC2BTQ",
+        "blocked": False,
+        "offers_truncated": False,
+        "title": "Test Product",
+        "sales_ranks": [],
+        "offers": [],
+    }
+
+    async with db_session.begin():
+        await persist_scrape_result(
+            session=db_session,
+            master_product_id=mp_id,
+            asin="B000FC2BTQ",
+            data=data,
+            error=None,
+            finished_at=finished_at,
+        )
+
+    mp_updated = await db_session.get(MasterProduct, mp_id)
+    assert mp_updated is not None
+    assert mp_updated.reference_image_url == "https://images-eu.ssl-images-amazon.com/images/P/B000FC2BTQ.01.LZZZZZZZ.jpg"
+
+
+@pytest.mark.asyncio
 async def test_persist_scrape_result_persists_best_prices_without_sales_ranks(db_session: AsyncSession) -> None:
     mp_id = uuid.uuid4()
     mp = MasterProduct(
