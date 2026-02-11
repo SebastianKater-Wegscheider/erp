@@ -28,6 +28,9 @@ type MockMasterProduct = {
   genre?: string | null;
   release_year?: number | null;
   amazon_last_success_at?: string | null;
+  amazon_rank_specific?: number | null;
+  amazon_offers_count_used_priced_total?: number | null;
+  amazon_price_used_good_cents?: number | null;
 };
 
 const PRODUCTS: MockMasterProduct[] = [
@@ -43,6 +46,9 @@ const PRODUCTS: MockMasterProduct[] = [
     asin: "B000TEST11",
     manufacturer: "Sony",
     amazon_last_success_at: "2026-02-11T00:00:00.000Z",
+    amazon_rank_specific: 400,
+    amazon_offers_count_used_priced_total: 1,
+    amazon_price_used_good_cents: 1234,
   },
   {
     id: "00000000-0000-0000-0000-000000000222",
@@ -92,9 +98,11 @@ it("shows Amazon signals only in Amazon mode", async () => {
 
   await screen.findAllByText("With ASIN Product");
   expect(screen.queryByText("fresh")).toBeNull();
+  expect(screen.queryByText("Abverkauf")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Amazon" }));
   expect(await screen.findAllByText("fresh")).not.toHaveLength(0);
+  expect(await screen.findAllByText("Abverkauf")).not.toHaveLength(0);
 });
 
 it("filters rows by missing ASIN via query param", async () => {
@@ -119,4 +127,15 @@ it("keeps UUID out of row body and exposes copy action", async () => {
   }
   const copyItems = await screen.findAllByText("UUID kopieren");
   expect(copyItems.length).toBeGreaterThan(0);
+});
+
+it("hides EAN chips in Amazon mode and keeps ASIN copy chip", async () => {
+  renderPage("/master-products?view=catalog");
+
+  await screen.findAllByText("With ASIN Product");
+  expect(screen.queryAllByText(/EAN:/).length).toBeGreaterThan(0);
+
+  fireEvent.click(screen.getByRole("button", { name: "Amazon" }));
+  expect(await screen.findAllByText(/ASIN:/)).not.toHaveLength(0);
+  expect(screen.queryAllByText(/EAN:/)).toHaveLength(0);
 });

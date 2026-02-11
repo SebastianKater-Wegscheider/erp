@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { useApi } from "../lib/api";
-import { computeUsedBest } from "../lib/amazon";
+import { computeUsedBest, estimateSellThroughFromBsr, formatSellThroughRange } from "../lib/amazon";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -164,6 +164,48 @@ function isAmazonStale(m: MasterProduct): boolean {
 function fmtMaybeEur(cents?: number | null): string {
   if (cents === null || cents === undefined) return "—";
   return `${formatEur(cents)} €`;
+}
+
+function sellThroughSpeedLabel(speed: string): string {
+  switch (speed) {
+    case "FAST":
+      return "Schnell";
+    case "MEDIUM":
+      return "Mittel";
+    case "SLOW":
+      return "Langsam";
+    case "VERY_SLOW":
+      return "Sehr langsam";
+    default:
+      return "—";
+  }
+}
+
+function sellThroughSpeedVariant(speed: string) {
+  switch (speed) {
+    case "FAST":
+      return "success" as const;
+    case "MEDIUM":
+      return "secondary" as const;
+    case "SLOW":
+      return "warning" as const;
+    case "VERY_SLOW":
+      return "danger" as const;
+    default:
+      return "outline" as const;
+  }
+}
+
+function sellThroughConfidenceVariant(confidence: string) {
+  switch (confidence) {
+    case "HIGH":
+      return "success" as const;
+    case "MEDIUM":
+      return "secondary" as const;
+    case "LOW":
+    default:
+      return "outline" as const;
+  }
 }
 
 type AmazonHistoryPoint = {
@@ -451,7 +493,7 @@ function ReferenceImageThumb({
   );
 }
 
-function IdPill({
+function CopyIdPill({
   label,
   value,
 }: {
@@ -459,10 +501,19 @@ function IdPill({
   value: string;
 }) {
   return (
-    <span className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+    <button
+      type="button"
+      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-700 shadow-sm hover:bg-gray-50 active:bg-gray-100 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200 dark:hover:bg-gray-950/60 dark:active:bg-gray-950/80"
+      title={`${label} kopieren`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void copyToClipboard(value);
+      }}
+    >
       <span className="shrink-0 text-gray-500 dark:text-gray-400">{label}:</span>
       <span className="min-w-0 break-all font-mono">{value}</span>
-    </span>
+    </button>
   );
 }
 
@@ -1016,13 +1067,15 @@ export function MasterProductsPage() {
                         ) : null}
                       </div>
 
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        <IdPill label="EAN" value={m.ean ? m.ean : "—"} />
-                        <IdPill label="ASIN" value={m.asin ? m.asin : "—"} />
-                      </div>
+                      {viewMode === "catalog" && (m.ean || m.asin) ? (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {m.ean ? <CopyIdPill label="EAN" value={m.ean} /> : null}
+                          {m.asin ? <CopyIdPill label="ASIN" value={m.asin} /> : null}
+                        </div>
+                      ) : null}
 
                       {viewMode === "amazon" && m.asin ? (
-                        <div className="mt-2 space-y-1">
+                        <div className="mt-2 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
                             {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
@@ -1033,45 +1086,90 @@ export function MasterProductsPage() {
                             ) : (
                               <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
                             )}
+                            <CopyIdPill label="ASIN" value={m.asin} />
                             <Button
                               type="button"
                               variant="ghost"
-                              size="icon"
-                              aria-label={isExpanded(m.id) ? "Amazon Details einklappen" : "Amazon Details ausklappen"}
+                              size="sm"
+                              className="h-7 px-2"
+                              aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toggleExpanded(m.id);
                               }}
                             >
+                              Details
                               {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </Button>
                           </div>
 
-                          <div className="text-xs text-gray-700 dark:text-gray-200">
-                            BSR: {typeof m.amazon_rank_overall === "number" ? `#${m.amazon_rank_overall}` : "—"}
-                            {m.amazon_rank_overall_category ? ` (${m.amazon_rank_overall_category})` : ""}
-                            {" · "}
-                            {typeof m.amazon_rank_specific === "number" ? `#${m.amazon_rank_specific}` : "—"}
-                            {m.amazon_rank_specific_category ? ` (${m.amazon_rank_specific_category})` : ""}
-                          </div>
+                          {(() => {
+                            const used = computeUsedBest(m);
+                            const sell = estimateSellThroughFromBsr(m);
+                            const sellRange = formatSellThroughRange(sell.range_days);
+                            const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                            const rank = typeof m.amazon_rank_specific === "number" ? m.amazon_rank_specific : m.amazon_rank_overall;
+                            const rankCat = m.amazon_rank_specific_category ?? m.amazon_rank_overall_category ?? null;
+                            const usedOffers =
+                              typeof m.amazon_offers_count_used_priced_total === "number"
+                                ? m.amazon_offers_count_used_priced_total
+                                : null;
+                            const offers = typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : null;
 
-                          <div className="text-xs text-gray-700 dark:text-gray-200">
-                            {(() => {
-                              const used = computeUsedBest(m);
-                              return (
-                                <>
-                                  Used best {used.cents !== null ? `${fmtMaybeEur(used.cents)} (${used.label})` : "—"}{" "}
-                                  <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                                  Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}{" "}
-                                  <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                                  Offers {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}
-                                  {typeof m.amazon_offers_count_used_priced_total === "number"
-                                    ? ` (used: ${m.amazon_offers_count_used_priced_total})`
-                                    : ""}
-                                </>
-                              );
-                            })()}
-                          </div>
+                            return (
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                  <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    Used best
+                                  </div>
+                                  <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                    {used.cents !== null ? fmtMaybeEur(used.cents) : "—"}
+                                  </div>
+                                  <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                    {used.cents !== null ? used.label : "—"}
+                                  </div>
+                                </div>
+
+                                <div
+                                  className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30"
+                                  title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren."
+                                >
+                                  <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    Abverkauf
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
+                                    <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
+                                  </div>
+                                  <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                    <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
+                                  </div>
+                                </div>
+
+                                <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                  <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    BSR
+                                  </div>
+                                  <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                    {typeof rank === "number" ? `#${rank}` : "—"}
+                                  </div>
+                                  <div className="text-[11px] text-gray-500 dark:text-gray-400">{rankCat ?? "—"}</div>
+                                </div>
+
+                                <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                  <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    Offers
+                                  </div>
+                                  <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                    {usedOffers !== null ? `${usedOffers} used` : offers !== null ? `${offers}` : "—"}
+                                  </div>
+                                  <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                    Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {isExpanded(m.id) ? (
                             <div
@@ -1223,10 +1321,9 @@ export function MasterProductsPage() {
                                 </a>
                               ) : null}
 
-                              {viewMode === "amazon" && (m.ean || m.asin) ? (
+                              {viewMode === "amazon" && m.asin ? (
                                 <div className="mt-1 flex flex-wrap gap-1">
-                                  {m.ean ? <IdPill label="EAN" value={m.ean} /> : null}
-                                  {m.asin ? <IdPill label="ASIN" value={m.asin} /> : null}
+                                  <CopyIdPill label="ASIN" value={m.asin} />
                                 </div>
                               ) : null}
                             </div>
@@ -1235,17 +1332,21 @@ export function MasterProductsPage() {
 
                         {viewMode === "catalog" ? (
                           <TableCell className="text-sm">
-                            <div className="flex flex-wrap gap-1">
-                              {m.ean ? <IdPill label="EAN" value={m.ean} /> : <IdPill label="EAN" value="—" />}
-                              {m.asin ? <IdPill label="ASIN" value={m.asin} /> : <IdPill label="ASIN" value="—" />}
-                            </div>
+                            {m.ean || m.asin ? (
+                              <div className="flex flex-wrap gap-1">
+                                {m.ean ? <CopyIdPill label="EAN" value={m.ean} /> : null}
+                                {m.asin ? <CopyIdPill label="ASIN" value={m.asin} /> : null}
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 dark:text-gray-400">—</span>
+                            )}
                           </TableCell>
                         ) : (
                           <TableCell className="text-sm">
                             {!m.asin ? (
                               <span className="text-gray-500 dark:text-gray-400">—</span>
                             ) : (
-                              <div className="space-y-1">
+                              <div className="space-y-2">
                                 <div className="flex flex-wrap items-center gap-2">
                                   {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
                                   {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
@@ -1256,45 +1357,90 @@ export function MasterProductsPage() {
                                   ) : (
                                     <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
                                   )}
+                                  <CopyIdPill label="ASIN" value={m.asin} />
                                   <Button
                                     type="button"
                                     variant="ghost"
-                                    size="icon"
-                                    aria-label={isExpanded(m.id) ? "Amazon Details einklappen" : "Amazon Details ausklappen"}
+                                    size="sm"
+                                    className="h-7 px-2"
+                                    aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
                                     onClick={(e) => {
                                       e.preventDefault();
                                       toggleExpanded(m.id);
                                     }}
                                   >
+                                    Details
                                     {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                   </Button>
                                 </div>
 
-                                <div className="text-xs text-gray-700 dark:text-gray-200">
-                                  BSR: {typeof m.amazon_rank_overall === "number" ? `#${m.amazon_rank_overall}` : "—"}
-                                  {m.amazon_rank_overall_category ? ` (${m.amazon_rank_overall_category})` : ""}
-                                  {" · "}
-                                  {typeof m.amazon_rank_specific === "number" ? `#${m.amazon_rank_specific}` : "—"}
-                                  {m.amazon_rank_specific_category ? ` (${m.amazon_rank_specific_category})` : ""}
-                                </div>
+                                {(() => {
+                                  const used = computeUsedBest(m);
+                                  const sell = estimateSellThroughFromBsr(m);
+                                  const sellRange = formatSellThroughRange(sell.range_days);
+                                  const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                                  const rank = typeof m.amazon_rank_specific === "number" ? m.amazon_rank_specific : m.amazon_rank_overall;
+                                  const rankCat = m.amazon_rank_specific_category ?? m.amazon_rank_overall_category ?? null;
+                                  const usedOffers =
+                                    typeof m.amazon_offers_count_used_priced_total === "number"
+                                      ? m.amazon_offers_count_used_priced_total
+                                      : null;
+                                  const offers = typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : null;
 
-                                <div className="text-xs text-gray-700 dark:text-gray-200">
-                                  {(() => {
-                                    const used = computeUsedBest(m);
-                                    return (
-                                      <>
-                                        Used best {used.cents !== null ? `${fmtMaybeEur(used.cents)} (${used.label})` : "—"}{" "}
-                                        <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                                        Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}{" "}
-                                        <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                                        Offers {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}
-                                        {typeof m.amazon_offers_count_used_priced_total === "number"
-                                          ? ` (used: ${m.amazon_offers_count_used_priced_total})`
-                                          : ""}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
+                                  return (
+                                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                                      <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          Used best
+                                        </div>
+                                        <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                          {used.cents !== null ? fmtMaybeEur(used.cents) : "—"}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                          {used.cents !== null ? used.label : "—"}
+                                        </div>
+                                      </div>
+
+                                      <div
+                                        className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30"
+                                        title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren."
+                                      >
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          Abverkauf
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                                          <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
+                                          <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
+                                        </div>
+                                        <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                          <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
+                                        </div>
+                                      </div>
+
+                                      <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          BSR
+                                        </div>
+                                        <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                          {typeof rank === "number" ? `#${rank}` : "—"}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">{rankCat ?? "—"}</div>
+                                      </div>
+
+                                      <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          Offers
+                                        </div>
+                                        <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                          {usedOffers !== null ? `${usedOffers} used` : offers !== null ? `${offers}` : "—"}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                          Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )}
                           </TableCell>
