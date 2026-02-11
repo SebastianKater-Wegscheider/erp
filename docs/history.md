@@ -733,4 +733,4 @@
 ### Technische Entscheidung
 - Beim erfolgreichen Amazon-Scrape wird die ermittelte Bild-Quelle (Payload oder ASIN-Fallback) serverseitig heruntergeladen und unter `uploads/master-product-reference/` gespeichert.
 - In `reference_image_url` wird der lokale relative Storage-Pfad (kein externer URL-Link) persistiert.
-- Frontend-Rendering loest lokale Bildpfade ueber den API-Files-Endpunkt auf; fuer den Bild-Overlay-Link wird explizit die ASIN-Detailseite verwendet.
+- Frontend-Rendering loest lokale Bildpfade ueber einen oeffentlichen Backend-Endpoint (`/public/master-product-images/...`) auf; fuer den Bild-Overlay-Link wird explizit die ASIN-Detailseite verwendet.
