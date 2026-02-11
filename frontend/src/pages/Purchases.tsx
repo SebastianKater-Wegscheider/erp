@@ -1321,17 +1321,18 @@ export function PurchasesPage() {
           if (!open) closeForm();
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-6xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>{editingPurchaseId ? "Einkauf bearbeiten" : "Einkauf erfassen"}</DialogTitle>
+        <DialogContent className="flex h-[min(92dvh,900px)] w-[min(96vw,1180px)] max-w-6xl flex-col overflow-hidden p-0">
+          <DialogHeader className="border-b border-gray-200 bg-gray-50/70 px-6 pb-4 pt-5 dark:border-gray-800 dark:bg-gray-900/30">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Einkauf</div>
+            <DialogTitle className="text-2xl">{editingPurchaseId ? "Einkauf bearbeiten" : "Einkauf erfassen"}</DialogTitle>
             <DialogDescription>
               {editingPurchaseId ? `ID: ${editingPurchaseId}` : "Schnellerfassung in Tabs: Eckdaten, Positionen, Nachweise."}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-gray-900">
             <Tabs value={formTab} onValueChange={(value) => setFormTab(value as "BASICS" | "POSITIONS" | "ATTACHMENTS")} className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto">
+              <TabsList className="mx-6 mt-4 h-auto w-full justify-start gap-1 overflow-x-auto">
                 <TabsTrigger value="BASICS">Eckdaten</TabsTrigger>
                 <TabsTrigger value="POSITIONS">Positionen</TabsTrigger>
                 <TabsTrigger value="ATTACHMENTS" disabled={kind !== "PRIVATE_DIFF"}>
@@ -1339,8 +1340,14 @@ export function PurchasesPage() {
                 </TabsTrigger>
               </TabsList>
 
-              <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-                <TabsContent value="BASICS" className="space-y-4">
+              <div className="mt-4 min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+                <TabsContent value="BASICS" className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/40 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950/20">
+                  <div className="border-b border-gray-200 pb-3 dark:border-gray-800">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Eckdaten</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Stammdaten, Kosten und optionale Nachverfolgungsinfos fuer den Einkauf.
+                    </div>
+                  </div>
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="space-y-2">
                       <Label>Art</Label>
@@ -1550,7 +1557,13 @@ export function PurchasesPage() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="POSITIONS" className="space-y-3">
+                <TabsContent value="POSITIONS" className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/40 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950/20">
+                  <div className="border-b border-gray-200 pb-3 dark:border-gray-800">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Positionen</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Produkte zuordnen, Zustand erfassen und EK sauber aufteilen.
+                    </div>
+                  </div>
                   <div className="flex items-center justify-between">
                     <Button
                       variant="secondary"
@@ -1699,7 +1712,13 @@ export function PurchasesPage() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="ATTACHMENTS" className="space-y-4">
+                <TabsContent value="ATTACHMENTS" className="space-y-4 rounded-xl border border-gray-200 bg-gray-50/40 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950/20">
+                  <div className="border-b border-gray-200 pb-3 dark:border-gray-800">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Nachweise</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Dateien hochladen, Typ mappen und gesammelt am Einkauf verknuepfen.
+                    </div>
+                  </div>
                   {kind !== "PRIVATE_DIFF" ? (
                     <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
                       Nachweise sind nur fuer Privatankaeufe vorgesehen.
@@ -1930,7 +1949,7 @@ export function PurchasesPage() {
               </div>
             </Tabs>
 
-            <div className="mt-4 space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
+            <div className="mx-6 mt-3 space-y-2 border-t border-gray-200 pb-4 pt-3 dark:border-gray-800">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={splitOk ? "success" : "warning"}>
                   Aufteilung: {sumLinesCents === null ? "ungültig" : `${formatEur(sumLinesCents)} €`} / {formatEur(totalCents)} €
