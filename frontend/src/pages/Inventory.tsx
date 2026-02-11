@@ -1,4 +1,4 @@
-import { Copy, Image as ImageIcon, MoreHorizontal, RefreshCw, Search, X } from "lucide-react";
+import { Copy, Image as ImageIcon, MoreHorizontal, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -18,9 +18,12 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
+import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
 type InventoryItem = {
@@ -787,16 +790,14 @@ export function InventoryPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xl font-semibold">Lagerbestand</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            {viewMode === "overview"
-              ? "Priorisieren nach Marktpreis, Abverkauf und Marge."
-              : "Operative Pflege für SN, Lagerplatz, Bilder und Artikelzustand."}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="Lagerbestand"
+        description={
+          viewMode === "overview"
+            ? "Priorisieren nach Marktpreis, Abverkauf und Marge."
+            : "Operative Pflege für SN, Lagerplatz, Bilder und Artikelzustand."
+        }
+        actions={
           <Button
             variant="secondary"
             onClick={() => {
@@ -808,13 +809,14 @@ export function InventoryPage() {
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-        </div>
-      </div>
+        }
+        actionsClassName="w-full sm:w-auto"
+      />
 
       {(inv.isError || master.isError || rowImages.isError) && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+        <InlineMessage tone="error">
           {((inv.error ?? master.error ?? rowImages.error) as Error).message}
-        </div>
+        </InlineMessage>
       )}
 
       <Card>
@@ -850,20 +852,12 @@ export function InventoryPage() {
         <CardContent className="space-y-3">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-1 items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
-                <Input
-                  placeholder="SKU/Titel/EAN/ASIN…"
-                  value={q}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              {q.trim() && (
-                <Button type="button" variant="ghost" size="icon" onClick={() => setSearchQuery("")} aria-label="Suche löschen">
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
+              <SearchField
+                className="flex-1"
+                value={q}
+                onValueChange={setSearchQuery}
+                placeholder="SKU/Titel/EAN/ASIN…"
+              />
             </div>
 
             <div className="flex items-center gap-2">
@@ -1677,9 +1671,9 @@ export function InventoryPage() {
             </div>
 
             {update.isError && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+              <InlineMessage tone="error">
                 {(update.error as Error).message}
-              </div>
+              </InlineMessage>
             )}
 
             <div className="space-y-2">
@@ -1727,9 +1721,9 @@ export function InventoryPage() {
               </div>
 
               {(images.isError || uploadImages.isError || removeImage.isError) && (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+                <InlineMessage tone="error">
                   {((images.error ?? uploadImages.error ?? removeImage.error) as Error).message}
-                </div>
+                </InlineMessage>
               )}
 
               {!!(images.data ?? []).length && (

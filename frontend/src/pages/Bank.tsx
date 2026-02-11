@@ -9,8 +9,10 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
@@ -139,33 +141,32 @@ export function BankPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xl font-semibold">Banktransaktionen</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Sync aus dem Bank-Provider und Zuordnung zu Einkäufen.
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full sm:w-auto"
-            onClick={() => {
-              void accounts.refetch();
-              void purchases.refetch();
-              void transactions.refetch();
-            }}
-            disabled={accounts.isFetching || purchases.isFetching || transactions.isFetching}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Aktualisieren
-          </Button>
-          <Button type="button" className="w-full sm:w-auto" onClick={() => sync.mutate()} disabled={sync.isPending}>
-            Sync
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Banktransaktionen"
+        description="Sync aus dem Bank-Provider und Zuordnung zu Einkäufen."
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={() => {
+                void accounts.refetch();
+                void purchases.refetch();
+                void transactions.refetch();
+              }}
+              disabled={accounts.isFetching || purchases.isFetching || transactions.isFetching}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Aktualisieren
+            </Button>
+            <Button type="button" className="w-full sm:w-auto" onClick={() => sync.mutate()} disabled={sync.isPending}>
+              Sync
+            </Button>
+          </>
+        }
+        actionsClassName="w-full sm:w-auto"
+      />
 
       <Card>
         <CardHeader className="space-y-2">
@@ -212,9 +213,9 @@ export function BankPage() {
           </div>
 
           {(accounts.isError || purchases.isError || transactions.isError) && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+            <InlineMessage tone="error">
               {(((transactions.error ?? accounts.error ?? purchases.error) as Error) ?? new Error("Unbekannter Fehler")).message}
-            </div>
+            </InlineMessage>
           )}
 
           {transactions.isLoading ? (

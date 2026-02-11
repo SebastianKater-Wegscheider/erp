@@ -543,3 +543,22 @@
 - `Marktpreis`, `Abverkauf`, `Marge` erhalten identische Header-/Cell-Breiten und verwenden dieselbe rechtsbuendige Card-Klasse.
 - Abverkauf-Meta wird als kompakte Textzeile (`Speed · BSR · Sicherheit`) dargestellt; Badge-Elemente werden aus der Desktop-Karte entfernt.
 - Card-Meta-Zeilen werden auf eine Zeile begrenzt (`truncate`), damit Kartenhoehen zwischen Datensaetzen konsistent bleiben.
+
+## 2026-02-11 - Frontend Harmonisierung: gemeinsame Header/Message/Search-Primitives
+
+### Ausgangslage
+- Die Seiten nutzten ähnliche UI-Bloecke mit leicht unterschiedlichen Abstaenden/Typografie (Seitentitel + Aktionen, Suchleisten, Fehlermeldungen).
+- Das fuehrte zu visueller Inkonsistenz und wiederholtem JSX-Code in nahezu allen Modulen.
+
+### Business-Entscheidung
+- Einheitlicher Look & Feel ueber alle Kernseiten mit Fokus auf schnelle Orientierung.
+- Low-prio Layout-Varianten werden entfernt; stattdessen einheitliche Primitiv-Bausteine fuer wiederkehrende UI-Muster.
+
+### Technische Entscheidung
+- Neue wiederverwendbare UI-Primitives:
+  - `PageHeader` fuer Titel/Beschreibung/Aktionen.
+  - `InlineMessage` fuer neutrale/info/error Hinweise.
+  - `SearchField` fuer standardisierte Suche mit integrierter Clear-Interaktion.
+- Anwendung auf alle zentralen Seiten (`Dashboard`, `MasterProducts`, `Inventory`, `FBAShipments`, `Purchases`, `Sales`, `CostAllocations`, `Opex`, `Mileage`, `Vat`, `Bank`) in den jeweils passenden Bereichen.
+- Dichte Stellen in den Listenoberflaechen werden durch konsistente Filter-/Headerstruktur entschlackt, ohne Kernfunktionen zu aendern.
+- `App` nutzt Route-Level Code Splitting (`React.lazy` + `Suspense`), damit grosse Seiten erst bei Navigation geladen werden und Initial-Load leichter bleibt.

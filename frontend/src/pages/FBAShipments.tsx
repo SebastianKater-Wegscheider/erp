@@ -1,4 +1,4 @@
-import { Check, PackageCheck, PackageOpen, Plus, RefreshCw, Search, X } from "lucide-react";
+import { Check, PackageCheck, PackageOpen, Plus, RefreshCw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -8,9 +8,12 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
 type InventoryItem = {
@@ -275,24 +278,23 @@ export function FBAShipmentsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xl font-semibold">FBA Sendungen</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Inbound-Sendungen an Amazon verwalten, Versandkosten umlegen und Empfang abgleichen.
-          </div>
-        </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <Button className="w-full sm:w-auto" variant="secondary" onClick={() => shipments.refetch()} disabled={shipments.isFetching}>
-            <RefreshCw className="h-4 w-4" />
-            Aktualisieren
-          </Button>
-          <Button className="w-full sm:w-auto" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Sendung erstellen
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="FBA Sendungen"
+        description="Inbound-Sendungen an Amazon verwalten, Versandkosten umlegen und Empfang abgleichen."
+        actions={
+          <>
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => shipments.refetch()} disabled={shipments.isFetching}>
+              <RefreshCw className="h-4 w-4" />
+              Aktualisieren
+            </Button>
+            <Button className="w-full sm:w-auto" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              Sendung erstellen
+            </Button>
+          </>
+        }
+        actionsClassName="w-full sm:w-auto"
+      />
 
       <Card>
         <CardHeader>
@@ -300,27 +302,16 @@ export function FBAShipmentsPage() {
           <CardDescription>{shipments.isPending ? "Lade…" : `${listRows.length} Einträge`}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
-              <Input
-                placeholder="Suchen (Name, Carrier, Tracking)"
-                value={searchShipment}
-                onChange={(e) => setSearchShipment(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            {searchShipment.trim() && (
-              <Button type="button" variant="ghost" size="icon" onClick={() => setSearchShipment("")}>
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          <SearchField
+            value={searchShipment}
+            onValueChange={setSearchShipment}
+            placeholder="Suchen (Name, Carrier, Tracking)"
+          />
 
           {shipments.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+            <InlineMessage tone="error">
               {(shipments.error as Error).message}
-            </div>
+            </InlineMessage>
           )}
 
           <div className="md:hidden space-y-2">

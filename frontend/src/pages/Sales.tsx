@@ -8,8 +8,10 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
@@ -316,24 +318,23 @@ export function SalesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xl font-semibold">Verkäufe</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Aufträge erfassen, abschließen und Rechnungen als PDF erstellen.
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => orders.refetch()} disabled={orders.isFetching}>
-            <RefreshCw className="h-4 w-4" />
-            Aktualisieren
-          </Button>
-          <Button className="w-full sm:w-auto" onClick={openCreateForm}>
-            <Plus className="h-4 w-4" />
-            {editingOrderId ? "Neuer Auftrag" : "Auftrag erstellen"}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Verkäufe"
+        description="Aufträge erfassen, abschließen und Rechnungen als PDF erstellen."
+        actions={
+          <>
+            <Button variant="secondary" className="w-full sm:w-auto" onClick={() => orders.refetch()} disabled={orders.isFetching}>
+              <RefreshCw className="h-4 w-4" />
+              Aktualisieren
+            </Button>
+            <Button className="w-full sm:w-auto" onClick={openCreateForm}>
+              <Plus className="h-4 w-4" />
+              {editingOrderId ? "Neuer Auftrag" : "Auftrag erstellen"}
+            </Button>
+          </>
+        }
+        actionsClassName="w-full sm:w-auto"
+      />
 
       <Card>
         <CardHeader className="space-y-2">
@@ -346,14 +347,14 @@ export function SalesPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {orders.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+            <InlineMessage tone="error">
               {(orders.error as Error).message}
-            </div>
+            </InlineMessage>
           )}
           {(generateInvoicePdf.isError || reopenOrder.isError) && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+            <InlineMessage tone="error">
               {String(((generateInvoicePdf.error as Error) ?? (reopenOrder.error as Error))?.message ?? "Unbekannter Fehler")}
-            </div>
+            </InlineMessage>
           )}
 
           <div className="space-y-2 md:hidden">

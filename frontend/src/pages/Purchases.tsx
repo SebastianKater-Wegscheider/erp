@@ -11,8 +11,10 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
@@ -1058,24 +1060,23 @@ export function PurchasesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xl font-semibold">Einkäufe</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Einkäufe erfassen, Belege hochladen und Eigenbelege als PDF erstellen.
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => list.refetch()} disabled={list.isFetching}>
-            <RefreshCw className="h-4 w-4" />
-            Aktualisieren
-          </Button>
-          <Button className="w-full sm:w-auto" onClick={openCreateForm}>
-            <Plus className="h-4 w-4" />
-            {editingPurchaseId ? "Neuer Einkauf" : "Einkauf erfassen"}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Einkäufe"
+        description="Einkäufe erfassen, Belege hochladen und Eigenbelege als PDF erstellen."
+        actions={
+          <>
+            <Button variant="secondary" className="w-full sm:w-auto" onClick={() => list.refetch()} disabled={list.isFetching}>
+              <RefreshCw className="h-4 w-4" />
+              Aktualisieren
+            </Button>
+            <Button className="w-full sm:w-auto" onClick={openCreateForm}>
+              <Plus className="h-4 w-4" />
+              {editingPurchaseId ? "Neuer Einkauf" : "Einkauf erfassen"}
+            </Button>
+          </>
+        }
+        actionsClassName="w-full sm:w-auto"
+      />
 
       <Card>
         <CardHeader className="space-y-2">
@@ -1089,14 +1090,14 @@ export function PurchasesPage() {
         <CardContent className="space-y-3">
 
           {list.isError && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+            <InlineMessage tone="error">
               {(list.error as Error).message}
-            </div>
+            </InlineMessage>
           )}
           {(generatePdf.isError || reopenPurchase.isError) && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+            <InlineMessage tone="error">
               {String(((generatePdf.error as Error) ?? (reopenPurchase.error as Error))?.message ?? "Unbekannter Fehler")}
-            </div>
+            </InlineMessage>
           )}
 
           <div className="space-y-2 md:hidden">

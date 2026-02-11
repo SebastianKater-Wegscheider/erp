@@ -7,8 +7,10 @@ import { useTaxProfile } from "../lib/taxProfile";
 import { formatEur } from "../lib/money";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PageHeader } from "../components/ui/page-header";
 
 type VatReportOut = {
   period_start: string;
@@ -61,20 +63,17 @@ export function VatPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xl font-semibold">Umsatzsteuer</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Monatsauswertung für Regelbesteuerung und Differenzbesteuerung.
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="Umsatzsteuer"
+        description="Monatsauswertung für Regelbesteuerung und Differenzbesteuerung."
+        actions={
           <Button onClick={applyPeriod} disabled={!periodValid || q.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Berechnen
           </Button>
-        </div>
-      </div>
+        }
+        actionsClassName="w-full sm:w-auto"
+      />
 
       <Card>
         <CardHeader className="space-y-2">
@@ -116,22 +115,22 @@ export function VatPage() {
               </CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="text-sm text-gray-700 dark:text-gray-200">
-            {taxProfile.data?.small_business_notice ? (
-              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-gray-800 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-100">
-                {taxProfile.data.small_business_notice}
-              </div>
-            ) : (
-              <div className="text-gray-600 dark:text-gray-300">Hinweis: Kleinunternehmerregelung ist aktiv.</div>
-            )}
-          </CardContent>
+            <CardContent className="text-sm text-gray-700 dark:text-gray-200">
+              {taxProfile.data?.small_business_notice ? (
+                <InlineMessage tone="info" className="text-gray-800 dark:text-gray-100">
+                  {taxProfile.data.small_business_notice}
+                </InlineMessage>
+              ) : (
+                <div className="text-gray-600 dark:text-gray-300">Hinweis: Kleinunternehmerregelung ist aktiv.</div>
+              )}
+            </CardContent>
         </Card>
       )}
 
       {q.isError && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+        <InlineMessage tone="error">
           {(q.error as Error).message}
-        </div>
+        </InlineMessage>
       )}
 
       {vatEnabled && (

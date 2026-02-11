@@ -10,7 +10,9 @@ import { MultiLineChart } from "../components/charts/MultiLineChart";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
+import { PageHeader } from "../components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
 type CompanyDashboardOut = {
@@ -176,25 +178,22 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xl font-semibold">Übersicht</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Kennzahlen, Performance und Inbox auf einen Blick.
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="Übersicht"
+        description="Kennzahlen, Performance und Inbox auf einen Blick."
+        actions={
           <Button variant="secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
             <RefreshCw className="h-4 w-4" />
             Aktualisieren
           </Button>
-        </div>
-      </div>
+        }
+        actionsClassName="w-full sm:w-auto"
+      />
 
       {q.isError && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
+        <InlineMessage tone="error">
           {(q.error as Error).message}
-        </div>
+        </InlineMessage>
       )}
 
       <div className="grid gap-4 md:grid-cols-4">
