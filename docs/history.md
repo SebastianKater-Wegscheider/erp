@@ -528,3 +528,18 @@
 ### Technische Entscheidung
 - KPI-Karten (`Marktpreis`, `Abverkauf`, `Marge`) bekommen identische Mindesthoehe und `justify-between`, damit alle Karten ueber Zeilen konsistent gleich hoch rendern.
 - Karten und Mikro-Tags wechseln auf rundere Shapes (`rounded-xl`/`rounded-full`) und etwas weichere Hintergruende fuer ruhigeren Gesamteindruck.
+
+## 2026-02-11 - Inventory Priorisieren: striktes KPI-Grid (Alignment + Spacing)
+
+### Ausgangslage
+- Trotz runderer Cards wirkte die Zeile noch inkonsistent, weil `Abverkauf` linksbuendig aufgebaut war, waehrend `Marktpreis/Marge` rechtsbuendig waren.
+- Uneinheitliche Breiten und teils umbrechende Meta-Zeilen erzeugten unruhige Abstaende zwischen den KPI-Spalten.
+
+### Business-Entscheidung
+- KPI-Spalten sollen wie ein einheitliches Grid wirken: gleiche Breite, gleiche Hoehe, gleiches Text-Alignment.
+- Meta-Information bleibt vorhanden, aber in einer ruhigen, einzeiligen Form ohne zusätzliche visuelle Chips in der Desktop-Zeile.
+
+### Technische Entscheidung
+- `Marktpreis`, `Abverkauf`, `Marge` erhalten identische Header-/Cell-Breiten und verwenden dieselbe rechtsbuendige Card-Klasse.
+- Abverkauf-Meta wird als kompakte Textzeile (`Speed · BSR · Sicherheit`) dargestellt; Badge-Elemente werden aus der Desktop-Karte entfernt.
+- Card-Meta-Zeilen werden auf eine Zeile begrenzt (`truncate`), damit Kartenhoehen zwischen Datensaetzen konsistent bleiben.

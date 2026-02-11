@@ -113,10 +113,9 @@ type InventoryViewMode = "overview" | "ops";
 type InventoryQueue = "ALL" | "PHOTOS_MISSING" | "STORAGE_MISSING" | "AMAZON_STALE" | "OLD_STOCK_90D";
 
 const INVENTORY_VIEW_KEY = "inventory:view";
-const OVERVIEW_METRIC_CARD_BASE_CLASS =
-  "inline-flex min-h-[5.75rem] min-w-[10rem] flex-col justify-between rounded-xl border border-gray-200/90 bg-gray-50/80 px-2.5 py-2 dark:border-gray-800 dark:bg-gray-900/50";
-const OVERVIEW_METRIC_CARD_RIGHT_CLASS = `${OVERVIEW_METRIC_CARD_BASE_CLASS} ml-auto text-right`;
-const OVERVIEW_METRIC_CARD_LEFT_CLASS = OVERVIEW_METRIC_CARD_BASE_CLASS;
+const OVERVIEW_METRIC_CELL_CLASS = "w-[11.25rem] text-right";
+const OVERVIEW_METRIC_CARD_CLASS =
+  "inline-flex w-full min-h-[5.5rem] flex-col items-end justify-between rounded-xl border border-gray-200/90 bg-gray-50/80 px-3 py-2 text-right dark:border-gray-800 dark:bg-gray-900/50";
 const INVENTORY_QUEUE_OPTIONS: Array<{ value: InventoryQueue; label: string }> = [
   { value: "ALL", label: "Alle" },
   { value: "PHOTOS_MISSING", label: "Fotos fehlen" },
@@ -1247,9 +1246,9 @@ export function InventoryPage() {
                   <TableRow>
                     <TableHead>Produkt</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Marktpreis</TableHead>
-                    <TableHead>Abverkauf</TableHead>
-                    <TableHead className="text-right">Marge</TableHead>
+                    <TableHead className={OVERVIEW_METRIC_CELL_CLASS}>Marktpreis</TableHead>
+                    <TableHead className={OVERVIEW_METRIC_CELL_CLASS}>Abverkauf</TableHead>
+                    <TableHead className={OVERVIEW_METRIC_CELL_CLASS}>Marge</TableHead>
                     <TableHead className="text-right"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1279,7 +1278,7 @@ export function InventoryPage() {
                     const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
 
                     return (
-                      <TableRow key={it.id} className="align-top [&>td]:py-4">
+                      <TableRow key={it.id} className="align-top [&>td]:py-3">
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
@@ -1338,28 +1337,24 @@ export function InventoryPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className={OVERVIEW_METRIC_CARD_RIGHT_CLASS}>
+                        <TableCell className={OVERVIEW_METRIC_CELL_CLASS}>
+                          <div className={OVERVIEW_METRIC_CARD_CLASS}>
                             <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                               {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
                             </div>
-                            <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{market.label}</div>
+                            <div className="mt-0.5 w-full truncate text-[11px] text-gray-500 dark:text-gray-400">{market.label}</div>
                           </div>
                         </TableCell>
-                        <TableCell title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren.">
-                          <div className={OVERVIEW_METRIC_CARD_LEFT_CLASS}>
+                        <TableCell className={OVERVIEW_METRIC_CELL_CLASS} title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren.">
+                          <div className={OVERVIEW_METRIC_CARD_CLASS}>
                             <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2">
-                              <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
-                              <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{bsrLabel}</span>
-                            </div>
-                            <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                              Sicherheit {sellThroughConfidenceLabel(sell.confidence)}
+                            <div className="mt-0.5 w-full truncate text-[11px] text-gray-500 dark:text-gray-400">
+                              {sellThroughSpeedLabel(sell.speed)} · {bsrLabel} · {sellThroughConfidenceLabel(sell.confidence)}
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right" title={feeTitle}>
-                          <div className={OVERVIEW_METRIC_CARD_RIGHT_CLASS}>
+                        <TableCell className={OVERVIEW_METRIC_CELL_CLASS} title={feeTitle}>
+                          <div className={OVERVIEW_METRIC_CARD_CLASS}>
                             <div
                               className={[
                                 "font-semibold tabular-nums",
@@ -1372,7 +1367,7 @@ export function InventoryPage() {
                             >
                               {margin === null ? "—" : `${formatEur(margin)} €`}
                             </div>
-                            <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                            <div className="mt-0.5 w-full truncate text-[11px] text-gray-500 dark:text-gray-400">
                               EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
                             </div>
                           </div>
