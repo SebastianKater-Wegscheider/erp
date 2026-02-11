@@ -75,6 +75,7 @@ async def test_persist_scrape_result_updates_snapshot(db_session: AsyncSession) 
         "marketplace": "amazon.de",
         "asin": "B000FC2BTQ",
         "dp_url": "https://amazon.de/dp/B000FC2BTQ",
+        "image_url": "https://m.media-amazon.com/images/I/81example.jpg",
         "offer_listing_url": "https://amazon.de/gp/offer-listing/B000FC2BTQ",
         "delivery_zip": "80331",
         "blocked": False,
@@ -133,6 +134,10 @@ async def test_persist_scrape_result_updates_snapshot(db_session: AsyncSession) 
     assert latest.offers_count_total == 5
     assert latest.offers_count_priced_total == 4
     assert latest.offers_count_used_priced_total == 2
+
+    mp_updated = await db_session.get(MasterProduct, mp_id)
+    assert mp_updated is not None
+    assert mp_updated.reference_image_url == "https://m.media-amazon.com/images/I/81example.jpg"
 
 
 @pytest.mark.asyncio

@@ -244,6 +244,54 @@ def _derived_ranks(data: dict[str, Any]) -> tuple[int | None, str | None, int | 
     return overall_rank, overall_cat, specific_rank, specific_cat
 
 
+def _normalize_image_url(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    lowered = raw.lower()
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        return raw
+    return None
+
+
+def _extract_image_url(data: dict[str, Any]) -> str | None:
+    direct_keys = (
+        "image_url",
+        "image",
+        "image_src",
+        "main_image_url",
+        "main_image",
+        "primary_image_url",
+    )
+    for key in direct_keys:
+        url = _normalize_image_url(data.get(key))
+        if url is not None:
+            return url
+
+    product = data.get("product")
+    if isinstance(product, dict):
+        for key in ("image_url", "image", "image_src", "main_image_url", "primary_image_url"):
+            url = _normalize_image_url(product.get(key))
+            if url is not None:
+                return url
+
+    images = data.get("images")
+    if isinstance(images, list):
+        for entry in images:
+            if isinstance(entry, dict):
+                for key in ("url", "src", "image_url", "image"):
+                    url = _normalize_image_url(entry.get(key))
+                    if url is not None:
+                        return url
+            else:
+                url = _normalize_image_url(entry)
+                if url is not None:
+                    return url
+    return None
+
+
 async def persist_scrape_result(
     *,
     session: AsyncSession,
@@ -362,6 +410,12 @@ async def persist_scrape_result(
         latest.last_success_at = finished_at
         latest.next_retry_at = None
         latest.consecutive_failures = 0
+
+        image_url = _extract_image_url(data)
+        if image_url is not None:
+            mp = await session.get(MasterProduct, master_product_id)
+            if mp is not None:
+                mp.reference_image_url = image_url
     else:
         # failure or blocked: keep last_success_at intact, schedule retry externally
         latest.consecutive_failures = max(0, int(latest.consecutive_failures or 0)) + 1
