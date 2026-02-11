@@ -458,7 +458,7 @@ export function DashboardPage() {
                   <InboxRow to="/inventory?status=DRAFT" label="Lager: Entwürfe" count={data.inventory_draft_count} />
                   <InboxRow to="/inventory?status=RESERVED" label="Lager: Reserviert" count={data.inventory_reserved_count} warn={data.inventory_reserved_count > 0} />
                   <InboxRow to="/inventory?status=RETURNED" label="Lager: Retouren" count={data.inventory_returned_count} warn={data.inventory_returned_count > 0} />
-                  <InboxRow to="/master-products" label="Produkte ohne ASIN" count={data.master_products_missing_asin_count} warn={data.master_products_missing_asin_count > 0} />
+                  <InboxRow to="/master-products?missing=asin&view=catalog" label="Produkte ohne ASIN" count={data.master_products_missing_asin_count} warn={data.master_products_missing_asin_count > 0} />
                   <InboxRow
                     to="/sales"
                     label="Negative Marge (30T)"

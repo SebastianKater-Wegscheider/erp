@@ -376,3 +376,27 @@
 - Zusaetzlicher Unit-Test fuer `_slice_image_for_pdf`: stellt sicher, dass kurze Bilder nicht gesliced werden und hohe Screenshots in mehrere PNG-Teile zerlegt werden.
 - Frontend: kleine Component-Tests fuer `Input`/`Select`/`Dialog` (>=16px auf Mobile, Dialog max-height/scroll + Safe-Area Close) sowie `Topbar` (Drawer oeffnet ohne Auto-Focus auf Search Input).
 - Refactor: `_slice_image_for_pdf` schliesst jetzt garantiert das originale `Image.open()` Handle (verhindert FD-Leaks bei vielen Evidence-Dateien).
+
+## 2026-02-11 - Produktstamm List View: Fokus-Modi + weniger Clutter
+
+### Ausgangslage
+- Die Produktstamm-Liste zeigte Katalog- und Amazon-Signale gleichzeitig. Das erzeugte visuelle Dichte und erschwerte fokussiertes Arbeiten je nach Aufgabe.
+- Filter waren dauerhaft sichtbar und mischten Basis-Filter (Suche/Typ) mit selteneren Amazon-Filtern.
+- Die UUID war immer inline sichtbar, obwohl sie nur situativ gebraucht wird.
+
+### Business-Entscheidungen
+- Zwei explizite Arbeitsmodi in der Liste: `Katalog` (Stammdatenpflege) und `Amazon` (Marktsignale/Monitoring).
+- Progressive Disclosure fuer Filter: oben nur Basissteuerung, erweiterte Filter in einem einklappbaren Bereich.
+- "Produkte ohne ASIN" wird als direkter Fokus-Entry unterstuetzt, inklusive Deep-Link vom Dashboard.
+- UUID wird nicht mehr als Dauerrauschen angezeigt, aber bleibt per "UUID kopieren" in Aktionen sofort verfuegbar.
+
+### Technische Entscheidungen
+- Neue URL-Parameter auf `/master-products`: `view=catalog|amazon` und `missing=asin`.
+- Modus-Persistenz via `localStorage` (`master-products:view`); URL hat Vorrang, Benutzerwechsel schreibt den Parameter aktiv zurueck in die URL.
+- Filter-Panel implementiert als collapsible Bereich mit aktivem Filter-Counter und globalem Reset.
+- Listen-Rendering trennt Desktop/Mobile je nach Modus:
+  - `Katalog`: Produkt + IDs, ohne Amazon-Block.
+  - `Amazon`: Amazon-Summary als Hauptspalte inkl. Expand-Details.
+- Dashboard-Inbox-Link "Produkte ohne ASIN" verweist auf `/master-products?missing=asin&view=catalog`.
+- Frontend-Test-Setup haertet `localStorage`/`sessionStorage` explizit auf Storage-kompatible Methoden, damit Tests robust gegen fehlerhafte Runtime-Shims laufen.
+- Neue Component-Tests fuer `MasterProducts` decken Modus-Sichtbarkeit (`Katalog` vs `Amazon`), URL-Filter `missing=asin` und die UUID-Copy-Aktion ab.

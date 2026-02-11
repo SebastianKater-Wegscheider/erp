@@ -1,4 +1,18 @@
-import { ChevronDown, ChevronRight, ExternalLink, Image as ImageIcon, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Image as ImageIcon,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -17,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 
 type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
+type MasterProductsViewMode = "catalog" | "amazon";
 
 type MasterProduct = {
   id: string;
@@ -99,6 +114,8 @@ const EMPTY_FORM: MasterProductFormState = {
   release_year: "",
   reference_image_url: "",
 };
+
+const MASTER_PRODUCTS_VIEW_KEY = "master-products:view";
 
 function kindLabel(kind: MasterProductKind): string {
   return KIND_OPTIONS.find((k) => k.value === kind)?.label ?? kind;
@@ -317,6 +334,61 @@ function tryParseEurCents(input: string): number | null {
   }
 }
 
+function normalizeViewParam(value?: string | null): MasterProductsViewMode | null {
+  if (value === "catalog" || value === "amazon") return value;
+  return null;
+}
+
+function readPersistedViewMode(): MasterProductsViewMode | null {
+  if (typeof window === "undefined") return null;
+  const getItem = window.localStorage?.getItem;
+  if (typeof getItem !== "function") return null;
+  try {
+    return normalizeViewParam(getItem.call(window.localStorage, MASTER_PRODUCTS_VIEW_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function persistViewMode(viewMode: MasterProductsViewMode): void {
+  if (typeof window === "undefined") return;
+  const setItem = window.localStorage?.setItem;
+  if (typeof setItem !== "function") return;
+  try {
+    setItem.call(window.localStorage, MASTER_PRODUCTS_VIEW_KEY, viewMode);
+  } catch {
+    // Ignore storage write failures (private mode, blocked storage, test shims).
+  }
+}
+
+function copyViaExecCommand(value: string): boolean {
+  if (typeof document === "undefined") return false;
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "absolute";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  return ok;
+}
+
+async function copyToClipboard(value: string): Promise<boolean> {
+  const text = value.trim();
+  if (!text) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return copyViaExecCommand(text);
+    }
+  }
+  return copyViaExecCommand(text);
+}
+
 function ReferenceImageThumb({
   url,
   alt,
@@ -406,8 +478,18 @@ export function MasterProductsPage() {
   const api = useApi();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const viewParam = normalizeViewParam(searchParams.get("view"));
+  const missingAsinOnly = searchParams.get("missing") === "asin";
   const createParam = searchParams.get("create");
   const handledCreateRef = useRef(false);
+  const [viewMode, setViewMode] = useState<MasterProductsViewMode>(() => {
+    const fromUrl = normalizeViewParam(searchParams.get("view"));
+    if (fromUrl) return fromUrl;
+    const fromStorage = readPersistedViewMode();
+    if (fromStorage) return fromStorage;
+    return "catalog";
+  });
+  const [filtersOpen, setFiltersOpen] = useState(() => searchParams.get("missing") === "asin");
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<MasterProductKind | "ALL">("ALL");
   const [amazonStaleOnly, setAmazonStaleOnly] = useState(false);
@@ -428,6 +510,18 @@ export function MasterProductsPage() {
     queryKey: ["master-products"],
     queryFn: () => api.request<MasterProduct[]>("/master-products"),
   });
+
+  useEffect(() => {
+    if (viewParam && viewParam !== viewMode) setViewMode(viewParam);
+  }, [viewMode, viewParam]);
+
+  useEffect(() => {
+    if (missingAsinOnly) setFiltersOpen(true);
+  }, [missingAsinOnly]);
+
+  useEffect(() => {
+    persistViewMode(viewMode);
+  }, [viewMode]);
 
   useEffect(() => {
     if (createParam !== "1") {
@@ -556,10 +650,38 @@ export function MasterProductsPage() {
     remove.reset();
   }
 
+  function setViewModePersisted(nextMode: MasterProductsViewMode) {
+    setViewMode(nextMode);
+    const next = new URLSearchParams(searchParams);
+    next.set("view", nextMode);
+    setSearchParams(next);
+  }
+
+  function setMissingAsinParam(nextEnabled: boolean) {
+    const next = new URLSearchParams(searchParams);
+    if (nextEnabled) next.set("missing", "asin");
+    else next.delete("missing");
+    setSearchParams(next);
+  }
+
+  function resetAllFilters() {
+    setSearch("");
+    setKindFilter("ALL");
+    setAmazonStaleOnly(false);
+    setAmazonBlockedOnly(false);
+    setAmazonMaxNew("");
+    setAmazonMaxLikeNew("");
+    setFiltersOpen(false);
+    const next = new URLSearchParams(searchParams);
+    next.delete("missing");
+    setSearchParams(next, { replace: true });
+  }
+
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     let all = list.data ?? [];
     if (kindFilter !== "ALL") all = all.filter((m) => m.kind === kindFilter);
+    if (missingAsinOnly) all = all.filter((m) => !m.asin?.trim());
     if (amazonStaleOnly) all = all.filter((m) => isAmazonStale(m));
     if (amazonBlockedOnly) all = all.filter((m) => !!m.amazon_blocked_last);
 
@@ -579,7 +701,7 @@ export function MasterProductsPage() {
         .toLowerCase()
         .includes(q),
     );
-  }, [amazonBlockedOnly, amazonMaxLikeNew, amazonMaxNew, amazonStaleOnly, kindFilter, list.data, search]);
+  }, [amazonBlockedOnly, amazonMaxLikeNew, amazonMaxNew, amazonStaleOnly, kindFilter, list.data, missingAsinOnly, search]);
 
   function isExpanded(id: string): boolean {
     return !!expanded[id];
@@ -595,6 +717,17 @@ export function MasterProductsPage() {
   }
 
   const totalCount = list.data?.length ?? 0;
+  const parsedMaxNew = tryParseEurCents(amazonMaxNew);
+  const parsedMaxLikeNew = tryParseEurCents(amazonMaxLikeNew);
+  const activeFilterCount =
+    (search.trim() ? 1 : 0) +
+    (kindFilter !== "ALL" ? 1 : 0) +
+    (missingAsinOnly ? 1 : 0) +
+    (amazonStaleOnly ? 1 : 0) +
+    (amazonBlockedOnly ? 1 : 0) +
+    (parsedMaxNew !== null ? 1 : 0) +
+    (parsedMaxLikeNew !== null ? 1 : 0);
+  const hasActiveFilters = activeFilterCount > 0;
 
   return (
     <div className="space-y-4">
@@ -619,79 +752,141 @@ export function MasterProductsPage() {
 
       <Card>
         <CardHeader className="space-y-2">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Produkte</CardTitle>
-            <CardDescription>
-              {list.isPending ? "Lade…" : `${rows.length}${rows.length !== totalCount ? ` / ${totalCount}` : ""} Produkte`}
-            </CardDescription>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <CardTitle>Produkte</CardTitle>
+              <CardDescription>
+                {list.isPending ? "Lade…" : `${rows.length}${rows.length !== totalCount ? ` / ${totalCount}` : ""} Produkte`}
+              </CardDescription>
+            </div>
+            <div className="inline-flex items-center gap-1 rounded-md border border-gray-200 p-1 dark:border-gray-800">
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === "catalog" ? "secondary" : "ghost"}
+                onClick={() => setViewModePersisted("catalog")}
+              >
+                Katalog
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === "amazon" ? "secondary" : "ghost"}
+                onClick={() => setViewModePersisted("amazon")}
+              >
+                Amazon
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-1 items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
-                <Input
-                  placeholder="Suchen (SKU, Titel, EAN, ASIN, …)"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-1 items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+                  <Input
+                    placeholder="Suchen (SKU, Titel, EAN, ASIN, …)"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                {search.trim() && (
+                  <Button type="button" variant="ghost" size="icon" onClick={() => setSearch("")} aria-label="Suche löschen">
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-              {search.trim() && (
-                <Button type="button" variant="ghost" size="icon" onClick={() => setSearch("")} aria-label="Suche löschen">
-                  <X className="h-4 w-4" />
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as MasterProductKind | "ALL")}>
+                  <SelectTrigger className="w-full min-w-[190px] sm:w-[190px]">
+                    <SelectValue placeholder="Typ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Alle Typen</SelectItem>
+                    {KIND_OPTIONS.map((k) => (
+                      <SelectItem key={k.value} value={k.value}>
+                        {k.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  type="button"
+                  variant={filtersOpen || hasActiveFilters ? "secondary" : "ghost"}
+                  onClick={() => setFiltersOpen((prev) => !prev)}
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Filter
+                  {activeFilterCount > 0 ? (
+                    <span className="rounded-full bg-gray-900 px-1.5 py-0.5 text-[10px] leading-none text-white dark:bg-gray-100 dark:text-gray-900">
+                      {activeFilterCount}
+                    </span>
+                  ) : null}
                 </Button>
-              )}
+                {hasActiveFilters ? (
+                  <Button type="button" variant="ghost" onClick={resetAllFilters}>
+                    Reset
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as MasterProductKind | "ALL")}>
-                <SelectTrigger className="w-full md:w-[190px]">
-                  <SelectValue placeholder="Typ" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Alle Typen</SelectItem>
-                  {KIND_OPTIONS.map((k) => (
-                    <SelectItem key={k.value} value={k.value}>
-                      {k.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {filtersOpen ? (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/30">
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Fokus / Datenqualität</div>
+                    <Button
+                      type="button"
+                      variant={missingAsinOnly ? "secondary" : "outline"}
+                      onClick={() => setMissingAsinParam(!missingAsinOnly)}
+                    >
+                      Ohne ASIN
+                    </Button>
+                  </div>
 
-              <Button
-                type="button"
-                variant={amazonStaleOnly ? "secondary" : "ghost"}
-                onClick={() => setAmazonStaleOnly((v) => !v)}
-                title="Nur Produkte mit veralteten Amazon-Daten (>24h)"
-              >
-                Amazon stale
-              </Button>
-              <Button
-                type="button"
-                variant={amazonBlockedOnly ? "secondary" : "ghost"}
-                onClick={() => setAmazonBlockedOnly((v) => !v)}
-                title="Nur Produkte, die zuletzt geblockt waren"
-              >
-                Blocked
-              </Button>
-
-              <Input
-                className="w-[140px]"
-                value={amazonMaxNew}
-                onChange={(e) => setAmazonMaxNew(e.target.value)}
-                placeholder="Neu <= 12,34"
-                title="Filter: Amazon Preis Neu (Total inkl. Versand) maximal"
-              />
-              <Input
-                className="w-[160px]"
-                value={amazonMaxLikeNew}
-                onChange={(e) => setAmazonMaxLikeNew(e.target.value)}
-                placeholder="Wie neu <= 12,34"
-                title="Filter: Amazon Preis Wie neu (Total inkl. Versand) maximal"
-              />
-            </div>
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Amazon</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={amazonStaleOnly ? "secondary" : "outline"}
+                        onClick={() => setAmazonStaleOnly((v) => !v)}
+                        title="Nur Produkte mit veralteten Amazon-Daten (>24h)"
+                      >
+                        Amazon stale
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={amazonBlockedOnly ? "secondary" : "outline"}
+                        onClick={() => setAmazonBlockedOnly((v) => !v)}
+                        title="Nur Produkte, die zuletzt geblockt waren"
+                      >
+                        Blocked
+                      </Button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input
+                        value={amazonMaxNew}
+                        onChange={(e) => setAmazonMaxNew(e.target.value)}
+                        placeholder="Neu <= 12,34"
+                        title="Filter: Amazon Preis Neu (Total inkl. Versand) maximal"
+                      />
+                      <Input
+                        value={amazonMaxLikeNew}
+                        onChange={(e) => setAmazonMaxLikeNew(e.target.value)}
+                        placeholder="Wie neu <= 12,34"
+                        title="Filter: Amazon Preis Wie neu (Total inkl. Versand) maximal"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {list.isError && (
@@ -784,6 +979,16 @@ export function MasterProductsPage() {
                               <Pencil className="h-4 w-4" />
                               Bearbeiten
                             </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void copyToClipboard(m.id);
+                              }}
+                            >
+                              <Copy className="h-4 w-4" />
+                              UUID kopieren
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
@@ -816,7 +1021,7 @@ export function MasterProductsPage() {
                         <IdPill label="ASIN" value={m.asin ? m.asin : "—"} />
                       </div>
 
-                      {m.asin ? (
+                      {viewMode === "amazon" && m.asin ? (
                         <div className="mt-2 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
@@ -904,9 +1109,6 @@ export function MasterProductsPage() {
                         </div>
                       ) : null}
 
-                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        UUID: <span className="break-all font-mono text-gray-400 dark:text-gray-500">{m.id}</span>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -921,10 +1123,10 @@ export function MasterProductsPage() {
                       type="button"
                       variant="secondary"
                       className="w-full sm:w-auto"
-                      onClick={() => setSearch("")}
-                      disabled={!search.trim()}
+                      onClick={resetAllFilters}
+                      disabled={!hasActiveFilters}
                     >
-                      Suche zurücksetzen
+                      Filter zurücksetzen
                     </Button>
                     <Button type="button" className="w-full sm:w-auto" onClick={openCreate}>
                       <Plus className="h-4 w-4" />
@@ -941,8 +1143,7 @@ export function MasterProductsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Produkt</TableHead>
-                  <TableHead>IDs</TableHead>
-                  <TableHead>Amazon</TableHead>
+                  <TableHead>{viewMode === "catalog" ? "IDs" : "Amazon"}</TableHead>
                   <TableHead className="text-right">
                     <span className="sr-only">Aktionen</span>
                   </TableHead>
@@ -967,12 +1168,6 @@ export function MasterProductsPage() {
                           <div className="h-3 w-32 rounded bg-gray-100 dark:bg-gray-800" />
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="space-y-2">
-                          <div className="h-3 w-36 rounded bg-gray-100 dark:bg-gray-800" />
-                          <div className="h-3 w-28 rounded bg-gray-100 dark:bg-gray-800" />
-                        </div>
-                      </TableCell>
                       <TableCell />
                     </TableRow>
                   ))}
@@ -981,174 +1176,184 @@ export function MasterProductsPage() {
                   rows.map((m) => (
                     <Fragment key={m.id}>
                       <TableRow>
-                      <TableCell>
-                        <div className="flex items-start gap-3">
-                          <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
+                        <TableCell>
+                          <div className="flex items-start gap-3">
+                            <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="min-w-0 truncate font-medium">{m.title}</div>
-                              <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
-                              <Badge variant="outline" className="font-mono text-[11px]">
-                                {m.sku}
-                              </Badge>
-                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="min-w-0 truncate font-medium">{m.title}</div>
+                                <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
+                                <Badge variant="outline" className="font-mono text-[11px]">
+                                  {m.sku}
+                                </Badge>
+                              </div>
 
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                              <span>{m.platform}</span>
-                              <span className="text-gray-300 dark:text-gray-700">•</span>
-                              <span>{m.region}</span>
-                              {m.variant ? (
-                                <>
-                                  <span className="text-gray-300 dark:text-gray-700">•</span>
-                                  <span className="truncate">{m.variant}</span>
-                                </>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                <span>{m.platform}</span>
+                                <span className="text-gray-300 dark:text-gray-700">•</span>
+                                <span>{m.region}</span>
+                                {m.variant ? (
+                                  <>
+                                    <span className="text-gray-300 dark:text-gray-700">•</span>
+                                    <span className="truncate">{m.variant}</span>
+                                  </>
+                                ) : null}
+                              </div>
+
+                              {viewMode === "catalog" && (m.manufacturer || m.model || m.genre || m.release_year) ? (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {m.manufacturer ? <MetaPill>{m.manufacturer}</MetaPill> : null}
+                                  {m.model ? <MetaPill>{m.model}</MetaPill> : null}
+                                  {m.genre ? <MetaPill>{m.genre}</MetaPill> : null}
+                                  {m.release_year ? <MetaPill>{m.release_year}</MetaPill> : null}
+                                </div>
+                              ) : null}
+
+                              {viewMode === "catalog" && m.reference_image_url?.trim() ? (
+                                <a
+                                  href={m.reference_image_url.trim()}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                                  title={m.reference_image_url.trim()}
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  {shortUrlLabel(m.reference_image_url.trim())}
+                                </a>
+                              ) : null}
+
+                              {viewMode === "amazon" && (m.ean || m.asin) ? (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {m.ean ? <IdPill label="EAN" value={m.ean} /> : null}
+                                  {m.asin ? <IdPill label="ASIN" value={m.asin} /> : null}
+                                </div>
                               ) : null}
                             </div>
+                          </div>
+                        </TableCell>
 
-                            {(m.manufacturer || m.model || m.genre || m.release_year) && (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {m.manufacturer ? <MetaPill>{m.manufacturer}</MetaPill> : null}
-                                {m.model ? <MetaPill>{m.model}</MetaPill> : null}
-                                {m.genre ? <MetaPill>{m.genre}</MetaPill> : null}
-                                {m.release_year ? <MetaPill>{m.release_year}</MetaPill> : null}
+                        {viewMode === "catalog" ? (
+                          <TableCell className="text-sm">
+                            <div className="flex flex-wrap gap-1">
+                              {m.ean ? <IdPill label="EAN" value={m.ean} /> : <IdPill label="EAN" value="—" />}
+                              {m.asin ? <IdPill label="ASIN" value={m.asin} /> : <IdPill label="ASIN" value="—" />}
+                            </div>
+                          </TableCell>
+                        ) : (
+                          <TableCell className="text-sm">
+                            {!m.asin ? (
+                              <span className="text-gray-500 dark:text-gray-400">—</span>
+                            ) : (
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
+                                  {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
+                                  {m.amazon_last_success_at ? (
+                                    <span className="text-xs text-gray-500 dark:text-gray-400" title={m.amazon_last_success_at}>
+                                      {new Date(m.amazon_last_success_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={isExpanded(m.id) ? "Amazon Details einklappen" : "Amazon Details ausklappen"}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      toggleExpanded(m.id);
+                                    }}
+                                  >
+                                    {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  </Button>
+                                </div>
+
+                                <div className="text-xs text-gray-700 dark:text-gray-200">
+                                  BSR: {typeof m.amazon_rank_overall === "number" ? `#${m.amazon_rank_overall}` : "—"}
+                                  {m.amazon_rank_overall_category ? ` (${m.amazon_rank_overall_category})` : ""}
+                                  {" · "}
+                                  {typeof m.amazon_rank_specific === "number" ? `#${m.amazon_rank_specific}` : "—"}
+                                  {m.amazon_rank_specific_category ? ` (${m.amazon_rank_specific_category})` : ""}
+                                </div>
+
+                                <div className="text-xs text-gray-700 dark:text-gray-200">
+                                  {(() => {
+                                    const used = computeUsedBest(m);
+                                    return (
+                                      <>
+                                        Used best {used.cents !== null ? `${fmtMaybeEur(used.cents)} (${used.label})` : "—"}{" "}
+                                        <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
+                                        Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}{" "}
+                                        <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
+                                        Offers {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}
+                                        {typeof m.amazon_offers_count_used_priced_total === "number"
+                                          ? ` (used: ${m.amazon_offers_count_used_priced_total})`
+                                          : ""}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
                               </div>
                             )}
+                          </TableCell>
+                        )}
 
-                            {m.reference_image_url?.trim() ? (
-                              <a
-                                href={m.reference_image_url.trim()}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
-                                title={m.reference_image_url.trim()}
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                                {shortUrlLabel(m.reference_image_url.trim())}
-                              </a>
-                            ) : null}
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="text-sm">
-                        <div className="flex flex-wrap gap-1">
-                          {m.ean ? <IdPill label="EAN" value={m.ean} /> : <IdPill label="EAN" value="—" />}
-                          {m.asin ? <IdPill label="ASIN" value={m.asin} /> : <IdPill label="ASIN" value="—" />}
-                        </div>
-
-                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          UUID: <span className="font-mono text-gray-400 dark:text-gray-500">{m.id}</span>
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="text-sm">
-                        {!m.asin ? (
-                          <span className="text-gray-500 dark:text-gray-400">—</span>
-                        ) : (
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
-                              {isAmazonStale(m) ? (
-                                <Badge variant="warning">stale</Badge>
-                              ) : (
-                                <Badge variant="success">fresh</Badge>
-                              )}
-                              {m.amazon_last_success_at ? (
-                                <span className="text-xs text-gray-500 dark:text-gray-400" title={m.amazon_last_success_at}>
-                                  {new Date(m.amazon_last_success_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
-                              )}
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                aria-label={isExpanded(m.id) ? "Amazon Details einklappen" : "Amazon Details ausklappen"}
-                                onClick={(e) => {
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" aria-label="Aktionen">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                disabled={!m.asin || scrapeNow.isPending}
+                                onSelect={(e) => {
                                   e.preventDefault();
-                                  toggleExpanded(m.id);
+                                  scrapeNow.mutate(m.id);
                                 }}
                               >
-                                {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                              </Button>
-                            </div>
-
-                            <div className="text-xs text-gray-700 dark:text-gray-200">
-                              BSR: {typeof m.amazon_rank_overall === "number" ? `#${m.amazon_rank_overall}` : "—"}
-                              {m.amazon_rank_overall_category ? ` (${m.amazon_rank_overall_category})` : ""}
-                              {" · "}
-                              {typeof m.amazon_rank_specific === "number" ? `#${m.amazon_rank_specific}` : "—"}
-                              {m.amazon_rank_specific_category ? ` (${m.amazon_rank_specific_category})` : ""}
-                            </div>
-
-                            <div className="text-xs text-gray-700 dark:text-gray-200">
-                              {(() => {
-                                const used = computeUsedBest(m);
-                                return (
-                                  <>
-                                    Used best {used.cents !== null ? `${fmtMaybeEur(used.cents)} (${used.label})` : "—"}{" "}
-                                    <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                                    Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}{" "}
-                                    <span className="text-gray-300 dark:text-gray-700">•</span>{" "}
-                                    Offers {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}
-                                    {typeof m.amazon_offers_count_used_priced_total === "number"
-                                      ? ` (used: ${m.amazon_offers_count_used_priced_total})`
-                                      : ""}
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        )}
-                      </TableCell>
-
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label="Aktionen">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              disabled={!m.asin || scrapeNow.isPending}
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                scrapeNow.mutate(m.id);
-                              }}
-                            >
-                              <RefreshCw className="h-4 w-4" />
-                              Amazon scrape jetzt
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                openEdit(m);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                              Bearbeiten
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                requestDelete(m);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Löschen
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                      {m.asin && isExpanded(m.id) ? (
+                                <RefreshCw className="h-4 w-4" />
+                                Amazon scrape jetzt
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  openEdit(m);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                                Bearbeiten
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  void copyToClipboard(m.id);
+                                }}
+                              >
+                                <Copy className="h-4 w-4" />
+                                UUID kopieren
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  requestDelete(m);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Löschen
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                      {viewMode === "amazon" && m.asin && isExpanded(m.id) ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="bg-gray-50/60 py-0 dark:bg-gray-950/30">
+                          <TableCell colSpan={3} className="bg-gray-50/60 py-0 dark:bg-gray-950/30">
                             <div className="py-3">
                               <div className="grid grid-cols-4 gap-2 text-[11px] text-gray-700 dark:text-gray-200">
                                 <div>Neu: {fmtMaybeEur(m.amazon_price_new_cents)}</div>
@@ -1192,12 +1397,12 @@ export function MasterProductsPage() {
 
                 {!rows.length && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                    <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
                       <div className="flex flex-col items-start gap-2 py-3">
                         <div>Keine Produkte gefunden.</div>
                         <div className="flex items-center gap-2">
-                          <Button type="button" variant="secondary" onClick={() => setSearch("")} disabled={!search.trim()}>
-                            Suche zurücksetzen
+                          <Button type="button" variant="secondary" onClick={resetAllFilters} disabled={!hasActiveFilters}>
+                            Filter zurücksetzen
                           </Button>
                           <Button type="button" onClick={openCreate}>
                             <Plus className="h-4 w-4" />
