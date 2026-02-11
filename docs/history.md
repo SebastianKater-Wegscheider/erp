@@ -515,3 +515,16 @@
 - Desktop-`overview` reduziert Spaltenkomplexitaet, indem `Status + Alter + Zustand` zu einer strukturierten Status-Zelle gebuendelt werden.
 - KPI-Zellen erhalten einen klaren Block-Aufbau (primaerer Zahlenwert, darunter Kontextzeile), um Scannbarkeit und Vergleichbarkeit zwischen Zeilen zu verbessern.
 - Produkt-Zelle wird in Titel (primaer), Produkt-Meta (sekundaer) und technische Hinweise/Fotos (tertiaer) getrennt.
+
+## 2026-02-11 - Inventory Priorisieren: visuelle Beruhigung (einheitliche KPI-Kartenhoehe + rundere Forms)
+
+### Ausgangslage
+- Nach dem ersten Hierarchie-Refactor blieb die Zeile subjektiv noch "unruhig", vor allem wegen unterschiedlich hoher KPI-Karten und vieler eckiger Mikroelemente.
+
+### Business-Entscheidung
+- In der Priorisieren-Ansicht soll jede KPI-Spalte pro Zeile als gleichwertiger Vergleichsblock wirken.
+- Forms werden insgesamt runder, damit die Zeile weniger hart segmentiert und schneller erfassbar ist.
+
+### Technische Entscheidung
+- KPI-Karten (`Marktpreis`, `Abverkauf`, `Marge`) bekommen identische Mindesthoehe und `justify-between`, damit alle Karten ueber Zeilen konsistent gleich hoch rendern.
+- Karten und Mikro-Tags wechseln auf rundere Shapes (`rounded-xl`/`rounded-full`) und etwas weichere Hintergruende fuer ruhigeren Gesamteindruck.

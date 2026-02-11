@@ -113,6 +113,10 @@ type InventoryViewMode = "overview" | "ops";
 type InventoryQueue = "ALL" | "PHOTOS_MISSING" | "STORAGE_MISSING" | "AMAZON_STALE" | "OLD_STOCK_90D";
 
 const INVENTORY_VIEW_KEY = "inventory:view";
+const OVERVIEW_METRIC_CARD_BASE_CLASS =
+  "inline-flex min-h-[5.75rem] min-w-[10rem] flex-col justify-between rounded-xl border border-gray-200/90 bg-gray-50/80 px-2.5 py-2 dark:border-gray-800 dark:bg-gray-900/50";
+const OVERVIEW_METRIC_CARD_RIGHT_CLASS = `${OVERVIEW_METRIC_CARD_BASE_CLASS} ml-auto text-right`;
+const OVERVIEW_METRIC_CARD_LEFT_CLASS = OVERVIEW_METRIC_CARD_BASE_CLASS;
 const INVENTORY_QUEUE_OPTIONS: Array<{ value: InventoryQueue; label: string }> = [
   { value: "ALL", label: "Alle" },
   { value: "PHOTOS_MISSING", label: "Fotos fehlen" },
@@ -1275,7 +1279,7 @@ export function InventoryPage() {
                     const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
 
                     return (
-                      <TableRow key={it.id} className="align-top [&>td]:py-3">
+                      <TableRow key={it.id} className="align-top [&>td]:py-4">
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
@@ -1299,25 +1303,27 @@ export function InventoryPage() {
                               ) : null}
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                                 {mp?.sku ? (
-                                  <span className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                                  <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
                                     {mp.sku}
                                   </span>
                                 ) : null}
                                 {!!itemImages.length ? (
                                   <>
-                                    <span className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                                    <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
                                       {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
                                     </span>
                                     <button
                                       type="button"
-                                      className="font-medium text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-gray-100"
+                                      className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-gray-100"
                                       onClick={() => setTablePreviewItemId(it.id)}
                                     >
                                       Vorschau
                                     </button>
                                   </>
                                 ) : (
-                                  <span className="text-gray-400 dark:text-gray-500">Keine Fotos</span>
+                                  <span className="inline-flex items-center rounded-full border border-gray-200/80 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-500">
+                                    Keine Fotos
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -1333,7 +1339,7 @@ export function InventoryPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="ml-auto inline-flex min-w-[9.5rem] flex-col rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-right dark:border-gray-800 dark:bg-gray-900/40">
+                          <div className={OVERVIEW_METRIC_CARD_RIGHT_CLASS}>
                             <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                               {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
                             </div>
@@ -1341,7 +1347,7 @@ export function InventoryPage() {
                           </div>
                         </TableCell>
                         <TableCell title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren.">
-                          <div className="inline-flex min-w-[9.5rem] flex-col rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 dark:border-gray-800 dark:bg-gray-900/40">
+                          <div className={OVERVIEW_METRIC_CARD_LEFT_CLASS}>
                             <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
@@ -1353,7 +1359,7 @@ export function InventoryPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right" title={feeTitle}>
-                          <div className="ml-auto inline-flex min-w-[9.5rem] flex-col rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-right dark:border-gray-800 dark:bg-gray-900/40">
+                          <div className={OVERVIEW_METRIC_CARD_RIGHT_CLASS}>
                             <div
                               className={[
                                 "font-semibold tabular-nums",
