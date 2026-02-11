@@ -1,15 +1,23 @@
-import { Image as ImageIcon, RefreshCw, Search, X } from "lucide-react";
+import { Copy, Image as ImageIcon, MoreHorizontal, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { useApi } from "../lib/api";
-import { AmazonFeeProfile, estimateFbaPayout, estimateMargin, estimateMarketPriceForInventoryCondition } from "../lib/amazon";
+import {
+  AmazonFeeProfile,
+  estimateFbaPayout,
+  estimateMargin,
+  estimateMarketPriceForInventoryCondition,
+  estimateSellThroughFromBsr,
+  formatSellThroughRange,
+} from "../lib/amazon";
 import { formatEur } from "../lib/money";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
@@ -38,13 +46,26 @@ type MasterProduct = {
   platform: string;
   region: string;
   variant?: string;
+  ean?: string | null;
+  asin?: string | null;
   reference_image_url?: string | null;
+
+  amazon_last_success_at?: string | null;
+  amazon_blocked_last?: boolean | null;
+  amazon_rank_overall?: number | null;
+  amazon_rank_overall_category?: string | null;
+  amazon_rank_specific?: number | null;
+  amazon_rank_specific_category?: string | null;
 
   amazon_price_new_cents?: number | null;
   amazon_price_used_like_new_cents?: number | null;
   amazon_price_used_very_good_cents?: number | null;
   amazon_price_used_good_cents?: number | null;
   amazon_price_used_acceptable_cents?: number | null;
+
+  amazon_buybox_total_cents?: number | null;
+  amazon_offers_count_total?: number | null;
+  amazon_offers_count_used_priced_total?: number | null;
 };
 
 type InventoryImage = {
@@ -88,6 +109,65 @@ const MASTER_KIND_LABEL: Record<string, string> = {
   OTHER: "Sonstiges",
 };
 
+type InventoryViewMode = "overview" | "ops";
+
+const INVENTORY_VIEW_KEY = "inventory:view";
+
+function normalizeInventoryViewMode(value?: string | null): InventoryViewMode | null {
+  if (value === "overview" || value === "ops") return value;
+  return null;
+}
+
+function readPersistedInventoryViewMode(): InventoryViewMode | null {
+  if (typeof window === "undefined") return null;
+  const getItem = window.localStorage?.getItem;
+  if (typeof getItem !== "function") return null;
+  try {
+    return normalizeInventoryViewMode(getItem.call(window.localStorage, INVENTORY_VIEW_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function persistInventoryViewMode(viewMode: InventoryViewMode): void {
+  if (typeof window === "undefined") return;
+  const setItem = window.localStorage?.setItem;
+  if (typeof setItem !== "function") return;
+  try {
+    setItem.call(window.localStorage, INVENTORY_VIEW_KEY, viewMode);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function copyViaExecCommand(value: string): boolean {
+  if (typeof document === "undefined") return false;
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "absolute";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(ta);
+  return ok;
+}
+
+async function copyToClipboard(value: string): Promise<boolean> {
+  const text = value.trim();
+  if (!text) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return copyViaExecCommand(text);
+    }
+  }
+  return copyViaExecCommand(text);
+}
+
 function inventoryStatusLabel(status: string): string {
   const opt = INVENTORY_STATUS_OPTIONS.find((o) => o.value === status);
   return opt?.label ?? status;
@@ -128,6 +208,48 @@ function purchaseTypeLabel(purchaseType: string): string {
 function kindLabel(kind: string | null | undefined): string {
   if (!kind) return "";
   return MASTER_KIND_LABEL[kind] ?? kind;
+}
+
+function sellThroughSpeedLabel(speed: string): string {
+  switch (speed) {
+    case "FAST":
+      return "Schnell";
+    case "MEDIUM":
+      return "Mittel";
+    case "SLOW":
+      return "Langsam";
+    case "VERY_SLOW":
+      return "Sehr langsam";
+    default:
+      return "—";
+  }
+}
+
+function sellThroughSpeedVariant(speed: string) {
+  switch (speed) {
+    case "FAST":
+      return "success" as const;
+    case "MEDIUM":
+      return "secondary" as const;
+    case "SLOW":
+      return "warning" as const;
+    case "VERY_SLOW":
+      return "danger" as const;
+    default:
+      return "outline" as const;
+  }
+}
+
+function sellThroughConfidenceVariant(confidence: string) {
+  switch (confidence) {
+    case "HIGH":
+      return "success" as const;
+    case "MEDIUM":
+      return "secondary" as const;
+    case "LOW":
+    default:
+      return "outline" as const;
+  }
 }
 
 function isLikelyImagePath(path: string): boolean {
@@ -206,6 +328,7 @@ export function InventoryPage() {
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const [q, setQ] = useState("");
+  const [viewMode, setViewMode] = useState<InventoryViewMode>(() => readPersistedInventoryViewMode() ?? "overview");
   const [status, setStatus] = useState<string>(() => {
     const s = (searchParams.get("status") ?? "").toUpperCase();
     if (s && INVENTORY_STATUS_OPTIONS.some((o) => o.value === s)) return s;
@@ -224,6 +347,10 @@ export function InventoryPage() {
   const [tablePreviewUrls, setTablePreviewUrls] = useState<Record<string, string>>({});
   const [tablePreviewErrors, setTablePreviewErrors] = useState<Record<string, true>>({});
   const tablePreviewUrlsRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    persistInventoryViewMode(viewMode);
+  }, [viewMode]);
 
   const master = useQuery({
     queryKey: ["master-products"],
@@ -580,13 +707,32 @@ export function InventoryPage() {
 
       <Card>
         <CardHeader className="space-y-2">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Artikel</CardTitle>
-            <CardDescription>
-              {inv.isPending
-                ? "Lade…"
-                : `${rows.length}${rows.length >= 50 ? "+" : ""} Artikel`}
-            </CardDescription>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <CardTitle>Artikel</CardTitle>
+              <CardDescription>
+                {inv.isPending ? "Lade…" : `${rows.length}${rows.length >= 50 ? "+" : ""} Artikel`}
+              </CardDescription>
+            </div>
+
+            <div className="inline-flex items-center gap-1 rounded-md border border-gray-200 p-1 dark:border-gray-800">
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === "overview" ? "secondary" : "ghost"}
+                onClick={() => setViewMode("overview")}
+              >
+                Übersicht
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === "ops" ? "secondary" : "ghost"}
+                onClick={() => setViewMode("ops")}
+              >
+                Ops
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -595,7 +741,7 @@ export function InventoryPage() {
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                 <Input
-                  placeholder="SKU/Titel/EAN/ASIN oder Produktstamm-UUID…"
+                  placeholder="SKU/Titel/EAN/ASIN…"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   className="pl-9"
@@ -658,18 +804,19 @@ export function InventoryPage() {
                 const itemImages = rowImagesByItemId.get(it.id) ?? [];
                 const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
                 const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
+                const sell = estimateSellThroughFromBsr(mp ?? {});
+                const sellRange = formatSellThroughRange(sell.range_days);
+                const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                const bsrRank = mp
+                  ? typeof mp.amazon_rank_specific === "number"
+                    ? mp.amazon_rank_specific
+                    : mp.amazon_rank_overall
+                  : null;
 
                 return (
-                  <div
-                    key={it.id}
-                    className="rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"
-                  >
+                  <div key={it.id} className="rounded-md border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div className="flex items-start gap-3">
-                      <ReferenceThumb
-                        url={itemPrimaryUrl ?? mp?.reference_image_url ?? null}
-                        alt={mp?.title ?? "Produkt"}
-                        size={56}
-                      />
+                      <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} size={56} />
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
@@ -687,12 +834,61 @@ export function InventoryPage() {
                             </div>
                           </div>
 
-                          <div className="shrink-0">
+                          <div className="flex shrink-0 items-center gap-2">
                             <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="icon" aria-label="Aktionen">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(it.id);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Artikel-ID kopieren
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(it.master_product_id);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Produkt-UUID kopieren
+                                </DropdownMenuItem>
+                                {mp?.asin ? (
+                                  <DropdownMenuItem
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      void copyToClipboard(mp.asin ?? "");
+                                    }}
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                    ASIN kopieren
+                                  </DropdownMenuItem>
+                                ) : null}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    setEditing(it);
+                                    setEditStorageLocation(it.storage_location ?? "");
+                                    setEditSerialNumber(it.serial_number ?? "");
+                                  }}
+                                >
+                                  Bearbeiten
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
 
-                        {mp && (
+                        {mp ? (
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
                             <span>{mp.platform}</span>
                             <span className="text-gray-300 dark:text-gray-700">•</span>
@@ -704,125 +900,206 @@ export function InventoryPage() {
                               </>
                             ) : null}
                           </div>
-                        )}
+                        ) : null}
 
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          <Badge variant={av.variant}>{av.label}</Badge>
-                          <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
-                          <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
-                        </div>
-
-                        <div className="mt-2">
-                          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            {formatEur(totalCostCents)} €
-                          </div>
-                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                            EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
-                          </div>
-                        </div>
-
-                        <div className="mt-2 text-xs text-gray-700 dark:text-gray-200" title={feeTitle}>
-                          <div title="Amazon Market Value (Condition-mapped; fallback: Used best)">
-                            Amazon market:{" "}
-                            {typeof market.cents === "number" ? `${formatEur(market.cents)} € (${market.label})` : "—"}
-                          </div>
-                          <div title="FBA payout estimate = market - (referral fee + fulfillment fee + inbound shipping)">
-                            FBA payout: {typeof payout.payout_cents === "number" ? `${formatEur(payout.payout_cents)} €` : "—"}
-                          </div>
-                          <div
-                            className={
-                              margin === null
-                                ? "text-gray-500 dark:text-gray-400"
-                                : margin >= 0
-                                  ? "text-emerald-700 dark:text-emerald-300"
-                                  : "text-red-700 dark:text-red-300"
-                            }
-                            title="Margin estimate = payout - cost basis (EK + NK)"
-                          >
-                            Margin: {margin === null ? "—" : `${formatEur(margin)} €`}
-                          </div>
-                        </div>
-
-                        {(it.serial_number || it.storage_location) && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
-                            {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
-                          </div>
-                        )}
-
-                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          ID: <span className="break-all font-mono text-gray-400 dark:text-gray-500">{it.id}</span>
-                        </div>
-
-                        {!!itemImages.length && (
-                          <div className="mt-3 space-y-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <Badge variant="outline">
-                                {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
-                              </Badge>
-                              <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
-                                Vorschau
-                              </Button>
+                        {viewMode === "overview" ? (
+                          <>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <Badge variant={av.variant}>{av.label}</Badge>
+                              <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
                             </div>
-                            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                              {itemImages.slice(0, 4).map((img) => {
-                                const url = tablePreviewUrls[img.id];
-                                const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
-                                return (
-                                  <button
-                                    key={img.id}
-                                    type="button"
-                                    className="h-12 w-12 shrink-0 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
-                                    title={img.upload_path}
-                                    onClick={() => {
-                                      setTablePreviewItemId(it.id);
-                                      setTablePreviewImageId(img.id);
-                                    }}
-                                  >
-                                    {url ? (
-                                      <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
-                                    ) : canPreview ? (
-                                      <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
-                                    ) : (
-                                      <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-500 dark:text-gray-400">
-                                        Datei
-                                      </div>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                              {itemImages.length > 4 && (
-                                <div className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                                  +{itemImages.length - 4}
+
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                  Marktpreis
                                 </div>
+                                <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                  {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
+                                </div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400">{market.label}</div>
+                              </div>
+
+                              <div
+                                className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30"
+                                title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren."
+                              >
+                                <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                  Abverkauf
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
+                                  <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                                  <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
+                                  <span className="tabular-nums">{typeof bsrRank === "number" ? `BSR #${bsrRank}` : "BSR —"}</span>
+                                </div>
+                              </div>
+
+                              <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30" title={feeTitle}>
+                                <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                  Marge
+                                </div>
+                                <div
+                                  className={[
+                                    "mt-0.5 font-semibold tabular-nums",
+                                    margin === null
+                                      ? "text-gray-900 dark:text-gray-100"
+                                      : margin >= 0
+                                        ? "text-emerald-700 dark:text-emerald-300"
+                                        : "text-red-700 dark:text-red-300",
+                                  ].join(" ")}
+                                >
+                                  {margin === null ? "—" : `${formatEur(margin)} €`}
+                                </div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  Kostenbasis {formatEur(totalCostCents)} €
+                                </div>
+                              </div>
+
+                              <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30" title={feeTitle}>
+                                <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                  FBA payout
+                                </div>
+                                <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                  {typeof payout.payout_cents === "number" ? `${formatEur(payout.payout_cents)} €` : "—"}
+                                </div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                                </div>
+                              </div>
+                            </div>
+
+                            {!!itemImages.length && (
+                              <div className="mt-2 flex items-center justify-between gap-3">
+                                <Badge variant="outline">
+                                  {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
+                                </Badge>
+                                <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
+                                  Vorschau
+                                </Button>
+                              </div>
+                            )}
+
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                              <Button
+                                variant="outline"
+                                className="w-full sm:w-auto sm:flex-1"
+                                onClick={() => {
+                                  setEditing(it);
+                                  setEditStorageLocation(it.storage_location ?? "");
+                                  setEditSerialNumber(it.serial_number ?? "");
+                                }}
+                              >
+                                Bearbeiten
+                              </Button>
+                              {!!itemImages.length && (
+                                <Button
+                                  variant="secondary"
+                                  className="w-full sm:w-auto sm:flex-1"
+                                  onClick={() => setTablePreviewItemId(it.id)}
+                                >
+                                  Fotos
+                                </Button>
                               )}
                             </div>
-                          </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <Badge variant={av.variant}>{av.label}</Badge>
+                              <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                              <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
+                            </div>
+
+                            {(it.serial_number || it.storage_location) && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
+                                {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
+                              </div>
+                            )}
+
+                            <div className="mt-2">
+                              <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {formatEur(totalCostCents)} €
+                              </div>
+                              <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                              </div>
+                            </div>
+
+                            {!!itemImages.length && (
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <Badge variant="outline">
+                                    {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
+                                  </Badge>
+                                  <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
+                                    Vorschau
+                                  </Button>
+                                </div>
+                                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                                  {itemImages.slice(0, 4).map((img) => {
+                                    const url = tablePreviewUrls[img.id];
+                                    const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
+                                    return (
+                                      <button
+                                        key={img.id}
+                                        type="button"
+                                        className="h-12 w-12 shrink-0 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+                                        title={img.upload_path}
+                                        onClick={() => {
+                                          setTablePreviewItemId(it.id);
+                                          setTablePreviewImageId(img.id);
+                                        }}
+                                      >
+                                        {url ? (
+                                          <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                                        ) : canPreview ? (
+                                          <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                                        ) : (
+                                          <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-500 dark:text-gray-400">
+                                            Datei
+                                          </div>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                  {itemImages.length > 4 && (
+                                    <div className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                                      +{itemImages.length - 4}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                              <Button
+                                variant="outline"
+                                className="w-full sm:w-auto sm:flex-1"
+                                onClick={() => {
+                                  setEditing(it);
+                                  setEditStorageLocation(it.storage_location ?? "");
+                                  setEditSerialNumber(it.serial_number ?? "");
+                                }}
+                              >
+                                Bearbeiten
+                              </Button>
+
+                              {!!itemImages.length && (
+                                <Button
+                                  variant="secondary"
+                                  className="w-full sm:w-auto sm:flex-1"
+                                  onClick={() => setTablePreviewItemId(it.id)}
+                                >
+                                  Fotos
+                                </Button>
+                              )}
+                            </div>
+                          </>
                         )}
-
-                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                          <Button
-                            variant="outline"
-                            className="w-full sm:w-auto sm:flex-1"
-                            onClick={() => {
-                              setEditing(it);
-                              setEditStorageLocation(it.storage_location ?? "");
-                              setEditSerialNumber(it.serial_number ?? "");
-                            }}
-                          >
-                            Bearbeiten
-                          </Button>
-
-                          {!!itemImages.length && (
-                            <Button
-                              variant="secondary"
-                              className="w-full sm:w-auto sm:flex-1"
-                              onClick={() => setTablePreviewItemId(it.id)}
-                            >
-                              Fotos
-                            </Button>
-                          )}
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -837,192 +1114,389 @@ export function InventoryPage() {
           </div>
 
           <div className="hidden md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produkt</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Alter</TableHead>
-                  <TableHead>Zustand</TableHead>
-                  <TableHead>Typ</TableHead>
-                  <TableHead className="text-right">Amazon</TableHead>
-                  <TableHead className="text-right">Kosten (EUR)</TableHead>
-                  <TableHead className="text-right"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((it) => {
-                  const mp = mpById.get(it.master_product_id);
-                  const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
-                  const days =
-                    acquired ? Math.max(0, Math.floor((today.getTime() - acquired.getTime()) / (1000 * 60 * 60 * 24))) : null;
-                  const av = ageVariant(days);
-                  const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
-                  const hasAllocated = it.allocated_costs_cents > 0;
-                  const market = estimateMarketPriceForInventoryCondition(mp, it.condition);
-                  const payout = estimateFbaPayout(market.cents, feeProfileValue);
-                  const margin = estimateMargin(payout.payout_cents, totalCostCents);
-                  const itemImages = rowImagesByItemId.get(it.id) ?? [];
-                  const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
-                  const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
-                  return (
-                    <TableRow key={it.id}>
-                      <TableCell>
-                        <div className="flex items-start gap-3">
-                          <ReferenceThumb
-                            url={itemPrimaryUrl ?? mp?.reference_image_url ?? null}
-                            alt={mp?.title ?? "Produkt"}
-                          />
+            {viewMode === "overview" ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produkt</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Alter</TableHead>
+                    <TableHead>Zustand</TableHead>
+                    <TableHead className="text-right">Marktpreis</TableHead>
+                    <TableHead>Abverkauf</TableHead>
+                    <TableHead className="text-right">Marge</TableHead>
+                    <TableHead className="text-right"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((it) => {
+                    const mp = mpById.get(it.master_product_id);
+                    const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
+                    const days =
+                      acquired ? Math.max(0, Math.floor((today.getTime() - acquired.getTime()) / (1000 * 60 * 60 * 24))) : null;
+                    const av = ageVariant(days);
+                    const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
+                    const hasAllocated = it.allocated_costs_cents > 0;
+                    const market = estimateMarketPriceForInventoryCondition(mp, it.condition);
+                    const payout = estimateFbaPayout(market.cents, feeProfileValue);
+                    const margin = estimateMargin(payout.payout_cents, totalCostCents);
+                    const sell = estimateSellThroughFromBsr(mp ?? {});
+                    const sellRange = formatSellThroughRange(sell.range_days);
+                    const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                    const bsrRank = mp
+                      ? typeof mp.amazon_rank_specific === "number"
+                        ? mp.amazon_rank_specific
+                        : mp.amazon_rank_overall
+                      : null;
+                    const bsrLabel = typeof bsrRank === "number" ? `BSR #${bsrRank}` : "BSR —";
+                    const itemImages = rowImagesByItemId.get(it.id) ?? [];
+                    const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
+                    const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
-                              {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
-                              {mp?.sku ? (
-                                <Badge variant="outline" className="font-mono text-[11px]">
-                                  {mp.sku}
-                                </Badge>
-                              ) : null}
-                            </div>
-
-                            {mp && (
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                                <span>{mp.platform}</span>
-                                <span className="text-gray-300 dark:text-gray-700">•</span>
-                                <span>{mp.region}</span>
-                                {mp.variant ? (
-                                  <>
-                                    <span className="text-gray-300 dark:text-gray-700">•</span>
-                                    <span className="truncate">{mp.variant}</span>
-                                  </>
+                    return (
+                      <TableRow key={it.id}>
+                        <TableCell>
+                          <div className="flex items-start gap-3">
+                            <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
+                                {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
+                                {mp?.sku ? (
+                                  <Badge variant="outline" className="font-mono text-[11px]">
+                                    {mp.sku}
+                                  </Badge>
                                 ) : null}
                               </div>
-                            )}
-
-                            {(it.serial_number || it.storage_location) && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
-                                {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
-                              </div>
-                            )}
-
-                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                              ID: <span className="font-mono text-gray-400 dark:text-gray-500">{it.id}</span>
-                            </div>
-                            {!!itemImages.length && (
-                              <div className="mt-2 flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">
-                                  {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
-                                </Badge>
-                                <div className="flex items-center gap-1">
-                                  {itemImages.slice(0, 4).map((img) => {
-                                    const url = tablePreviewUrls[img.id];
-                                    const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
-                                    return (
-                                      <button
-                                        key={img.id}
-                                        type="button"
-                                        className="h-8 w-8 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
-                                        title={img.upload_path}
-                                        onClick={() => {
-                                          setTablePreviewItemId(it.id);
-                                          setTablePreviewImageId(img.id);
-                                        }}
-                                      >
-                                        {url ? (
-                                          <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
-                                        ) : canPreview ? (
-                                          <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
-                                        ) : (
-                                          <div className="flex h-full w-full items-center justify-center text-[9px] text-gray-500 dark:text-gray-400">
-                                            Datei
-                                          </div>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
+                              {mp ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                  <span>{mp.platform}</span>
+                                  <span className="text-gray-300 dark:text-gray-700">•</span>
+                                  <span>{mp.region}</span>
+                                  {mp.variant ? (
+                                    <>
+                                      <span className="text-gray-300 dark:text-gray-700">•</span>
+                                      <span className="truncate">{mp.variant}</span>
+                                    </>
+                                  ) : null}
                                 </div>
-                                <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
-                                  Vorschau
+                              ) : null}
+                              {!!itemImages.length ? (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">
+                                    {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
+                                  </Badge>
+                                  <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
+                                    Vorschau
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={av.variant}>{av.label}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-semibold tabular-nums">{typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}</div>
+                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{market.label}</div>
+                        </TableCell>
+                        <TableCell title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren.">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
+                            <div className="font-semibold tabular-nums">{sellDisplay}</div>
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                            <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
+                            <span className="tabular-nums">{bsrLabel}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right" title={feeTitle}>
+                          <div
+                            className={[
+                              "font-semibold tabular-nums",
+                              margin === null
+                                ? "text-gray-900 dark:text-gray-100"
+                                : margin >= 0
+                                  ? "text-emerald-700 dark:text-emerald-300"
+                                  : "text-red-700 dark:text-red-300",
+                            ].join(" ")}
+                          >
+                            {margin === null ? "—" : `${formatEur(margin)} €`}
+                          </div>
+                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                            EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setEditing(it);
+                                setEditStorageLocation(it.storage_location ?? "");
+                                setEditSerialNumber(it.serial_number ?? "");
+                              }}
+                            >
+                              Bearbeiten
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" aria-label="Aktionen">
+                                  <MoreHorizontal className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => {
-                                    for (const img of itemImages) {
-                                      void api.download(img.upload_path);
-                                    }
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(it.id);
                                   }}
                                 >
-                                  Alle herunterladen
-                                </Button>
-                              </div>
-                            )}
+                                  <Copy className="h-4 w-4" />
+                                  Artikel-ID kopieren
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(it.master_product_id);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Produkt-UUID kopieren
+                                </DropdownMenuItem>
+                                {mp?.asin ? (
+                                  <DropdownMenuItem
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      void copyToClipboard(mp.asin ?? "");
+                                    }}
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                    ASIN kopieren
+                                  </DropdownMenuItem>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={av.variant}>{av.label}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-xs" title={feeTitle}>
-                        <div title="Amazon Market Value (Condition-mapped; fallback: Used best)">
-                          {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
-                        </div>
-                        <div className="text-gray-500 dark:text-gray-400" title="FBA payout estimate">
-                          {typeof payout.payout_cents === "number" ? `${formatEur(payout.payout_cents)} €` : "—"}
-                        </div>
-                        <div
-                          className={
-                            margin === null
-                              ? "text-gray-400 dark:text-gray-500"
-                              : margin >= 0
-                                ? "text-emerald-700 dark:text-emerald-300"
-                                : "text-red-700 dark:text-red-300"
-                          }
-                          title="Margin estimate = payout - cost basis (EK + NK)"
-                        >
-                          {margin === null ? "—" : `${formatEur(margin)} €`}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="font-medium">{formatEur(totalCostCents)} €</div>
-                        <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setEditing(it);
-                            setEditStorageLocation(it.storage_location ?? "");
-                            setEditSerialNumber(it.serial_number ?? "");
-                          }}
-                        >
-                          Bearbeiten
-                        </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!rows.length && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-sm text-gray-500 dark:text-gray-400">
+                        Keine Daten.
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-                {!rows.length && (
+                  )}
+                </TableBody>
+              </Table>
+            ) : (
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={8} className="text-sm text-gray-500 dark:text-gray-400">
-                      Keine Daten.
-                    </TableCell>
+                    <TableHead>Produkt</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Alter</TableHead>
+                    <TableHead>Zustand</TableHead>
+                    <TableHead>Typ</TableHead>
+                    <TableHead className="text-right">Kosten (EUR)</TableHead>
+                    <TableHead className="text-right"></TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((it) => {
+                    const mp = mpById.get(it.master_product_id);
+                    const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
+                    const days =
+                      acquired ? Math.max(0, Math.floor((today.getTime() - acquired.getTime()) / (1000 * 60 * 60 * 24))) : null;
+                    const av = ageVariant(days);
+                    const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
+                    const hasAllocated = it.allocated_costs_cents > 0;
+                    const itemImages = rowImagesByItemId.get(it.id) ?? [];
+                    const itemPrimaryImage = rowPrimaryImageByItemId.get(it.id);
+                    const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
+
+                    return (
+                      <TableRow key={it.id}>
+                        <TableCell>
+                          <div className="flex items-start gap-3">
+                            <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
+                                {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
+                                {mp?.sku ? (
+                                  <Badge variant="outline" className="font-mono text-[11px]">
+                                    {mp.sku}
+                                  </Badge>
+                                ) : null}
+                              </div>
+
+                              {mp ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                  <span>{mp.platform}</span>
+                                  <span className="text-gray-300 dark:text-gray-700">•</span>
+                                  <span>{mp.region}</span>
+                                  {mp.variant ? (
+                                    <>
+                                      <span className="text-gray-300 dark:text-gray-700">•</span>
+                                      <span className="truncate">{mp.variant}</span>
+                                    </>
+                                  ) : null}
+                                </div>
+                              ) : null}
+
+                              {(it.serial_number || it.storage_location) ? (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {it.serial_number ? <MetaPill label="SN" value={it.serial_number} /> : null}
+                                  {it.storage_location ? <MetaPill label="Lager" value={it.storage_location} /> : null}
+                                </div>
+                              ) : null}
+
+                              {!!itemImages.length && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">
+                                    {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
+                                  </Badge>
+                                  <div className="flex items-center gap-1">
+                                    {itemImages.slice(0, 4).map((img) => {
+                                      const url = tablePreviewUrls[img.id];
+                                      const canPreview = isLikelyImagePath(img.upload_path) && !tablePreviewErrors[img.id];
+                                      return (
+                                        <button
+                                          key={img.id}
+                                          type="button"
+                                          className="h-8 w-8 overflow-hidden rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+                                          title={img.upload_path}
+                                          onClick={() => {
+                                            setTablePreviewItemId(it.id);
+                                            setTablePreviewImageId(img.id);
+                                          }}
+                                        >
+                                          {url ? (
+                                            <img src={url} alt="Artikelbild" className="h-full w-full object-cover" />
+                                          ) : canPreview ? (
+                                            <div className="h-full w-full animate-pulse bg-gray-100 dark:bg-gray-800" />
+                                          ) : (
+                                            <div className="flex h-full w-full items-center justify-center text-[9px] text-gray-500 dark:text-gray-400">
+                                              Datei
+                                            </div>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
+                                    Vorschau
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      for (const img of itemImages) {
+                                        void api.download(img.upload_path);
+                                      }
+                                    }}
+                                  >
+                                    Alle herunterladen
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={av.variant}>{av.label}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{purchaseTypeLabel(it.purchase_type)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-medium tabular-nums">{formatEur(totalCostCents)} €</div>
+                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                            EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setEditing(it);
+                                setEditStorageLocation(it.storage_location ?? "");
+                                setEditSerialNumber(it.serial_number ?? "");
+                              }}
+                            >
+                              Bearbeiten
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" aria-label="Aktionen">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(it.id);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Artikel-ID kopieren
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(it.master_product_id);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Produkt-UUID kopieren
+                                </DropdownMenuItem>
+                                {mp?.asin ? (
+                                  <DropdownMenuItem
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      void copyToClipboard(mp.asin ?? "");
+                                    }}
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                    ASIN kopieren
+                                  </DropdownMenuItem>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!rows.length && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
+                        Keine Daten.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1031,7 +1505,24 @@ export function InventoryPage() {
         <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Artikel bearbeiten</DialogTitle>
-            <DialogDescription>{editing ? editing.id : ""}</DialogDescription>
+            <DialogDescription>
+              {editing ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.id}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      void copyToClipboard(editing.id);
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                    ID kopieren
+                  </Button>
+                </div>
+              ) : null}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
