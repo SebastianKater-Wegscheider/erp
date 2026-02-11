@@ -16,6 +16,7 @@ import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
 
 type OpexOut = {
   id: string;
@@ -234,7 +235,7 @@ export function OpexPage() {
                   const cat = optionLabel(CATEGORY_OPTIONS, e.category);
                   const pay = optionLabel(PAYMENT_SOURCE_OPTIONS, e.payment_source);
                   return (
-                    <TableRow key={e.id}>
+                    <TableRow key={e.id} className={TABLE_ROW_COMPACT_CLASS}>
                       <TableCell className="whitespace-nowrap">{formatDateEuFromIso(e.expense_date)}</TableCell>
                       <TableCell>
                         <div className="font-medium text-gray-900 dark:text-gray-100">{e.recipient}</div>
@@ -246,7 +247,7 @@ export function OpexPage() {
                           ) : null}
                         </div>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-medium">{formatEur(e.amount_cents)} €</TableCell>
+                      <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(e.amount_cents)} €</TableCell>
                       <TableCell className="whitespace-nowrap text-right">
                         {e.receipt_upload_path ? (
                           <Button

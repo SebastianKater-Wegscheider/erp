@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Boxes, ExternalLink, PackagePlus, ReceiptText, RefreshCw, Search } from "lucide-react";
+import { ArrowUpRight, Boxes, ExternalLink, PackagePlus, ReceiptText, RefreshCw, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -14,6 +14,7 @@ import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { PageHeader } from "../components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
 
 type CompanyDashboardOut = {
   inventory_value_cents: number;
@@ -180,7 +181,7 @@ export function DashboardPage() {
     <div className="space-y-4">
       <PageHeader
         title="Übersicht"
-        description="Kennzahlen, Performance und Inbox auf einen Blick."
+        description="Kennzahlen, Performance und nächste Schritte auf einen Blick."
         actions={
           <Button variant="secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
             <RefreshCw className="h-4 w-4" />
@@ -347,16 +348,16 @@ export function DashboardPage() {
                       </TableHeader>
                       <TableBody>
                         {(data?.top_products_30d ?? []).map((p) => (
-                          <TableRow key={p.master_product_id}>
+                          <TableRow key={p.master_product_id} className={TABLE_ROW_COMPACT_CLASS}>
                             <TableCell className="max-w-[260px]">
                               <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
                               <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                                 <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
                               </div>
                             </TableCell>
-                            <TableCell className="text-right">{p.units_sold}</TableCell>
-                            <TableCell className="text-right">{formatEur(p.revenue_cents)} €</TableCell>
-                            <TableCell className="text-right">{formatEur(p.profit_cents)} €</TableCell>
+                            <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{p.units_sold}</TableCell>
+                            <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(p.revenue_cents)} €</TableCell>
+                            <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(p.profit_cents)} €</TableCell>
                           </TableRow>
                         ))}
                         {!data?.top_products_30d?.length && (
@@ -413,16 +414,16 @@ export function DashboardPage() {
                       </TableHeader>
                       <TableBody>
                         {(data?.worst_products_30d ?? []).map((p) => (
-                          <TableRow key={p.master_product_id}>
+                          <TableRow key={p.master_product_id} className={TABLE_ROW_COMPACT_CLASS}>
                             <TableCell className="max-w-[260px]">
                               <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.title}</div>
                               <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                                 <span className="font-mono">{p.sku}</span> · {p.platform} · {p.region}{p.variant ? ` · ${p.variant}` : ""}
                               </div>
                             </TableCell>
-                            <TableCell className="text-right">{p.units_sold}</TableCell>
-                            <TableCell className="text-right">{formatEur(p.revenue_cents)} €</TableCell>
-                            <TableCell className={["text-right", p.profit_cents < 0 ? "text-red-700 dark:text-red-300" : ""].join(" ")}>
+                            <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{p.units_sold}</TableCell>
+                            <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(p.revenue_cents)} €</TableCell>
+                            <TableCell className={[TABLE_CELL_NUMERIC_CLASS, p.profit_cents < 0 ? "text-red-700 dark:text-red-300" : ""].join(" ")}>
                               {formatEur(p.profit_cents)} €
                             </TableCell>
                           </TableRow>
@@ -444,61 +445,6 @@ export function DashboardPage() {
         </div>
 
         <div className="space-y-4 md:col-span-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Heute / Inbox</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {data ? (
-                <>
-                  <InboxRow to="/sales" label="Verkäufe: Entwürfe" count={data.sales_orders_draft_count} />
-                  <InboxRow
-                    to="/sales"
-                    label="Rechnung-PDF fehlt"
-                    count={data.finalized_orders_missing_invoice_pdf_count}
-                    warn={data.finalized_orders_missing_invoice_pdf_count > 0}
-                  />
-                  <InboxRow to="/inventory?status=DRAFT" label="Lager: Entwürfe" count={data.inventory_draft_count} />
-                  <InboxRow to="/inventory?status=RESERVED" label="Lager: Reserviert" count={data.inventory_reserved_count} warn={data.inventory_reserved_count > 0} />
-                  <InboxRow to="/inventory?status=RETURNED" label="Lager: Retouren" count={data.inventory_returned_count} warn={data.inventory_returned_count > 0} />
-                  <InboxRow
-                    to="/inventory?queue=PHOTOS_MISSING&view=ops"
-                    label="Lager: Fotos fehlen"
-                    count={data.inventory_missing_photos_count}
-                    warn={data.inventory_missing_photos_count > 0}
-                  />
-                  <InboxRow
-                    to="/inventory?queue=STORAGE_MISSING&view=ops"
-                    label="Lager: Lagerplatz fehlt"
-                    count={data.inventory_missing_storage_location_count}
-                    warn={data.inventory_missing_storage_location_count > 0}
-                  />
-                  <InboxRow
-                    to="/inventory?queue=AMAZON_STALE&view=overview"
-                    label="Lager: Amazon stale"
-                    count={data.inventory_amazon_stale_count}
-                    warn={data.inventory_amazon_stale_count > 0}
-                  />
-                  <InboxRow
-                    to="/inventory?queue=OLD_STOCK_90D&view=overview"
-                    label="Lager: Altbestand >90T"
-                    count={data.inventory_old_stock_90d_count}
-                    warn={data.inventory_old_stock_90d_count > 0}
-                  />
-                  <InboxRow to="/master-products?missing=asin&view=catalog" label="Produkte ohne ASIN" count={data.master_products_missing_asin_count} warn={data.master_products_missing_asin_count > 0} />
-                  <InboxRow
-                    to="/sales"
-                    label="Negative Marge (30T)"
-                    count={data.negative_profit_orders_30d_count}
-                    warn={data.negative_profit_orders_30d_count > 0}
-                  />
-                </>
-              ) : (
-                <div className="text-gray-500 dark:text-gray-400">…</div>
-              )}
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Quick Actions</CardTitle>
@@ -599,37 +545,6 @@ export function DashboardPage() {
         </Card>
       </div>
     </div>
-  );
-}
-
-function InboxRow({
-  to,
-  label,
-  count,
-  warn,
-}: {
-  to: string;
-  label: string;
-  count: number;
-  warn?: boolean;
-}) {
-  return (
-    <Link
-      to={to}
-      className={[
-        "flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 transition-colors hover:bg-gray-50",
-        "dark:border-gray-800 dark:bg-transparent dark:hover:bg-gray-900",
-      ].join(" ")}
-    >
-      <div className="min-w-0 truncate text-gray-700 dark:text-gray-200">{label}</div>
-      <div className="flex items-center gap-2">
-        {warn && <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-label="Achtung" />}
-        <div className="shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-900 dark:bg-gray-800 dark:text-gray-100">
-          {count}
-        </div>
-        <ArrowUpRight className="h-4 w-4 opacity-60" />
-      </div>
-    </Link>
   );
 }
 

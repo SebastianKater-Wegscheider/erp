@@ -30,6 +30,12 @@ import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import {
+  TABLE_ACTION_CELL_CLASS,
+  TABLE_ACTION_GROUP_CLASS,
+  TABLE_CELL_META_CLASS,
+  TABLE_ROW_COMPACT_CLASS,
+} from "../components/ui/table-row-layout";
 
 type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
 type MasterProductsViewMode = "catalog" | "amazon";
@@ -131,8 +137,6 @@ const EMPTY_FORM: MasterProductFormState = {
 };
 
 const MASTER_PRODUCTS_VIEW_KEY = "master-products:view";
-const TABLE_ACTION_CELL_CLASS = "w-[4.75rem] text-right align-middle";
-const TABLE_ACTION_GROUP_CLASS = "inline-flex w-full items-center justify-end";
 
 function kindLabel(kind: MasterProductKind): string {
   return KIND_OPTIONS.find((k) => k.value === kind)?.label ?? kind;
@@ -1343,7 +1347,7 @@ export function MasterProductsPage() {
 
                     return (
                       <Fragment key={m.id}>
-                      <TableRow className="align-top [&>td]:py-2.5">
+                      <TableRow className={TABLE_ROW_COMPACT_CLASS}>
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
@@ -1408,10 +1412,10 @@ export function MasterProductsPage() {
                             {!m.asin ? (
                               <span className="text-gray-500 dark:text-gray-400">—</span>
                             ) : (
-                              <div className="space-y-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
-                                  {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
+                                    {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
                                   {m.amazon_last_success_at ? (
                                     <span className="text-xs text-gray-500 dark:text-gray-400" title={m.amazon_last_success_at}>
                                       {new Date(m.amazon_last_success_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
@@ -1435,12 +1439,6 @@ export function MasterProductsPage() {
                                   </Button>
                                 </div>
                                 <div className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">ASIN {m.asin}</div>
-                                <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                                  Failures {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"} · Next retry{" "}
-                                  {m.amazon_next_retry_at
-                                    ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
-                                    : "—"}
-                                </div>
                               </div>
                             )}
                           </TableCell>
@@ -1537,8 +1535,17 @@ export function MasterProductsPage() {
                                     ? m.amazon_offers_count_used_priced_total
                                     : null;
                                 const offers = typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : null;
+                                const nextRetryLabel = m.amazon_next_retry_at
+                                  ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+                                  : "—";
 
                                 return (
+                                  <>
+                                  <div className={`mb-2 text-[11px] ${TABLE_CELL_META_CLASS}`}>
+                                    Failures {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"} ·
+                                    Next retry {nextRetryLabel}
+                                    {m.amazon_block_reason_last ? ` · Block reason: ${m.amazon_block_reason_last}` : ""}
+                                  </div>
                                   <div className="mb-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                                     <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
                                       <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -1590,6 +1597,7 @@ export function MasterProductsPage() {
                                       </div>
                                     </div>
                                   </div>
+                                  </>
                                 );
                               })()}
 

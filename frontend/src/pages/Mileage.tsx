@@ -16,6 +16,7 @@ import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
 
 type MileageOut = {
   id: string;
@@ -260,7 +261,7 @@ export function MileagePage() {
               </TableHeader>
               <TableBody>
                 {rows.map((m) => (
-                  <TableRow key={m.id}>
+                  <TableRow key={m.id} className={TABLE_ROW_COMPACT_CLASS}>
                     <TableCell className="whitespace-nowrap">{formatDateEuFromIso(m.log_date)}</TableCell>
                     <TableCell>
                       <div className="font-medium">
@@ -288,7 +289,7 @@ export function MileagePage() {
                         m.purpose_text?.trim() || optionLabel(PURPOSE_OPTIONS, m.purpose)
                       )}
                     </TableCell>
-                    <TableCell className="text-right">{formatEur(m.amount_cents)} €</TableCell>
+                    <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(m.amount_cents)} €</TableCell>
                   </TableRow>
                 ))}
                 {!rows.length && (
@@ -437,7 +438,7 @@ export function MileagePage() {
                                 {filteredPurchaseRefs.map((p) => {
                                   const selected = purchaseIds.includes(p.id);
                                   return (
-                                    <TableRow key={p.id}>
+                                    <TableRow key={p.id} className={TABLE_ROW_COMPACT_CLASS}>
                                       <TableCell className="whitespace-nowrap">{formatDateEuFromIso(p.purchase_date)}</TableCell>
                                       <TableCell className="font-medium">{p.counterparty_name}</TableCell>
                                       <TableCell>{p.document_number ?? ""}</TableCell>

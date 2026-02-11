@@ -15,6 +15,7 @@ import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
 
 type InventoryItem = {
   id: string;
@@ -392,7 +393,7 @@ export function FBAShipmentsPage() {
               </TableHeader>
               <TableBody>
                 {listRows.map((s) => (
-                  <TableRow key={s.id}>
+                  <TableRow key={s.id} className={TABLE_ROW_COMPACT_CLASS}>
                     <TableCell>
                       <div className="font-medium">{s.name}</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">{s.id}</div>
@@ -401,7 +402,7 @@ export function FBAShipmentsPage() {
                       <Badge variant={statusBadgeVariant(s.status)}>{optionLabel(SHIPMENT_STATUS_OPTIONS, s.status)}</Badge>
                     </TableCell>
                     <TableCell>{s.items.length}</TableCell>
-                    <TableCell>{formatEur(s.shipping_cost_cents)} €</TableCell>
+                    <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(s.shipping_cost_cents)} €</TableCell>
                     <TableCell>
                       <div className="text-sm">{s.carrier || "-"}</div>
                       <div className="font-mono text-xs text-gray-500 dark:text-gray-400">{s.tracking_number || "-"}</div>
@@ -544,10 +545,10 @@ export function FBAShipmentsPage() {
                         const selected = selectedItemIds.includes(it.id);
                         const mp = mpById.get(it.master_product_id);
                         return (
-                          <TableRow key={it.id}>
+                          <TableRow key={it.id} className={TABLE_ROW_COMPACT_CLASS}>
                             <TableCell className="font-mono text-xs">{it.id}</TableCell>
                             <TableCell className="max-w-[28rem] truncate">{productLabel(mp)}</TableCell>
-                            <TableCell className="text-right">{formatEur(it.purchase_price_cents)} €</TableCell>
+                            <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(it.purchase_price_cents)} €</TableCell>
                             <TableCell className="text-right">
                               <Button type="button" size="sm" variant={selected ? "secondary" : "outline"} onClick={() => toggleItem(it.id)}>
                                 {selected ? "Entfernen" : "Hinzufügen"}
@@ -606,7 +607,7 @@ export function FBAShipmentsPage() {
                       {selectedInventoryRows.map((it) => {
                         const mp = mpById.get(it.master_product_id);
                         return (
-                          <TableRow key={it.id}>
+                          <TableRow key={it.id} className={TABLE_ROW_COMPACT_CLASS}>
                             <TableCell className="font-mono text-xs">{it.id}</TableCell>
                             <TableCell>{productLabel(mp)}</TableCell>
                           </TableRow>
@@ -725,7 +726,7 @@ export function FBAShipmentsPage() {
                   {(receivingShipment?.items ?? []).map((line) => {
                     const state = receiveStateByItemId[line.inventory_item_id] ?? { status: "RECEIVED", note: "" };
                     return (
-                      <TableRow key={line.id}>
+                      <TableRow key={line.id} className={TABLE_ROW_COMPACT_CLASS}>
                         <TableCell className="font-mono text-xs">{line.inventory_item_id}</TableCell>
                         <TableCell>
                           <Badge variant="warning">{inventoryStatusLabel("FBA_INBOUND")}</Badge>

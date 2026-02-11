@@ -16,6 +16,7 @@ import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
 
 type AllocationOut = {
   id: string;
@@ -192,13 +193,13 @@ export function CostAllocationsPage() {
               </TableHeader>
               <TableBody>
                 {rows.map((a) => (
-                  <TableRow key={a.id}>
+                  <TableRow key={a.id} className={TABLE_ROW_COMPACT_CLASS}>
                     <TableCell className="whitespace-nowrap">{formatDateEuFromIso(a.allocation_date)}</TableCell>
                     <TableCell>{a.description}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{a.payment_source === "CASH" ? "Bar" : "Bank"}</Badge>
                     </TableCell>
-                    <TableCell className="text-right">{formatEur(a.amount_cents)} €</TableCell>
+                    <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(a.amount_cents)} €</TableCell>
                   </TableRow>
                 ))}
                 {!rows.length && (
@@ -362,7 +363,7 @@ export function CostAllocationsPage() {
                     </TableHeader>
                     <TableBody>
                       {lines.map((l, idx) => (
-                        <TableRow key={idx}>
+                        <TableRow key={idx} className={TABLE_ROW_COMPACT_CLASS}>
                           <TableCell>
                             <Input
                               value={l.inventory_item_id}

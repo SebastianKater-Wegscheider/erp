@@ -14,6 +14,7 @@ import { Label } from "../components/ui/label";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
 
 type InventoryItem = {
   id: string;
@@ -497,7 +498,7 @@ export function SalesPage() {
                                       </TableHeader>
                                       <TableBody>
                                         {(returns.data ?? []).map((r) => (
-                                          <TableRow key={r.id}>
+                                          <TableRow key={r.id} className={TABLE_ROW_COMPACT_CLASS}>
                                             <TableCell className="font-mono text-xs">{r.correction_number}</TableCell>
                                             <TableCell>{r.correction_date}</TableCell>
                                             <TableCell className="text-right">{formatEur(r.refund_gross_cents)} €</TableCell>
@@ -567,7 +568,7 @@ export function SalesPage() {
                                     </TableHeader>
                                     <TableBody>
                                       {returnLines.map((l, idx) => (
-                                        <TableRow key={l.inventory_item_id}>
+                                        <TableRow key={l.inventory_item_id} className={TABLE_ROW_COMPACT_CLASS}>
                                           <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
                                           <TableCell>
                                             <Select
@@ -652,7 +653,7 @@ export function SalesPage() {
                 {(orders.data ?? []).map((o) => {
                   const gross = o.shipping_gross_cents + o.lines.reduce((s, l) => s + l.sale_gross_cents, 0);
                   return (
-                    <TableRow key={o.id}>
+                    <TableRow key={o.id} className={TABLE_ROW_COMPACT_CLASS}>
                       <TableCell>{o.order_date}</TableCell>
                       <TableCell>{optionLabel(CHANNEL_OPTIONS, o.channel)}</TableCell>
                       <TableCell>
@@ -662,7 +663,7 @@ export function SalesPage() {
                         {o.invoice_number && <div className="text-xs text-gray-500 dark:text-gray-400">#{o.invoice_number}</div>}
                       </TableCell>
                       <TableCell>{o.buyer_name}</TableCell>
-                      <TableCell className="text-right">{formatEur(gross)} €</TableCell>
+                      <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(gross)} €</TableCell>
                       <TableCell className="text-right space-x-2">
                         {o.status === "DRAFT" && (
                           <>
@@ -750,7 +751,7 @@ export function SalesPage() {
                                           </TableHeader>
                                           <TableBody>
                                             {(returns.data ?? []).map((r) => (
-                                              <TableRow key={r.id}>
+                                              <TableRow key={r.id} className={TABLE_ROW_COMPACT_CLASS}>
                                                 <TableCell className="font-mono text-xs">{r.correction_number}</TableCell>
                                                 <TableCell>{r.correction_date}</TableCell>
                                                 <TableCell className="text-right">{formatEur(r.refund_gross_cents)} €</TableCell>
@@ -820,7 +821,7 @@ export function SalesPage() {
                                         </TableHeader>
                                         <TableBody>
                                           {returnLines.map((l, idx) => (
-                                            <TableRow key={l.inventory_item_id}>
+                                            <TableRow key={l.inventory_item_id} className={TABLE_ROW_COMPACT_CLASS}>
                                               <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
                                               <TableCell>
                                                 <Select
@@ -985,7 +986,7 @@ export function SalesPage() {
                           const mp = mpById.get(it.master_product_id);
                           const already = selectedLines.some((l) => l.inventory_item_id === it.id);
                           return (
-                            <TableRow key={it.id}>
+                            <TableRow key={it.id} className={TABLE_ROW_COMPACT_CLASS}>
                               <TableCell>
                                 <div className="font-medium">{mp ? mp.title : it.master_product_id}</div>
                                 {mp && (
@@ -1034,7 +1035,7 @@ export function SalesPage() {
                     </TableHeader>
                     <TableBody>
                       {selectedLines.map((l, idx) => (
-                        <TableRow key={l.inventory_item_id}>
+                        <TableRow key={l.inventory_item_id} className={TABLE_ROW_COMPACT_CLASS}>
                           <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
                           <TableCell className="text-right">
                             <Input

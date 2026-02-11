@@ -25,6 +25,12 @@ import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import {
+  TABLE_ACTION_CELL_CLASS,
+  TABLE_ACTION_GROUP_CLASS,
+  TABLE_CELL_META_CLASS,
+  TABLE_ROW_COMPACT_CLASS,
+} from "../components/ui/table-row-layout";
 
 type InventoryItem = {
   id: string;
@@ -116,11 +122,9 @@ type InventoryViewMode = "overview" | "ops";
 type InventoryQueue = "ALL" | "PHOTOS_MISSING" | "STORAGE_MISSING" | "AMAZON_STALE" | "OLD_STOCK_90D";
 
 const INVENTORY_VIEW_KEY = "inventory:view";
-const OVERVIEW_METRIC_CELL_CLASS = "w-[11.25rem] text-right";
+const OVERVIEW_METRIC_CELL_CLASS = "w-[12rem] align-top text-right";
 const OVERVIEW_METRIC_CARD_CLASS =
-  "inline-flex w-full min-h-[4.75rem] flex-col items-end justify-between rounded-lg border border-gray-200/90 bg-gray-50/80 px-2.5 py-2 text-right dark:border-gray-800 dark:bg-gray-900/50";
-const TABLE_ACTION_CELL_CLASS = "w-[10rem] text-right align-middle";
-const TABLE_ACTION_GROUP_CLASS = "inline-flex w-full items-center justify-end gap-1.5";
+  "inline-flex h-[5rem] w-full flex-col items-end justify-between rounded-xl border border-gray-200/90 bg-gray-50/80 px-3 py-2 text-right dark:border-gray-800 dark:bg-gray-900/50";
 const INVENTORY_QUEUE_OPTIONS: Array<{ value: InventoryQueue; label: string }> = [
   { value: "ALL", label: "Alle" },
   { value: "PHOTOS_MISSING", label: "Fotos fehlen" },
@@ -1274,7 +1278,7 @@ export function InventoryPage() {
                     const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
 
                     return (
-                      <TableRow key={it.id} className="align-top [&>td]:py-2.5">
+                      <TableRow key={it.id} className={TABLE_ROW_COMPACT_CLASS}>
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
@@ -1337,17 +1341,22 @@ export function InventoryPage() {
                         </TableCell>
                         <TableCell className={OVERVIEW_METRIC_CELL_CLASS}>
                           <div className={OVERVIEW_METRIC_CARD_CLASS}>
-                            <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                            <div className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                               {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
                             </div>
-                            <div className="mt-0.5 w-full truncate text-[11px] text-gray-500 dark:text-gray-400">{market.label}</div>
+                            <div className={`${TABLE_CELL_META_CLASS} w-full truncate text-right`}>{market.label}</div>
                           </div>
                         </TableCell>
                         <TableCell className={OVERVIEW_METRIC_CELL_CLASS} title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren.">
                           <div className={OVERVIEW_METRIC_CARD_CLASS}>
-                            <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
-                            <div className="mt-0.5 w-full truncate text-[11px] text-gray-500 dark:text-gray-400">
-                              {sellThroughSpeedLabel(sell.speed)} · {bsrLabel} · {sellThroughConfidenceLabel(sell.confidence)}
+                            <div className="flex w-full items-center justify-end gap-1.5">
+                              <Badge variant={sellThroughSpeedVariant(sell.speed)} className="h-5 px-2 text-[10px]">
+                                {sellThroughSpeedLabel(sell.speed)}
+                              </Badge>
+                              <div className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
+                            </div>
+                            <div className={`${TABLE_CELL_META_CLASS} w-full truncate text-right`}>
+                              {bsrLabel} · Sicherheit {sellThroughConfidenceLabel(sell.confidence)}
                             </div>
                           </div>
                         </TableCell>
@@ -1355,7 +1364,7 @@ export function InventoryPage() {
                           <div className={OVERVIEW_METRIC_CARD_CLASS}>
                             <div
                               className={[
-                                "font-semibold tabular-nums",
+                                "text-base font-semibold tabular-nums",
                                 margin === null
                                   ? "text-gray-900 dark:text-gray-100"
                                   : margin >= 0
@@ -1365,7 +1374,7 @@ export function InventoryPage() {
                             >
                               {margin === null ? "—" : `${formatEur(margin)} €`}
                             </div>
-                            <div className="mt-0.5 w-full truncate text-[11px] text-gray-500 dark:text-gray-400">
+                            <div className={`${TABLE_CELL_META_CLASS} w-full truncate text-right`}>
                               EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
                             </div>
                           </div>
@@ -1463,7 +1472,7 @@ export function InventoryPage() {
                     const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
 
                     return (
-                      <TableRow key={it.id}>
+                      <TableRow key={it.id} className={TABLE_ROW_COMPACT_CLASS}>
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
