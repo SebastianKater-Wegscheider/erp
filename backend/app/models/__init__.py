@@ -1,6 +1,4 @@
 from app.models.audit_log import AuditLog
-from app.models.bank_account import BankAccount
-from app.models.bank_transaction import BankTransaction
 from app.models.cost_allocation import CostAllocation, CostAllocationLine
 from app.models.document_counter import DocumentCounter
 from app.models.fba_shipment import FBAShipment, FBAShipmentItem
@@ -28,8 +26,6 @@ __all__ = [
     "AmazonScrapeRun",
     "AmazonScrapeSalesRank",
     "AuditLog",
-    "BankAccount",
-    "BankTransaction",
     "CostAllocation",
     "CostAllocationLine",
     "DocumentCounter",
