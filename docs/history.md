@@ -1,5 +1,21 @@
 # History
 
+## 2026-02-11 - Einkaeufe Modal: stabile Hoehe, interner Scroll, klarere Hierarchie
+
+### Ausgangslage
+- Das neue Einkaufs-Modal hatte bei langen Formularen keinen stabilen vertikalen Scroll im Inhaltsbereich.
+- Beim Tab-Wechsel aenderte sich die Gesamtgroesse des Modals sichtbar, was unruhig wirkt.
+- Header, Tabs und Forminhalt lagen visuell zu nah beieinander und wirkten zu wenig strukturiert.
+
+### Technische Entscheidungen
+- Das Einkaufs-Modal bekommt eine feste Dialog-Hoehe (viewport-begrenzt) mit `flex`-Shell und getrenntem internem Scroll-Container.
+- Der Scroll liegt ausschliesslich im Tab-Content-Bereich; Header, Tabs und Footer bleiben stabil.
+- Die Tab-Inhalte werden in klare Content-Panels mit Border/Background gegliedert; Tabs erhalten eine deutlichere aktive/inaktive Hierarchie.
+
+### Risiken / Trade-offs
+- Fixere Dialog-Hoehe bedeutet, dass sehr kurze Inhalte mehr "Luft" zeigen; wird bewusst fuer ruhiges Layout akzeptiert.
+- Zusaeztliche visuelle Struktur erhoeht den UI-Frame leicht, verbessert aber Orientierung und Scanbarkeit.
+
 ## 2026-02-11 - Einkaeufe UX Redesign: Dialog-Flow, progressive Felder, staged Evidenz-Uploads
 
 ### Ausgangslage
