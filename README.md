@@ -85,6 +85,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Upload: `POST /uploads`
 - Master Products: `POST/GET/PATCH /master-products`
 - Purchases: `POST/GET /purchases` (Smart-Split: Summe Lines == Total)
+  - Purchase↔Mileage Link: `GET/PUT/DELETE /purchases/{id}/mileage`
 - Inventory: `GET /inventory` (Filter: `status`, Suche: `q`)
 - FBA Shipments: `POST/GET/PATCH /fba-shipments`, `POST /fba-shipments/{id}/ship`, `POST /fba-shipments/{id}/receive`
 - Cost Allocation: `POST/GET /cost-allocations`
@@ -100,6 +101,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Geldbeträge werden **immer als Integer in Cents** gespeichert (keine Floats).
 - PDF-Erstellung via **WeasyPrint** (HTML Templates unter `backend/app/templates`).
 - Audit Trail in Tabelle `audit_logs` (Status- und Finanzoperationen).
+- Bank-Sync-/Linking-Endpunkte wurden entfernt; `payment_source=BANK` bleibt als manuelle Zahlungsquelle verfügbar.
 
 ## Steuer-Notizen
 

@@ -1,5 +1,30 @@
 # History
 
+## 2026-02-11 - UX Harmonisierung + Bank-Sync Entfernung + Einkauf/Fahrt Integration
+
+### Ausgangslage
+- Die Tabellenansichten sind ueber Seiten hinweg uneinheitlich (unterschiedliche Zeilenhoehen, inkonsistente Ausrichtung, zu viele gleichgewichtete Informationen).
+- Das Bank-Modul (GoCardless Sync + manuelle Zuordnung von Transaktionen) erzeugt hohe Komplexitaet, liefert aber im aktuellen Betrieb keinen verlaesslichen Mehrwert.
+- Fahrtenbuch und Einkaufsworkflow sind funktional getrennt; der bestehende Link ist aus UX-Sicht zu schwach, wodurch der Prozessbruch im Alltag sichtbar bleibt.
+
+### Business-Entscheidungen
+- Die App priorisiert einen kompakten, ruhigen Arbeitsfluss fuer Reselling-Operations: Primary-Infos zuerst, sekundare Details nur auf Nachfrage.
+- Bank-Sync und Bank-Linking werden komplett entfernt; die Zahlungsquelle `BANK` bleibt als manuelle Buchungsoption fuer Einkaufs-/Verkaufs-/Kostenprozesse erhalten.
+- Fahrten werden direkt im Einkaufsdialog als optionaler Inline-Baustein gepflegt, statt als separater Nachgangsschritt.
+- Das Dashboard verzichtet bewusst auf die bisherige "Heute/Inbox"-Karte; offene Punkte bleiben ueber zielgerichtete Views/Filter erreichbar statt als zweite Arbeitsliste im Startscreen.
+
+### Technische Entscheidungen
+- Gemeinsame Frontend-Primitives fuer Tabellenzeilen und Aktionsspalten werden eingefuehrt, um Layout/Spacing/Alignment zentral zu steuern.
+- Routing und Navigation werden um das Bank-Modul bereinigt; Backend-Bankrouter, Sync-Service und Startup-Task entfallen.
+- Datenmodell wird um einen klaren Primärlink Einkauf -> Fahrteneintrag erweitert (`purchases.primary_mileage_log_id`), inklusive API fuer get/upsert/delete.
+- Migrationen droppen die Bank-spezifischen Tabellen (`bank_accounts`, `bank_transactions`, `bank_transaction_purchases`) und fuegen den Purchase-Mileage-Link hinzu.
+- KPI-Zellen in `inventory?view=overview` werden auf feste Kartenhoehe + konsistente Rechtsausrichtung vereinheitlicht; `master-products` blendet Low-Priority Amazon-Retry-Details aus der Scanline aus und verschiebt sie in den Expand-Block.
+
+### Risiken / Trade-offs
+- Entfernen des Bank-Moduls ist bewusst irreversibel auf App-Ebene; historische Bank-Sync-Daten gehen mit der Schema-Bereinigung verloren.
+- Zusätzliche Inline-Felder im Einkaufsdialog erhoehen den Formumfang leicht, reduzieren aber den Prozessbruch und Nachbearbeitungsaufwand.
+- Row-Harmonisierung erfordert groesseren Frontend-Refactor; Risiko wird durch zentrale Primitives und Regression-Tests abgefedert.
+
 ## 2026-02-11 - Einkaeufe Modal: stabile Hoehe, interner Scroll, klarere Hierarchie
 
 ### Ausgangslage
