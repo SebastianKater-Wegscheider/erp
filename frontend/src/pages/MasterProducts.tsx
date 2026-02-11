@@ -94,6 +94,20 @@ type MasterProductFormState = {
   reference_image_url: string;
 };
 
+type MasterProductBulkImportRowError = {
+  row_number: number;
+  message: string;
+  title?: string | null;
+};
+
+type MasterProductBulkImportOut = {
+  total_rows: number;
+  imported_count: number;
+  failed_count: number;
+  skipped_count: number;
+  errors: MasterProductBulkImportRowError[];
+};
+
 const KIND_OPTIONS: Array<{ value: MasterProductKind; label: string }> = [
   { value: "GAME", label: "Spiel" },
   { value: "CONSOLE", label: "Konsole" },
@@ -555,6 +569,11 @@ export function MasterProductsPage() {
   const [activeProduct, setActiveProduct] = useState<MasterProduct | null>(null);
   const [form, setForm] = useState<MasterProductFormState>({ ...EMPTY_FORM });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importCsvText, setImportCsvText] = useState("");
+  const [importSourceLabel, setImportSourceLabel] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<MasterProductBulkImportOut | null>(null);
+  const [showImportErrors, setShowImportErrors] = useState(false);
 
   const [confirmDelete, setConfirmDelete] = useState<MasterProduct | null>(null);
 
@@ -664,6 +683,21 @@ export function MasterProductsPage() {
     },
   });
 
+  const bulkImport = useMutation({
+    mutationFn: () =>
+      api.request<MasterProductBulkImportOut>("/master-products/bulk-import", {
+        method: "POST",
+        json: { csv_text: importCsvText },
+      }),
+    onSuccess: async (result) => {
+      setImportResult(result);
+      setShowImportErrors(false);
+      if (result.imported_count > 0) {
+        await qc.invalidateQueries({ queryKey: ["master-products"] });
+      }
+    },
+  });
+
   const scrapeNow = useMutation({
     mutationFn: (masterProductId: string) =>
       api.request<{ run_id: string; ok: boolean; blocked: boolean; error?: string | null }>(`/amazon-scrapes/trigger`, {
@@ -683,6 +717,38 @@ export function MasterProductsPage() {
     setForm({ ...EMPTY_FORM });
     setShowAdvanced(false);
     setEditorOpen(true);
+  }
+
+  function openImport() {
+    bulkImport.reset();
+    setImportResult(null);
+    setShowImportErrors(false);
+    setImportCsvText("");
+    setImportSourceLabel(null);
+    setImportOpen(true);
+  }
+
+  async function handleImportFile(file: File | null) {
+    if (!file) return;
+    const text = await file.text();
+    setImportCsvText(text);
+    setImportSourceLabel(file.name);
+    setImportResult(null);
+    setShowImportErrors(false);
+    bulkImport.reset();
+  }
+
+  function updateImportCsvText(value: string) {
+    setImportCsvText(value);
+    setImportSourceLabel(null);
+    setImportResult(null);
+    setShowImportErrors(false);
+    bulkImport.reset();
+  }
+
+  function runImport() {
+    if (!importCsvText.trim()) return;
+    bulkImport.mutate();
   }
 
   function openEdit(m: MasterProduct) {
@@ -791,6 +857,9 @@ export function MasterProductsPage() {
             <Button variant="secondary" className="w-full sm:w-auto" onClick={() => list.refetch()} disabled={list.isFetching}>
               <RefreshCw className="h-4 w-4" />
               Aktualisieren
+            </Button>
+            <Button variant="outline" className="w-full sm:w-auto" onClick={openImport}>
+              CSV Import
             </Button>
             <Button className="w-full sm:w-auto" onClick={openCreate}>
               <Plus className="h-4 w-4" />
@@ -1228,6 +1297,9 @@ export function MasterProductsPage() {
                       <Plus className="h-4 w-4" />
                       Produkt anlegen
                     </Button>
+                    <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={openImport}>
+                      CSV Import
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1558,6 +1630,9 @@ export function MasterProductsPage() {
                             <Plus className="h-4 w-4" />
                             Produkt anlegen
                           </Button>
+                          <Button type="button" variant="outline" onClick={openImport}>
+                            CSV Import
+                          </Button>
                         </div>
                       </div>
                     </TableCell>
@@ -1568,6 +1643,107 @@ export function MasterProductsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={importOpen} onOpenChange={(open) => setImportOpen(open)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Produktstamm aus CSV importieren</DialogTitle>
+            <DialogDescription>
+              CSV-Datei hochladen oder CSV-Text einfügen. Pflichtspalten: <code>title</code> und <code>platform</code>. Typ wird standardmäßig als
+              Spiel gesetzt, Region als EU.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="master-products-import-file">CSV-Datei</Label>
+                <Input
+                  id="master-products-import-file"
+                  type="file"
+                  accept=".csv,text/csv,text/plain"
+                  onChange={(e) => {
+                    void handleImportFile(e.target.files?.[0] ?? null);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Muster-Header</Label>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+                  kind,title,platform,region,variant,ean,asin
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="master-products-import-csv">CSV-Text</Label>
+              <textarea
+                id="master-products-import-csv"
+                value={importCsvText}
+                onChange={(e) => updateImportCsvText(e.target.value)}
+                rows={10}
+                placeholder={"title,platform,region\nSuper Mario 64,Nintendo 64,EU"}
+                className="w-full resize-y rounded-md border border-gray-200 bg-white px-3 py-2 text-[15px] shadow-sm placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus-visible:ring-gray-700 sm:text-sm"
+              />
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {importSourceLabel ? `Quelle: ${importSourceLabel}` : "Quelle: direkt eingefügter Text"}
+              </div>
+            </div>
+
+            {bulkImport.isError && (
+              <InlineMessage tone="error">
+                {(bulkImport.error as Error).message}
+              </InlineMessage>
+            )}
+
+            {importResult && (
+              <InlineMessage tone={importResult.failed_count > 0 ? "neutral" : "info"}>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span>Zeilen: {importResult.total_rows}</span>
+                  <span>Importiert: {importResult.imported_count}</span>
+                  <span>Fehler: {importResult.failed_count}</span>
+                  <span>Leer/Übersprungen: {importResult.skipped_count}</span>
+                </div>
+                {importResult.errors.length > 0 ? (
+                  <div className="mt-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowImportErrors((open) => !open)}
+                    >
+                      {showImportErrors ? "Fehler ausblenden" : `Fehler anzeigen (${importResult.errors.length})`}
+                    </Button>
+                    {showImportErrors ? (
+                      <div className="mt-2 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-950/40">
+                        {importResult.errors.map((error) => (
+                          <div
+                            key={`${error.row_number}-${error.title ?? "untitled"}-${error.message}`}
+                            className="border-b border-gray-100 px-1 py-1.5 text-xs last:border-b-0 dark:border-gray-800"
+                          >
+                            <span className="font-medium text-gray-900 dark:text-gray-100">Zeile {error.row_number}</span>
+                            {error.title ? ` (${error.title})` : ""}: {error.message}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </InlineMessage>
+            )}
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setImportOpen(false)} disabled={bulkImport.isPending}>
+                Schließen
+              </Button>
+              <Button type="button" onClick={runImport} disabled={!importCsvText.trim() || bulkImport.isPending}>
+                {bulkImport.isPending ? "Import läuft…" : "Import starten"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={editorOpen}

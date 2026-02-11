@@ -64,8 +64,12 @@ const PRODUCTS: MockMasterProduct[] = [
   },
 ];
 
-function renderPage(initialEntry: string) {
-  requestMock.mockImplementation(async (path: string) => {
+function renderPage(
+  initialEntry: string,
+  handler?: (path: string, options?: { method?: string; json?: unknown }) => unknown | Promise<unknown>,
+) {
+  requestMock.mockImplementation(async (path: string, options?: { method?: string; json?: unknown }) => {
+    if (handler) return await handler(path, options);
     if (path === "/master-products") return PRODUCTS;
     throw new Error(`Unhandled request in test: ${path}`);
   });
@@ -141,4 +145,59 @@ it("hides EAN chips in Amazon mode and keeps ASIN copy chip", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Amazon Status" }));
   expect(await screen.findAllByText(/ASIN:/)).not.toHaveLength(0);
   expect(screen.queryAllByText(/EAN:/)).toHaveLength(0);
+});
+
+it("imports CSV text and shows summary", async () => {
+  const csvText = "title,platform,region\nWave Race 64,Nintendo 64,EU";
+  renderPage("/master-products", async (path, options) => {
+    if (path === "/master-products") return PRODUCTS;
+    if (path === "/master-products/bulk-import") {
+      expect(options?.method).toBe("POST");
+      expect(options?.json).toEqual({ csv_text: csvText });
+      return {
+        total_rows: 1,
+        imported_count: 1,
+        failed_count: 0,
+        skipped_count: 0,
+        errors: [],
+      };
+    }
+    throw new Error(`Unhandled request in test: ${path}`);
+  });
+
+  await screen.findAllByText("With ASIN Product");
+
+  fireEvent.click(screen.getAllByRole("button", { name: "CSV Import" })[0]);
+  fireEvent.change(screen.getByLabelText("CSV-Text"), { target: { value: csvText } });
+  fireEvent.click(screen.getByRole("button", { name: "Import starten" }));
+
+  expect(await screen.findByText("Importiert: 1")).toBeTruthy();
+  expect(screen.getByText("Fehler: 0")).toBeTruthy();
+});
+
+it("shows row-level CSV import errors", async () => {
+  const csvText = "title,platform\nInvalid Row,";
+  renderPage("/master-products", async (path) => {
+    if (path === "/master-products") return PRODUCTS;
+    if (path === "/master-products/bulk-import") {
+      return {
+        total_rows: 1,
+        imported_count: 0,
+        failed_count: 1,
+        skipped_count: 0,
+        errors: [{ row_number: 2, title: "Invalid Row", message: "platform: Field required" }],
+      };
+    }
+    throw new Error(`Unhandled request in test: ${path}`);
+  });
+
+  await screen.findAllByText("With ASIN Product");
+
+  fireEvent.click(screen.getAllByRole("button", { name: "CSV Import" })[0]);
+  fireEvent.change(screen.getByLabelText("CSV-Text"), { target: { value: csvText } });
+  fireEvent.click(screen.getByRole("button", { name: "Import starten" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Fehler anzeigen (1)" }));
+
+  expect(await screen.findByText("Zeile 2")).toBeTruthy();
+  expect(screen.getByText(/platform: Field required/i)).toBeTruthy();
 });

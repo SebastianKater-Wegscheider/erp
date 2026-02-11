@@ -89,3 +89,22 @@ class MasterProductOutWithAmazon(MasterProductOut):
 
     amazon_next_retry_at: datetime | None = None
     amazon_consecutive_failures: int | None = None
+
+
+class MasterProductBulkImportIn(BaseModel):
+    csv_text: str = Field(min_length=1, max_length=1_000_000)
+    delimiter: str | None = Field(default=None, min_length=1, max_length=1)
+
+
+class MasterProductBulkImportRowError(BaseModel):
+    row_number: int = Field(ge=1)
+    message: str
+    title: str | None = None
+
+
+class MasterProductBulkImportOut(BaseModel):
+    total_rows: int = Field(ge=0)
+    imported_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    skipped_count: int = Field(ge=0)
+    errors: list[MasterProductBulkImportRowError] = Field(default_factory=list)

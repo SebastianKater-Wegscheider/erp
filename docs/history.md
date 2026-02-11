@@ -562,3 +562,20 @@
 - Anwendung auf alle zentralen Seiten (`Dashboard`, `MasterProducts`, `Inventory`, `FBAShipments`, `Purchases`, `Sales`, `CostAllocations`, `Opex`, `Mileage`, `Vat`, `Bank`) in den jeweils passenden Bereichen.
 - Dichte Stellen in den Listenoberflaechen werden durch konsistente Filter-/Headerstruktur entschlackt, ohne Kernfunktionen zu aendern.
 - `App` nutzt Route-Level Code Splitting (`React.lazy` + `Suspense`), damit grosse Seiten erst bei Navigation geladen werden und Initial-Load leichter bleibt.
+
+## 2026-02-11 - Produktstamm: CSV-Bulk-Import (Paste + Datei)
+
+### Ausgangslage
+- Produktstamm-Eintraege mussten einzeln angelegt werden; bei grossen Anlieferungen war das zu langsam und fehleranfaellig.
+- Quellen liegen oft bereits als CSV vor oder werden ad-hoc aus Tabellen als CSV-Text kopiert.
+
+### Business-Entscheidung
+- Bulk-Import direkt in der Produktstamm-Seite, damit neue Katalogbloecke ohne Umweg in kurzer Zeit angelegt werden koennen.
+- Fehlende oder invalide Zeilen duerfen den Gesamtimport nicht blockieren; der Nutzer braucht eine klare Zeilenfehler-Liste.
+
+### Technische Entscheidung
+- Neuer Backend-Endpoint `/master-products/bulk-import` mit robuster Header-Normalisierung (DE/EN Aliasnamen), Delimiter-Erkennung und Zeilenvalidierung auf Basis von `MasterProductCreate`.
+- Frontend-Dialog in `MasterProducts` mit zwei Eingabepfaden:
+  - CSV-Datei laden (liest Dateiinhalt in Textfeld),
+  - CSV-Text direkt einfuegen.
+- Import-Resultat wird als strukturierte Zusammenfassung angezeigt (`importiert/fehlgeschlagen/leer`) plus aufklappbare Fehlerliste mit Zeilennummern.
