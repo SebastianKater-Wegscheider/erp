@@ -1,5 +1,26 @@
 # History
 
+## 2026-02-11 - Incident-Hardening: Scraper-Limits + Slow-Mode + Health-Monitoring
+
+### Ausgangslage
+- Die Produktionsinstanz war zeitweise per TCP erreichbar, hat aber auf HTTP-Anfragen nicht mehr geantwortet.
+- Im gleichen Zeitfenster gab es Hinweise auf Datenbank-Stress (lange Checkpoints, Autovacuum-Startwarnungen) und DNS-Timeouts im Docker-Resolver.
+- Der externe `amazon-scraper` lief ohne harte CPU/RAM/PID-Limits und mit vergleichsweise aggressiven Navigations-Delays/Page-Tiefe.
+
+### Business-Entscheidungen
+- Prioritaet ist Stabilitaet vor Scrape-Durchsatz: Amazon-Abfragen duerfen bewusst langsamer laufen.
+- Bei Lastspitzen soll der Scraper zuerst gedrosselt werden, damit Kernfunktionen (ERP-API/UI) responsiv bleiben.
+- Ein schlanker CLI-Runbook-/Monitoring-Weg wird im Hauptrepo verankert, damit Diagnose und Recovery reproduzierbar bleiben.
+
+### Technische Entscheidungen
+- Neues Ops-Runbook dokumentiert Incident-Diagnose, typische Ursachenbilder und Sofortmassnahmen.
+- Neues Monitoring-Skript liefert kompakte Health-/Compose-/Load-Sicht fuer `erp` und `amazon-scraper`.
+- Neues Hardening-Skript setzt fuer `amazon-scraper`:
+  - Ressourcenlimits (`cpus`, `mem_limit`, `mem_reservation`, `pids_limit`)
+  - Slow-Mode (`SCRAPER_MIN_DELAY_NAV`, `SCRAPER_MAX_DELAY_NAV`, `SCRAPER_MAX_OFFER_PAGES`)
+  - anschliessenden kontrollierten Restart + Health-Check.
+- ERP-Scheduler-Defaults werden konservativer gesetzt (`AMAZON_SCRAPER_LOOP_TICK_SECONDS`, `AMAZON_SCRAPER_MIN_SUCCESS_INTERVAL_SECONDS`, `AMAZON_SCRAPER_MAX_BACKOFF_SECONDS`).
+
 ## 2026-02-11 - Produktstamm: BSR-First Sortierung + Schnellfilter Auf Lager + kompaktere Amazon-Zeile
 
 ### Ausgangslage

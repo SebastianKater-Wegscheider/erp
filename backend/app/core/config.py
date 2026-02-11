@@ -48,10 +48,10 @@ class Settings(BaseSettings):
     # --- Amazon (ASIN) scrape metrics ---
     amazon_scraper_enabled: bool = Field(False, alias="AMAZON_SCRAPER_ENABLED")
     amazon_scraper_base_url: str = Field("http://192.168.178.72:4236", alias="AMAZON_SCRAPER_BASE_URL")
-    amazon_scraper_timeout_seconds: int = Field(180, alias="AMAZON_SCRAPER_TIMEOUT_SECONDS")
-    amazon_scraper_loop_tick_seconds: int = Field(60, alias="AMAZON_SCRAPER_LOOP_TICK_SECONDS")
-    amazon_scraper_min_success_interval_seconds: int = Field(86400, alias="AMAZON_SCRAPER_MIN_SUCCESS_INTERVAL_SECONDS")
-    amazon_scraper_max_backoff_seconds: int = Field(21600, alias="AMAZON_SCRAPER_MAX_BACKOFF_SECONDS")
+    amazon_scraper_timeout_seconds: int = Field(120, alias="AMAZON_SCRAPER_TIMEOUT_SECONDS")
+    amazon_scraper_loop_tick_seconds: int = Field(180, alias="AMAZON_SCRAPER_LOOP_TICK_SECONDS")
+    amazon_scraper_min_success_interval_seconds: int = Field(172800, alias="AMAZON_SCRAPER_MIN_SUCCESS_INTERVAL_SECONDS")
+    amazon_scraper_max_backoff_seconds: int = Field(43200, alias="AMAZON_SCRAPER_MAX_BACKOFF_SECONDS")
     amazon_scraper_lock_ttl_seconds: int = Field(300, alias="AMAZON_SCRAPER_LOCK_TTL_SECONDS")
 
     # Amazon fee estimates (global defaults; for margin heuristics, not accounting).

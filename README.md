@@ -103,6 +103,12 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Audit Trail in Tabelle `audit_logs` (Status- und Finanzoperationen).
 - Bank-Sync-/Linking-Endpunkte wurden entfernt; `payment_source=BANK` bleibt als manuelle Zahlungsquelle verfügbar.
 
+## Ops / Incident
+
+- Incident-Runbook: `docs/incident-runbook.md`
+- Schnellcheck Produktion: `./scripts/prod_health_monitor.sh`
+- Amazon-Scraper drosseln (CPU/RAM/PID + slow mode): `./scripts/prod_apply_amazon_scraper_limits.sh`
+
 ## Steuer-Notizen
 
 - Implementationsnotizen zur (Einzel‑)Differenzbesteuerung und USt/Vorsteuer-Logik: `docs/tax.md`
