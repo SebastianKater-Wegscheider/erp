@@ -35,7 +35,6 @@ const NAV_SECTIONS = [
     items: [
       { to: "/cost-allocations", label: "Kostenverteilung" },
       { to: "/opex", label: "Betriebsausgaben" },
-      { to: "/bank", label: "Bank" },
       { to: "/vat", label: "Umsatzsteuer" },
       { to: "/mileage", label: "Fahrtenbuch" },
     ],

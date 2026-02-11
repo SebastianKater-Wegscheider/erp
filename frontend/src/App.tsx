@@ -14,7 +14,6 @@ const CostAllocationsPage = lazy(() => import("./pages/CostAllocations").then((m
 const OpexPage = lazy(() => import("./pages/Opex").then((m) => ({ default: m.OpexPage })));
 const MileagePage = lazy(() => import("./pages/Mileage").then((m) => ({ default: m.MileagePage })));
 const VatPage = lazy(() => import("./pages/Vat").then((m) => ({ default: m.VatPage })));
-const BankPage = lazy(() => import("./pages/Bank").then((m) => ({ default: m.BankPage })));
 
 export function App() {
   return (
@@ -35,7 +34,6 @@ export function App() {
               <Route path="/opex" element={<OpexPage />} />
               <Route path="/mileage" element={<MileagePage />} />
               <Route path="/vat" element={<VatPage />} />
-              <Route path="/bank" element={<BankPage />} />
             </Routes>
           </Suspense>
         </div>
