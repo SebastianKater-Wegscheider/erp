@@ -1,7 +1,6 @@
 import {
   ChevronDown,
   ChevronRight,
-  Copy,
   ExternalLink,
   Image as ImageIcon,
   MoreHorizontal,
@@ -22,7 +21,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -1115,61 +1114,67 @@ export function MasterProductsPage() {
                           </div>
                         </div>
 
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              aria-label="Aktionen"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              disabled={!m.asin || scrapeNow.isPending}
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                scrapeNow.mutate(m.id);
-                              }}
-                            >
-                              <RefreshCw className="h-4 w-4" />
-                              Amazon scrape jetzt
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                openEdit(m);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                              Bearbeiten
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void copyToClipboard(m.id);
-                              }}
-                            >
-                              <Copy className="h-4 w-4" />
-                              UUID kopieren
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                requestDelete(m);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Löschen
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {viewMode === "catalog" ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                aria-label="Aktionen"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                disabled={!m.asin || scrapeNow.isPending}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  scrapeNow.mutate(m.id);
+                                }}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                Amazon scrape jetzt
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  openEdit(m);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                                Bearbeiten
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  requestDelete(m);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Löschen
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2"
+                            aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleExpanded(m.id);
+                            }}
+                          >
+                            Details
+                            {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                        )}
                       </div>
 
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
@@ -1193,6 +1198,36 @@ export function MasterProductsPage() {
 
                       {viewMode === "amazon" && m.asin ? (
                         <div className="mt-2 space-y-1.5">
+                          <div
+                            className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                              disabled={!m.asin || scrapeNow.isPending}
+                              onClick={() => scrapeNow.mutate(m.id)}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Scrape
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                              onClick={() => openEdit(m)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Bearbeiten
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
+                              onClick={() => requestDelete(m)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Löschen
+                            </button>
+                          </div>
                           <div className="flex flex-wrap items-center gap-2">
                             {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
                             {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
@@ -1203,20 +1238,6 @@ export function MasterProductsPage() {
                             ) : (
                               <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
                             )}
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2"
-                              aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleExpanded(m.id);
-                              }}
-                            >
-                              Details
-                              {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            </Button>
                           </div>
                           <div className="text-[11px] text-gray-500 dark:text-gray-400">
                             BSR Gesamt {Number.isFinite(overallBsrRank(m)) ? `#${overallBsrRank(m)}` : "—"} · Used best{" "}
@@ -1364,10 +1385,23 @@ export function MasterProductsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Produkt</TableHead>
-                  <TableHead>{viewMode === "catalog" ? "IDs" : "Amazon Status"}</TableHead>
-                  <TableHead className="text-right">
-                    <span className="sr-only">Aktionen</span>
-                  </TableHead>
+                  {viewMode === "catalog" ? (
+                    <>
+                      <TableHead>IDs</TableHead>
+                      <TableHead className="text-right">
+                        <span className="sr-only">Aktionen</span>
+                      </TableHead>
+                    </>
+                  ) : (
+                    <>
+                      <TableHead>Amazon Status</TableHead>
+                      <TableHead className="text-right">BSR</TableHead>
+                      <TableHead className="text-right">Used best</TableHead>
+                      <TableHead className="text-right">
+                        <span className="sr-only">Details</span>
+                      </TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1383,13 +1417,32 @@ export function MasterProductsPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="space-y-2">
-                          <div className="h-3 w-40 rounded bg-gray-100 dark:bg-gray-800" />
-                          <div className="h-3 w-32 rounded bg-gray-100 dark:bg-gray-800" />
-                        </div>
-                      </TableCell>
-                      <TableCell />
+                      {viewMode === "catalog" ? (
+                        <>
+                          <TableCell>
+                            <div className="space-y-2">
+                              <div className="h-3 w-40 rounded bg-gray-100 dark:bg-gray-800" />
+                              <div className="h-3 w-32 rounded bg-gray-100 dark:bg-gray-800" />
+                            </div>
+                          </TableCell>
+                          <TableCell />
+                        </>
+                      ) : (
+                        <>
+                          <TableCell>
+                            <div className="h-3 w-36 rounded bg-gray-100 dark:bg-gray-800" />
+                          </TableCell>
+                          <TableCell>
+                            <div className="ml-auto h-3 w-16 rounded bg-gray-100 dark:bg-gray-800" />
+                          </TableCell>
+                          <TableCell>
+                            <div className="ml-auto h-3 w-20 rounded bg-gray-100 dark:bg-gray-800" />
+                          </TableCell>
+                          <TableCell>
+                            <div className="ml-auto h-7 w-20 rounded bg-gray-100 dark:bg-gray-800" />
+                          </TableCell>
+                        </>
+                      )}
                     </TableRow>
                   ))}
 
@@ -1446,6 +1499,38 @@ export function MasterProductsPage() {
                                   {shortUrlLabel(m.reference_image_url.trim())}
                                 </a>
                               ) : null}
+                              {viewMode === "amazon" ? (
+                                <div
+                                  className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                                    disabled={!m.asin || scrapeNow.isPending}
+                                    onClick={() => scrapeNow.mutate(m.id)}
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                    Scrape
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                                    onClick={() => openEdit(m)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    Bearbeiten
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
+                                    onClick={() => requestDelete(m)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Löschen
+                                  </button>
+                                </div>
+                              ) : null}
 
                             </div>
                           </div>
@@ -1463,123 +1548,100 @@ export function MasterProductsPage() {
                             )}
                           </TableCell>
                         ) : (
-                          <TableCell className="text-sm">
-                            {!m.asin ? (
-                              <span className="text-gray-500 dark:text-gray-400">—</span>
-                            ) : (
-                                <div className="space-y-1.5">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
-                                    {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
+                          <>
+                            <TableCell className="text-sm">
+                              {!m.asin ? (
+                                <span className="text-gray-500 dark:text-gray-400">—</span>
+                              ) : (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
+                                  {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
                                   {m.amazon_last_success_at ? (
-                                    <span className="text-xs text-gray-500 dark:text-gray-400" title={m.amazon_last_success_at}>
+                                    <span className="text-[11px] text-gray-500 dark:text-gray-400" title={m.amazon_last_success_at}>
                                       {new Date(m.amazon_last_success_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
                                     </span>
                                   ) : (
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
+                                    <span className="text-[11px] text-gray-500 dark:text-gray-400">noch nie</span>
                                   )}
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 px-2"
-                                    aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      toggleExpanded(m.id);
-                                    }}
-                                  >
-                                    Details
-                                    {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                  </Button>
                                 </div>
-                                <div className="truncate text-[11px] text-gray-500 dark:text-gray-400">
-                                  BSR Gesamt {Number.isFinite(overallBsrRank(m)) ? `#${overallBsrRank(m)}` : "—"} · Used best{" "}
-                                  {fmtMaybeEur(computeUsedBest(m).cents)}
-                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right text-sm font-semibold tabular-nums">
+                              {Number.isFinite(overallBsrRank(m)) ? `#${overallBsrRank(m)}` : "—"}
+                            </TableCell>
+                            <TableCell className="text-right text-sm font-semibold tabular-nums">
+                              {fmtMaybeEur(computeUsedBest(m).cents)}
+                            </TableCell>
+                            <TableCell className={TABLE_ACTION_CELL_CLASS}>
+                              <div className={`${TABLE_ACTION_GROUP_CLASS} items-end`}>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2"
+                                  aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    toggleExpanded(m.id);
+                                  }}
+                                >
+                                  Details
+                                  {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </Button>
                               </div>
-                            )}
-                          </TableCell>
+                            </TableCell>
+                          </>
                         )}
 
-                        <TableCell className={TABLE_ACTION_CELL_CLASS}>
-                          <div className={TABLE_ACTION_GROUP_CLASS}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Aktionen">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  disabled={!m.asin || scrapeNow.isPending}
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    scrapeNow.mutate(m.id);
-                                  }}
-                                >
-                                  <RefreshCw className="h-4 w-4" />
-                                  Amazon scrape jetzt
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    openEdit(m);
-                                  }}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                  Bearbeiten
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    void copyToClipboard(m.id);
-                                  }}
-                                >
-                                  <Copy className="h-4 w-4" />
-                                  UUID kopieren
-                                </DropdownMenuItem>
-                                {m.ean ? (
+                        {viewMode === "catalog" ? (
+                          <TableCell className={TABLE_ACTION_CELL_CLASS}>
+                            <div className={TABLE_ACTION_GROUP_CLASS}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Aktionen">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    disabled={!m.asin || scrapeNow.isPending}
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      scrapeNow.mutate(m.id);
+                                    }}
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                    Amazon scrape jetzt
+                                  </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onSelect={(e) => {
                                       e.preventDefault();
-                                      void copyToClipboard(m.ean ?? "");
+                                      openEdit(m);
                                     }}
                                   >
-                                    <Copy className="h-4 w-4" />
-                                    EAN kopieren
+                                    <Pencil className="h-4 w-4" />
+                                    Bearbeiten
                                   </DropdownMenuItem>
-                                ) : null}
-                                {m.asin ? (
                                   <DropdownMenuItem
+                                    className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
                                     onSelect={(e) => {
                                       e.preventDefault();
-                                      void copyToClipboard(m.asin ?? "");
+                                      requestDelete(m);
                                     }}
                                   >
-                                    <Copy className="h-4 w-4" />
-                                    ASIN kopieren
+                                    <Trash2 className="h-4 w-4" />
+                                    Löschen
                                   </DropdownMenuItem>
-                                ) : null}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    requestDelete(m);
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Löschen
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </TableCell>
+                        ) : null}
                       </TableRow>
                       {viewMode === "amazon" && m.asin && isExpanded(m.id) ? (
                         <TableRow>
-                          <TableCell colSpan={3} className="bg-gray-50/60 py-0 dark:bg-gray-950/30">
+                          <TableCell colSpan={5} className="bg-gray-50/60 py-0 dark:bg-gray-950/30">
                             <div className="py-3">
                               {(() => {
                                 const used = computeUsedBest(m);
@@ -1702,7 +1764,7 @@ export function MasterProductsPage() {
 
                 {!rows.length && (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">
+                    <TableCell colSpan={viewMode === "amazon" ? 5 : 3} className="text-sm text-gray-500 dark:text-gray-400">
                       <div className="flex flex-col items-start gap-2 py-3">
                         <div>Keine Produkte gefunden.</div>
                         <div className="flex items-center gap-2">

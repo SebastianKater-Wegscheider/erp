@@ -688,3 +688,19 @@
   `https://images-eu.ssl-images-amazon.com/images/P/{ASIN}.01.LZZZZZZZ.jpg`.
 - Der Fallback greift nur, wenn keine Bild-URL im Payload gefunden wurde.
 - Testabdeckung ergaenzt: neuer Test stellt sicher, dass bei fehlendem Bildfeld der ASIN-Fallback in `MasterProduct.reference_image_url` geschrieben wird.
+
+## 2026-02-11 - Master-Products Amazon-Tabelle entruempelt
+
+### Ausgangslage
+- In `/master-products?view=amazon` war die Zeilenhierarchie zu hoch und unruhig: Amazon-Status enthielt zu viele gestapelte Infos, Aktionen lagen im Overflow-Menue (3 Punkte), wichtige KPIs waren nicht direkt als eigene Spalten scanbar.
+
+### Business-Entscheidung
+- Primärer Scanflow fuer Reselling: Status, BSR und Used-Best muessen in einer Zeile sofort erfassbar sein.
+- Sekundaere/Low-Priority-Infos bleiben vorhanden, aber Details werden klar nach rechts ausgelagert.
+- Aktionen sollen ohne Overflow erreichbar sein; Copy-Aktionen fuer ASIN/UUID entfallen in dieser Ansicht.
+
+### Technische Entscheidung
+- Desktop-Amazon-Tabelle auf 5 Spalten umgebaut: `Produkt | Amazon Status | BSR | Used best | Details`.
+- Amazon-Status-Spalte verschlankt (Badges + letzter Erfolg), BSR und Used-best als getrennte rechtsbuendige Spalten mit `tabular-nums`.
+- 3-Punkte-Menu im Amazon-View entfernt; Quick-Links (`Scrape`, `Bearbeiten`, `Löschen`) in die linke Produktspalte verlegt.
+- Detail-Toggle in die rechte Spalte verschoben; Expanded-Row `colSpan` entsprechend angepasst.

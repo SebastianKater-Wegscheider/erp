@@ -121,19 +121,12 @@ it("filters rows by missing ASIN via query param", async () => {
   });
 });
 
-it("keeps UUID out of row body and exposes copy action", async () => {
+it("keeps UUID out of row body and has no UUID copy action", async () => {
   renderPage("/master-products");
 
   await screen.findAllByText("With ASIN Product");
   expect(screen.queryByText(/UUID:/i)).toBeNull();
-
-  const actionButtons = screen.getAllByRole("button", { name: "Aktionen" });
-  for (const button of actionButtons) {
-    fireEvent.pointerDown(button);
-    fireEvent.click(button);
-  }
-  const copyItems = await screen.findAllByText("UUID kopieren");
-  expect(copyItems.length).toBeGreaterThan(0);
+  expect(screen.queryByText("UUID kopieren")).toBeNull();
 });
 
 it("hides EAN chips in Amazon mode and shows BSR/Used-best inline", async () => {
