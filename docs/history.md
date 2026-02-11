@@ -467,3 +467,18 @@
   - Confidence-Flag (HIGH/MEDIUM/LOW) abhaengig von Freshness/Blocked.
   - Disclaimer: Schätzung; echte Verkäufe variieren (BSR ist zeit-/kategorieabhaengig).
 - UI: KPI-Strips mit `tabular-nums` und klarer Typo-Hierarchie (Zahlen gross, Labels klein).
+
+## 2026-02-11 - Abverkauf: BSR-Velocity-Rekalibrierung (realistischere Werte)
+
+### Problem / Beobachtung
+- Die Abverkauf-Schaetzung war in der Praxis zu oft "1–2 Tage" und damit als Priorisierungs-KPI wenig brauchbar.
+- Ursache: Wir haben haeufig den *specific/sub-category* Rank verwendet (typisch sehr klein, auch bei Nischen-Kategorien) und haben Sub-Tagesschaetzungen <1 Tag in der Anzeige auf mindestens 1 Tag gerundet.
+
+### Business-Entscheidung
+- Abverkauf soll eine "quick sanity check" Velocity liefern (schnell vs. langsam), ohne so aggressiv zu sein, dass fast alles als 1–2 Tage erscheint.
+- Velocity-Grundlage wird an eine grobe, besser kommunizierbare BSR->Sales Heuristik angelehnt (Units/day Buckets), statt frei gewaehlter Day-Ranges.
+
+### Technische Entscheidung
+- Rank-Prioritaet in der Schaetzung: `overall` zuerst, `specific` nur als Fallback.
+- Basis-Model: BSR -> geschaetzte Units/day Range (Buckets: #1-10, 11-100, 101-500, 501-2k, 2k-10k, 10k+), daraus `days = 1 / units_per_day`.
+- Anzeige: < 1 Tag wird als Stunden (`h`) formatiert, damit schnelle Artikel nicht pauschal als "1 Tag" erscheinen.
