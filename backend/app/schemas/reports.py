@@ -54,6 +54,10 @@ class CompanyDashboardOut(BaseModel):
     inventory_draft_count: int = Field(ge=0)
     inventory_reserved_count: int = Field(ge=0)
     inventory_returned_count: int = Field(ge=0)
+    inventory_missing_photos_count: int = Field(ge=0)
+    inventory_missing_storage_location_count: int = Field(ge=0)
+    inventory_amazon_stale_count: int = Field(ge=0)
+    inventory_old_stock_90d_count: int = Field(ge=0)
     negative_profit_orders_30d_count: int = Field(ge=0)
     master_products_missing_asin_count: int = Field(ge=0)
 

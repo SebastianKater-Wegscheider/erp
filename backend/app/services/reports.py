@@ -4,16 +4,18 @@ import csv
 import io
 import zipfile
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.enums import InventoryStatus, OrderStatus, PurchaseKind, PurchaseType
+from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.cost_allocation import CostAllocation
 from app.models.inventory_item import InventoryItem
+from app.models.inventory_item_image import InventoryItemImage
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.mileage_log import MileageLog
@@ -22,6 +24,30 @@ from app.models.purchase import Purchase
 from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrder, SalesOrderLine
 from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
+
+QUEUE_STATUSES_PHOTOS_MISSING = (
+    InventoryStatus.DRAFT,
+    InventoryStatus.AVAILABLE,
+    InventoryStatus.RETURNED,
+    InventoryStatus.DISCREPANCY,
+)
+
+QUEUE_STATUSES_STORAGE_MISSING = QUEUE_STATUSES_PHOTOS_MISSING
+
+QUEUE_STATUSES_AMAZON_STALE = (
+    InventoryStatus.AVAILABLE,
+    InventoryStatus.FBA_WAREHOUSE,
+    InventoryStatus.RETURNED,
+    InventoryStatus.DISCREPANCY,
+)
+
+QUEUE_STATUSES_OLD_STOCK_90D = (
+    InventoryStatus.DRAFT,
+    InventoryStatus.AVAILABLE,
+    InventoryStatus.FBA_WAREHOUSE,
+    InventoryStatus.RETURNED,
+    InventoryStatus.DISCREPANCY,
+)
 
 
 @dataclass(frozen=True)
@@ -263,6 +289,55 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
     )
     master_products_missing_asin_count = int((await session.execute(master_products_missing_asin_stmt)).scalar_one())
 
+    effective_date = func.coalesce(InventoryItem.acquired_date, func.date(InventoryItem.created_at))
+    inventory_missing_photos_stmt = (
+        select(func.count(InventoryItem.id))
+        .where(InventoryItem.status.in_(QUEUE_STATUSES_PHOTOS_MISSING))
+        .where(
+            ~exists(
+                select(1)
+                .select_from(InventoryItemImage)
+                .where(InventoryItemImage.inventory_item_id == InventoryItem.id)
+            )
+        )
+    )
+    inventory_missing_photos_count = int((await session.execute(inventory_missing_photos_stmt)).scalar_one())
+
+    inventory_missing_storage_location_stmt = select(func.count(InventoryItem.id)).where(
+        InventoryItem.status.in_(QUEUE_STATUSES_STORAGE_MISSING),
+        or_(InventoryItem.storage_location.is_(None), func.trim(InventoryItem.storage_location) == ""),
+    )
+    inventory_missing_storage_location_count = int(
+        (await session.execute(inventory_missing_storage_location_stmt)).scalar_one()
+    )
+
+    stale_before = datetime.now(timezone.utc) - timedelta(hours=24)
+    inventory_amazon_stale_stmt = (
+        select(func.count(InventoryItem.id))
+        .select_from(InventoryItem)
+        .join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id)
+        .outerjoin(AmazonProductMetricsLatest, AmazonProductMetricsLatest.master_product_id == MasterProduct.id)
+        .where(
+            InventoryItem.status.in_(QUEUE_STATUSES_AMAZON_STALE),
+            MasterProduct.asin.is_not(None),
+            func.trim(MasterProduct.asin) != "",
+            or_(
+                AmazonProductMetricsLatest.master_product_id.is_(None),
+                AmazonProductMetricsLatest.last_success_at.is_(None),
+                AmazonProductMetricsLatest.last_success_at < stale_before,
+                AmazonProductMetricsLatest.blocked_last.is_(True),
+            ),
+        )
+    )
+    inventory_amazon_stale_count = int((await session.execute(inventory_amazon_stale_stmt)).scalar_one())
+
+    old_before = today - timedelta(days=90)
+    inventory_old_stock_90d_stmt = select(func.count(InventoryItem.id)).where(
+        InventoryItem.status.in_(QUEUE_STATUSES_OLD_STOCK_90D),
+        effective_date <= old_before,
+    )
+    inventory_old_stock_90d_count = int((await session.execute(inventory_old_stock_90d_stmt)).scalar_one())
+
     product_base_stmt = (
         select(
             MasterProduct.id,
@@ -332,6 +407,10 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
         "inventory_draft_count": int(inventory_status_counts.get(InventoryStatus.DRAFT.value, 0)),
         "inventory_reserved_count": int(inventory_status_counts.get(InventoryStatus.RESERVED.value, 0)),
         "inventory_returned_count": int(inventory_status_counts.get(InventoryStatus.RETURNED.value, 0)),
+        "inventory_missing_photos_count": inventory_missing_photos_count,
+        "inventory_missing_storage_location_count": inventory_missing_storage_location_count,
+        "inventory_amazon_stale_count": inventory_amazon_stale_count,
+        "inventory_old_stock_90d_count": inventory_old_stock_90d_count,
         "negative_profit_orders_30d_count": negative_profit_orders_30d_count,
         "master_products_missing_asin_count": master_products_missing_asin_count,
         "top_products_30d": [_product_row_to_dict(r) for r in top_products_rows],

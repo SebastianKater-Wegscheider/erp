@@ -28,6 +28,13 @@ class InventoryStatus(StrEnum):
     LOST = "LOST"
 
 
+class InventoryQueue(StrEnum):
+    PHOTOS_MISSING = "PHOTOS_MISSING"
+    STORAGE_MISSING = "STORAGE_MISSING"
+    AMAZON_STALE = "AMAZON_STALE"
+    OLD_STOCK_90D = "OLD_STOCK_90D"
+
+
 class PurchaseKind(StrEnum):
     PRIVATE_DIFF = "PRIVATE_DIFF"
     COMMERCIAL_REGULAR = "COMMERCIAL_REGULAR"
