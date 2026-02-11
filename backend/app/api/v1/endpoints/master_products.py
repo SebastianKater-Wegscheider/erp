@@ -7,12 +7,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.enums import MasterProductKind
+from app.core.enums import InventoryStatus, MasterProductKind
 from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.inventory_item import InventoryItem
 from app.models.master_product import MasterProduct, master_product_sku_from_id
@@ -29,6 +29,14 @@ from app.schemas.master_product import (
 
 
 router = APIRouter()
+
+_IN_STOCK_STATUSES = (
+    InventoryStatus.DRAFT,
+    InventoryStatus.AVAILABLE,
+    InventoryStatus.FBA_INBOUND,
+    InventoryStatus.FBA_WAREHOUSE,
+    InventoryStatus.RESERVED,
+)
 
 _CSV_HEADER_ALIASES: dict[str, str] = {
     "kind": "kind",
@@ -283,20 +291,32 @@ async def create_master_product(
 
 
 @router.get("", response_model=list[MasterProductOutWithAmazon])
-async def list_master_products(session: AsyncSession = Depends(get_session)) -> list[MasterProductOutWithAmazon]:
-    rows = (
-        await session.execute(
-            select(MasterProduct, AmazonProductMetricsLatest)
-            .outerjoin(AmazonProductMetricsLatest, AmazonProductMetricsLatest.master_product_id == MasterProduct.id)
-            .order_by(
-                MasterProduct.kind,
-                MasterProduct.title,
-                MasterProduct.platform,
-                MasterProduct.region,
-                MasterProduct.variant,
+async def list_master_products(
+    in_stock_only: bool = False,
+    session: AsyncSession = Depends(get_session),
+) -> list[MasterProductOutWithAmazon]:
+    stmt = (
+        select(MasterProduct, AmazonProductMetricsLatest)
+        .outerjoin(AmazonProductMetricsLatest, AmazonProductMetricsLatest.master_product_id == MasterProduct.id)
+        .order_by(
+            MasterProduct.kind,
+            MasterProduct.title,
+            MasterProduct.platform,
+            MasterProduct.region,
+            MasterProduct.variant,
+        )
+    )
+    if in_stock_only:
+        stmt = stmt.where(
+            exists(
+                select(1).where(
+                    InventoryItem.master_product_id == MasterProduct.id,
+                    InventoryItem.status.in_(_IN_STOCK_STATUSES),
+                )
             )
         )
-    ).all()
+
+    rows = (await session.execute(stmt)).all()
 
     out: list[MasterProductOutWithAmazon] = []
     for mp, latest in rows:

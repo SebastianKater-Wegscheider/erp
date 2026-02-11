@@ -1,5 +1,22 @@
 # History
 
+## 2026-02-11 - Produktstamm: BSR-First Sortierung + Schnellfilter Auf Lager + kompaktere Amazon-Zeile
+
+### Ausgangslage
+- In `Produktstamm > Amazon Status` war die Standardreihenfolge nicht auf operative Prioritaet optimiert (Bestseller nicht automatisch oben).
+- Ein schneller Fokus auf aktuell verkaufbare Produkte (in stock) fehlte.
+- In der Tabellenzeile war `ASIN` sichtbar, waehrend fuer Repricing/Ankaufsentscheidungen `BSR` und `Used best` relevanter sind.
+
+### Business-Entscheidungen
+- Standard-Sortierung im Produktstamm wird auf BSR im uebergeordneten Ranking (`amazon_rank_overall`, aufsteigend) gesetzt.
+- Ein schneller "Auf Lager"-Filter wird direkt im Produktstamm-Filterbereich angeboten (ohne extra Navigation).
+- In Amazon-Row-Scanline werden `BSR` und `Used best` sichtbar gemacht; `ASIN` bleibt nur als sekundäre Aktion (Copy/Details), nicht als prominenter Row-Inhalt.
+
+### Technische Entscheidungen
+- Backend-Listendpoint `/master-products` akzeptiert `in_stock_only` und filtert per `EXISTS` auf Inventory-Status (`DRAFT`, `AVAILABLE`, `FBA_INBOUND`, `FBA_WAREHOUSE`, `RESERVED`).
+- Frontend fuehrt explizite Sortieroptionen ein, default ist `BSR (Overall)`.
+- Amazon-Row wird in Mobile/Desktop auf kompakte 1-2 Zeilen reduziert, mit inline KPI (`BSR`, `Used best`) und unveraendertem Details-Accordion.
+
 ## 2026-02-11 - UX Harmonisierung + Bank-Sync Entfernung + Einkauf/Fahrt Integration
 
 ### Ausgangslage

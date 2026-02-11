@@ -39,6 +39,7 @@ import {
 
 type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
 type MasterProductsViewMode = "catalog" | "amazon";
+type MasterProductsSortKey = "BSR_OVERALL_ASC" | "TITLE_ASC" | "AMAZON_FRESH_DESC";
 
 type MasterProduct = {
   id: string;
@@ -185,6 +186,35 @@ function isAmazonStale(m: MasterProduct): boolean {
 function fmtMaybeEur(cents?: number | null): string {
   if (cents === null || cents === undefined) return "—";
   return `${formatEur(cents)} €`;
+}
+
+function overallBsrRank(m: MasterProduct): number {
+  if (typeof m.amazon_rank_overall === "number" && m.amazon_rank_overall > 0) return m.amazon_rank_overall;
+  return Number.POSITIVE_INFINITY;
+}
+
+function compareMasterProducts(a: MasterProduct, b: MasterProduct, sortBy: MasterProductsSortKey): number {
+  if (sortBy === "TITLE_ASC") {
+    return a.title.localeCompare(b.title, "de-DE", { sensitivity: "base" });
+  }
+  if (sortBy === "AMAZON_FRESH_DESC") {
+    const ta = parseIsoMs(a.amazon_last_success_at);
+    const tb = parseIsoMs(b.amazon_last_success_at);
+    const va = ta === null ? Number.NEGATIVE_INFINITY : ta;
+    const vb = tb === null ? Number.NEGATIVE_INFINITY : tb;
+    if (vb !== va) return vb - va;
+    return a.title.localeCompare(b.title, "de-DE", { sensitivity: "base" });
+  }
+
+  const rankA = overallBsrRank(a);
+  const rankB = overallBsrRank(b);
+  if (rankA !== rankB) return rankA - rankB;
+
+  const usedA = computeUsedBest(a).cents ?? Number.POSITIVE_INFINITY;
+  const usedB = computeUsedBest(b).cents ?? Number.POSITIVE_INFINITY;
+  if (usedA !== usedB) return usedA - usedB;
+
+  return a.title.localeCompare(b.title, "de-DE", { sensitivity: "base" });
 }
 
 function sellThroughSpeedLabel(speed: string): string {
@@ -556,6 +586,8 @@ export function MasterProductsPage() {
   const [filtersOpen, setFiltersOpen] = useState(() => searchParams.get("missing") === "asin");
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<MasterProductKind | "ALL">("ALL");
+  const [sortBy, setSortBy] = useState<MasterProductsSortKey>("BSR_OVERALL_ASC");
+  const [inStockOnly, setInStockOnly] = useState(false);
   const [amazonStaleOnly, setAmazonStaleOnly] = useState(false);
   const [amazonBlockedOnly, setAmazonBlockedOnly] = useState(false);
   const [amazonMaxNew, setAmazonMaxNew] = useState("");
@@ -576,8 +608,9 @@ export function MasterProductsPage() {
   const [confirmDelete, setConfirmDelete] = useState<MasterProduct | null>(null);
 
   const list = useQuery({
-    queryKey: ["master-products"],
-    queryFn: () => api.request<MasterProduct[]>("/master-products"),
+    queryKey: ["master-products", inStockOnly],
+    queryFn: () =>
+      api.request<MasterProduct[]>(inStockOnly ? "/master-products?in_stock_only=true" : "/master-products"),
   });
 
   useEffect(() => {
@@ -783,6 +816,8 @@ export function MasterProductsPage() {
   function resetAllFilters() {
     setSearch("");
     setKindFilter("ALL");
+    setSortBy("BSR_OVERALL_ASC");
+    setInStockOnly(false);
     setAmazonStaleOnly(false);
     setAmazonBlockedOnly(false);
     setAmazonMaxNew("");
@@ -811,13 +846,15 @@ export function MasterProductsPage() {
         (m) => typeof m.amazon_price_used_like_new_cents === "number" && m.amazon_price_used_like_new_cents <= maxLikeNew,
       );
     }
-    if (!q) return all;
-    return all.filter((m) =>
-      `${m.kind} ${m.sku} ${m.title} ${m.manufacturer ?? ""} ${m.model ?? ""} ${m.platform} ${m.region} ${m.variant} ${m.ean ?? ""} ${m.asin ?? ""}`
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [amazonBlockedOnly, amazonMaxLikeNew, amazonMaxNew, amazonStaleOnly, kindFilter, list.data, missingAsinOnly, search]);
+    if (q) {
+      all = all.filter((m) =>
+        `${m.kind} ${m.sku} ${m.title} ${m.manufacturer ?? ""} ${m.model ?? ""} ${m.platform} ${m.region} ${m.variant} ${m.ean ?? ""} ${m.asin ?? ""}`
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+    return [...all].sort((a, b) => compareMasterProducts(a, b, sortBy));
+  }, [amazonBlockedOnly, amazonMaxLikeNew, amazonMaxNew, amazonStaleOnly, kindFilter, list.data, missingAsinOnly, search, sortBy]);
 
   function isExpanded(id: string): boolean {
     return !!expanded[id];
@@ -838,6 +875,7 @@ export function MasterProductsPage() {
   const activeFilterCount =
     (search.trim() ? 1 : 0) +
     (kindFilter !== "ALL" ? 1 : 0) +
+    (inStockOnly ? 1 : 0) +
     (missingAsinOnly ? 1 : 0) +
     (viewMode === "amazon" && amazonStaleOnly ? 1 : 0) +
     (viewMode === "amazon" && amazonBlockedOnly ? 1 : 0) +
@@ -921,6 +959,26 @@ export function MasterProductsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                <Select value={sortBy} onValueChange={(v) => setSortBy(v as MasterProductsSortKey)}>
+                  <SelectTrigger className="w-full min-w-[220px] sm:w-[220px]">
+                    <SelectValue placeholder="Sortierung" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BSR_OVERALL_ASC">BSR Gesamt (Bestseller zuerst)</SelectItem>
+                    <SelectItem value="TITLE_ASC">Titel A–Z</SelectItem>
+                    <SelectItem value="AMAZON_FRESH_DESC">Amazon zuletzt aktualisiert</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  type="button"
+                  variant={inStockOnly ? "secondary" : "outline"}
+                  onClick={() => setInStockOnly((v) => !v)}
+                  title="Nur Produkte mit Bestand (Draft/Available/FBA/Reserved)"
+                >
+                  Auf Lager
+                </Button>
 
                 <Button
                   type="button"
@@ -1134,7 +1192,7 @@ export function MasterProductsPage() {
                       ) : null}
 
                       {viewMode === "amazon" && m.asin ? (
-                        <div className="mt-2 space-y-2">
+                        <div className="mt-2 space-y-1.5">
                           <div className="flex flex-wrap items-center gap-2">
                             {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
                             {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
@@ -1145,7 +1203,6 @@ export function MasterProductsPage() {
                             ) : (
                               <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
                             )}
-                            <CopyIdPill label="ASIN" value={m.asin} />
                             <Button
                               type="button"
                               variant="ghost"
@@ -1162,10 +1219,8 @@ export function MasterProductsPage() {
                             </Button>
                           </div>
                           <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                            Failures {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"} · Next retry{" "}
-                            {m.amazon_next_retry_at
-                              ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
-                              : "—"}
+                            BSR Gesamt {Number.isFinite(overallBsrRank(m)) ? `#${overallBsrRank(m)}` : "—"} · Used best{" "}
+                            {fmtMaybeEur(computeUsedBest(m).cents)}
                           </div>
 
                           {isExpanded(m.id) ? (
@@ -1412,7 +1467,7 @@ export function MasterProductsPage() {
                             {!m.asin ? (
                               <span className="text-gray-500 dark:text-gray-400">—</span>
                             ) : (
-                                <div className="space-y-2">
+                                <div className="space-y-1.5">
                                   <div className="flex flex-wrap items-center gap-2">
                                     {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
                                     {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
@@ -1438,7 +1493,10 @@ export function MasterProductsPage() {
                                     {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                   </Button>
                                 </div>
-                                <div className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">ASIN {m.asin}</div>
+                                <div className="truncate text-[11px] text-gray-500 dark:text-gray-400">
+                                  BSR Gesamt {Number.isFinite(overallBsrRank(m)) ? `#${overallBsrRank(m)}` : "—"} · Used best{" "}
+                                  {fmtMaybeEur(computeUsedBest(m).cents)}
+                                </div>
                               </div>
                             )}
                           </TableCell>

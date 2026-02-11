@@ -136,15 +136,32 @@ it("keeps UUID out of row body and exposes copy action", async () => {
   expect(copyItems.length).toBeGreaterThan(0);
 });
 
-it("hides EAN chips in Amazon mode and keeps ASIN copy chip", async () => {
+it("hides EAN chips in Amazon mode and shows BSR/Used-best inline", async () => {
   renderPage("/master-products?view=catalog");
 
   await screen.findAllByText("With ASIN Product");
   expect(screen.queryAllByText(/EAN:/).length).toBeGreaterThan(0);
 
   fireEvent.click(screen.getByRole("button", { name: "Amazon Status" }));
-  expect(await screen.findAllByText(/ASIN:/)).not.toHaveLength(0);
+  expect(await screen.findAllByText(/BSR Gesamt/i)).not.toHaveLength(0);
+  expect(screen.queryAllByText(/Used best/i).length).toBeGreaterThan(0);
   expect(screen.queryAllByText(/EAN:/)).toHaveLength(0);
+  expect(screen.queryAllByText(/ASIN:/)).toHaveLength(0);
+});
+
+it("uses in-stock quick filter via backend query param", async () => {
+  renderPage("/master-products", async (path) => {
+    if (path === "/master-products") return PRODUCTS;
+    if (path === "/master-products?in_stock_only=true") return [PRODUCTS[0]];
+    throw new Error(`Unhandled request in test: ${path}`);
+  });
+
+  await screen.findAllByText("With ASIN Product");
+  fireEvent.click(screen.getByRole("button", { name: "Auf Lager" }));
+
+  await waitFor(() => {
+    expect(requestMock).toHaveBeenCalledWith("/master-products?in_stock_only=true");
+  });
 });
 
 it("imports CSV text and shows summary", async () => {
