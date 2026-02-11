@@ -499,3 +499,19 @@
 - `Inventory` bekommt URL-faehige Queue-Filter (`queue=...`) zusaetzlich zu `q`, `status`, `view`.
 - Queue-Definitionen werden backend-seitig serverbasiert gefiltert (kein clientseitiges Schätzen), damit Deep-Links, Counts und Liste identisch bleiben.
 - `Produktstamm` behaelt zwei Modi, aber der Amazon-Modus wird auf Health-Status fokussiert; schwere Markt-Signal-Bloecke bleiben nur als progressive Details sichtbar.
+
+## 2026-02-11 - Inventory Priorisieren: staerkere Zeilen-Hierarchie im Desktop-Table
+
+### Ausgangslage
+- Trotz Queue-Fokus ist die Desktop-Zeile in `Priorisieren` noch visuell dicht: viele Badges mit gleicher Gewichtung, mehrere schmale Spalten und wenig Trennung zwischen Kernsignal und Kontext.
+- Nutzer koennen Werte sehen, muessen aber noch zu stark "horizontal lesen", um pro Zeile schnell zu priorisieren.
+
+### Business-Entscheidung
+- Ziel bleibt eine belastbare 5-Sekunden-Entscheidung pro Zeile.
+- Primarsignale in der Zeile: `Marge`, `Abverkauf`, `Marktpreis`.
+- Sekundaersignale (`BSR`, Confidence, Kosten-Details, SKU/Fotos) bleiben sichtbar, werden aber klar nachrangig dargestellt.
+
+### Technische Entscheidung
+- Desktop-`overview` reduziert Spaltenkomplexitaet, indem `Status + Alter + Zustand` zu einer strukturierten Status-Zelle gebuendelt werden.
+- KPI-Zellen erhalten einen klaren Block-Aufbau (primaerer Zahlenwert, darunter Kontextzeile), um Scannbarkeit und Vergleichbarkeit zwischen Zeilen zu verbessern.
+- Produkt-Zelle wird in Titel (primaer), Produkt-Meta (sekundaer) und technische Hinweise/Fotos (tertiaer) getrennt.

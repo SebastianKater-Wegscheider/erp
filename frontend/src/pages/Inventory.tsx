@@ -268,6 +268,19 @@ function sellThroughConfidenceVariant(confidence: string) {
   }
 }
 
+function sellThroughConfidenceLabel(confidence: string): string {
+  switch (confidence) {
+    case "HIGH":
+      return "Hoch";
+    case "MEDIUM":
+      return "Mittel";
+    case "LOW":
+      return "Niedrig";
+    default:
+      return "k. A.";
+  }
+}
+
 function isLikelyImagePath(path: string): boolean {
   const p = (path ?? "").toLowerCase();
   return (
@@ -1230,8 +1243,6 @@ export function InventoryPage() {
                   <TableRow>
                     <TableHead>Produkt</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Alter</TableHead>
-                    <TableHead>Zustand</TableHead>
                     <TableHead className="text-right">Marktpreis</TableHead>
                     <TableHead>Abverkauf</TableHead>
                     <TableHead className="text-right">Marge</TableHead>
@@ -1264,7 +1275,7 @@ export function InventoryPage() {
                     const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
 
                     return (
-                      <TableRow key={it.id}>
+                      <TableRow key={it.id} className="align-top [&>td]:py-3">
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
@@ -1272,11 +1283,6 @@ export function InventoryPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
                                 {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
-                                {mp?.sku ? (
-                                  <Badge variant="outline" className="font-mono text-[11px]">
-                                    {mp.sku}
-                                  </Badge>
-                                ) : null}
                               </div>
                               {mp ? (
                                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
@@ -1291,62 +1297,84 @@ export function InventoryPage() {
                                   ) : null}
                                 </div>
                               ) : null}
-                              {!!itemImages.length ? (
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <Badge variant="outline">
-                                    {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
-                                  </Badge>
-                                  <Button size="sm" variant="outline" onClick={() => setTablePreviewItemId(it.id)}>
-                                    Vorschau
-                                  </Button>
-                                </div>
-                              ) : null}
+                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                                {mp?.sku ? (
+                                  <span className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                                    {mp.sku}
+                                  </span>
+                                ) : null}
+                                {!!itemImages.length ? (
+                                  <>
+                                    <span className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                                      {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="font-medium text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline dark:text-gray-300 dark:hover:text-gray-100"
+                                      onClick={() => setTablePreviewItemId(it.id)}
+                                    >
+                                      Vorschau
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-gray-400 dark:text-gray-500">Keine Fotos</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={av.variant}>{av.label}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                          <div className="space-y-1.5">
+                            <Badge variant={inventoryStatusVariant(it.status)}>{inventoryStatusLabel(it.status)}</Badge>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Badge variant={av.variant}>{av.label}</Badge>
+                              <Badge variant="outline">{conditionLabel(it.condition)}</Badge>
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="font-semibold tabular-nums">{typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}</div>
-                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{market.label}</div>
+                          <div className="ml-auto inline-flex min-w-[9.5rem] flex-col rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-right dark:border-gray-800 dark:bg-gray-900/40">
+                            <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                              {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{market.label}</div>
+                          </div>
                         </TableCell>
                         <TableCell title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren.">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
-                            <div className="font-semibold tabular-nums">{sellDisplay}</div>
-                          </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                            <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
-                            <span className="tabular-nums">{bsrLabel}</span>
+                          <div className="inline-flex min-w-[9.5rem] flex-col rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 dark:border-gray-800 dark:bg-gray-900/40">
+                            <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
+                              <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{bsrLabel}</span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                              Sicherheit {sellThroughConfidenceLabel(sell.confidence)}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-right" title={feeTitle}>
-                          <div
-                            className={[
-                              "font-semibold tabular-nums",
-                              margin === null
-                                ? "text-gray-900 dark:text-gray-100"
-                                : margin >= 0
-                                  ? "text-emerald-700 dark:text-emerald-300"
-                                  : "text-red-700 dark:text-red-300",
-                            ].join(" ")}
-                          >
-                            {margin === null ? "—" : `${formatEur(margin)} €`}
-                          </div>
-                          <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                            EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                          <div className="ml-auto inline-flex min-w-[9.5rem] flex-col rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2 text-right dark:border-gray-800 dark:bg-gray-900/40">
+                            <div
+                              className={[
+                                "font-semibold tabular-nums",
+                                margin === null
+                                  ? "text-gray-900 dark:text-gray-100"
+                                  : margin >= 0
+                                    ? "text-emerald-700 dark:text-emerald-300"
+                                    : "text-red-700 dark:text-red-300",
+                              ].join(" ")}
+                            >
+                              {margin === null ? "—" : `${formatEur(margin)} €`}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                              EK {formatEur(it.purchase_price_cents)} €{hasAllocated ? ` + NK ${formatEur(it.allocated_costs_cents)} €` : ""}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex items-center gap-2">
                             <Button
+                              size="sm"
                               variant="outline"
                               onClick={() => {
                                 setEditing(it);
@@ -1401,7 +1429,7 @@ export function InventoryPage() {
                   })}
                   {!rows.length && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-sm text-gray-500 dark:text-gray-400">
+                      <TableCell colSpan={6} className="text-sm text-gray-500 dark:text-gray-400">
                         Keine Daten.
                       </TableCell>
                     </TableRow>
