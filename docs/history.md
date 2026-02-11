@@ -482,3 +482,20 @@
 - Rank-Prioritaet in der Schaetzung: `overall` zuerst, `specific` nur als Fallback.
 - Basis-Model: BSR -> geschaetzte Units/day Range (Buckets: #1-10, 11-100, 101-500, 501-2k, 2k-10k, 10k+), daraus `days = 1 / units_per_day`.
 - Anzeige: < 1 Tag wird als Stunden (`h`) formatiert, damit schnelle Artikel nicht pauschal als "1 Tag" erscheinen.
+
+## 2026-02-11 - Produktstamm/Lagerbestand: Journey-first Entzerrung (Queues + klare Rollen)
+
+### Ausgangslage
+- `Produktstamm` und `Lagerbestand` enthalten beide operatives und analytisches Material; dadurch entsteht Doppelung und visuelle Last.
+- Die aktuelle Navigation gibt zwar Modi vor, aber priorisierte Tagesarbeit ("Was jetzt zuerst?") ist nicht klar genug gefuehrt.
+
+### Business-Entscheidungen
+- Primarer Daily-Driver fuer Repricing/Priorisierung ist `Lagerbestand`.
+- `Produktstamm` wird auf Identitaet + Amazon-Datenqualitaet/Health ausgerichtet (nicht als Haupt-Entscheidungsoberflaeche fuer Tages-Priorisierung).
+- Arbeitsfuehrung erfolgt ueber konkrete Work-Queues (MVP): fehlende Fotos, fehlender Lagerplatz, Amazon stale/blocked, Altbestand >90 Tage.
+- Dashboard bleibt Inbox-Einstieg mit Count + Deep-Link; Abarbeitung findet in `Lagerbestand` statt.
+
+### Technische Entscheidungen
+- `Inventory` bekommt URL-faehige Queue-Filter (`queue=...`) zusaetzlich zu `q`, `status`, `view`.
+- Queue-Definitionen werden backend-seitig serverbasiert gefiltert (kein clientseitiges Schätzen), damit Deep-Links, Counts und Liste identisch bleiben.
+- `Produktstamm` behaelt zwei Modi, aber der Amazon-Modus wird auf Health-Status fokussiert; schwere Markt-Signal-Bloecke bleiben nur als progressive Details sichtbar.
