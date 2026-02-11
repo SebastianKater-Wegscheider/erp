@@ -17,6 +17,7 @@ import { Label } from "../components/ui/label";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
@@ -81,6 +82,19 @@ type PurchaseAttachmentOut = {
   note?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type MileageOut = {
+  id: string;
+  log_date: string;
+  start_location: string;
+  destination: string;
+  purpose: string;
+  purpose_text?: string | null;
+  distance_meters: number;
+  rate_cents_per_km: number;
+  amount_cents: number;
+  purchase_ids?: string[];
 };
 
 type UploadOut = { upload_path: string };
@@ -253,6 +267,11 @@ function masterProductLabel(m: MasterProduct): string {
 
 function masterProductSearchKey(m: MasterProduct): string {
   return `${m.sku} ${m.title} ${m.platform} ${m.region} ${m.variant} ${m.ean ?? ""} ${m.asin ?? ""} ${m.manufacturer ?? ""} ${m.model ?? ""}`.toLowerCase();
+}
+
+function kmFromMetersString(distanceMeters: number): string {
+  if (!Number.isFinite(distanceMeters) || distanceMeters <= 0) return "";
+  return (distanceMeters / 1000).toFixed(2);
 }
 
 function MasterProductCombobox({
@@ -554,6 +573,13 @@ export function PurchasesPage() {
   const [totalAmount, setTotalAmount] = useState<string>("0,00");
   const [shippingCost, setShippingCost] = useState<string>("0,00");
   const [buyerProtectionFee, setBuyerProtectionFee] = useState<string>("0,00");
+  const [withMileage, setWithMileage] = useState(false);
+  const [mileageLogDate, setMileageLogDate] = useState<string>(() => todayIsoLocal());
+  const [mileageStartLocation, setMileageStartLocation] = useState("");
+  const [mileageDestination, setMileageDestination] = useState("");
+  const [mileageKm, setMileageKm] = useState("");
+  const [mileagePurposeText, setMileagePurposeText] = useState("");
+  const [mileageSyncError, setMileageSyncError] = useState<string | null>(null);
 
   const [externalInvoiceNumber, setExternalInvoiceNumber] = useState<string>("");
   const [receiptUploadPath, setReceiptUploadPath] = useState<string>("");
@@ -626,6 +652,12 @@ export function PurchasesPage() {
     queryKey: ["purchase-attachments", editingPurchaseId],
     enabled: !!editingPurchaseId,
     queryFn: () => api.request<PurchaseAttachmentOut[]>(`/purchases/${editingPurchaseId!}/attachments`),
+  });
+
+  const purchaseMileage = useQuery({
+    queryKey: ["purchase-mileage", editingPurchaseId],
+    enabled: !!editingPurchaseId,
+    queryFn: () => api.request<MileageOut | null>(`/purchases/${editingPurchaseId!}/mileage`),
   });
 
   const deletePurchaseAttachment = useMutation({
@@ -714,6 +746,32 @@ export function PurchasesPage() {
     }
   }
 
+  async function syncPurchaseMileageForPurchase(
+    purchaseId: string,
+    options?: { deleteIfDisabled?: boolean },
+  ): Promise<void> {
+    setMileageSyncError(null);
+    if (!withMileage) {
+      if (options?.deleteIfDisabled) {
+        await api.request<void>(`/purchases/${purchaseId}/mileage`, { method: "DELETE" });
+      }
+      return;
+    }
+    if (!mileageInputValid) {
+      throw new Error("Fahrt unvollständig: Datum, Start, Ziel und km > 0 erforderlich.");
+    }
+    await api.request<MileageOut>(`/purchases/${purchaseId}/mileage`, {
+      method: "PUT",
+      json: {
+        log_date: mileageLogDate,
+        start_location: mileageStartLocation.trim(),
+        destination: mileageDestination.trim(),
+        km: mileageKmNormalized,
+        purpose_text: mileagePurposeText.trim() ? mileagePurposeText.trim() : null,
+      },
+    });
+  }
+
   const create = useMutation({
     mutationFn: async () => {
       if (!purchaseDateValid) throw new Error("Datum fehlt");
@@ -760,6 +818,18 @@ export function PurchasesPage() {
           await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
           return;
         }
+      }
+      try {
+        await syncPurchaseMileageForPurchase(created.id);
+      } catch (error) {
+        setMileageSyncError((error as Error)?.message ?? "Fahrt konnte nicht gespeichert werden");
+        setEditingPurchaseId(created.id);
+        setFormOpen(true);
+        setFormTab("BASICS");
+        await qc.invalidateQueries({ queryKey: ["purchases"] });
+        await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
+        await qc.invalidateQueries({ queryKey: ["purchase-mileage", created.id] });
+        return;
       }
       resetFormDraft();
       setFormOpen(false);
@@ -816,6 +886,17 @@ export function PurchasesPage() {
           return;
         }
       }
+      try {
+        await syncPurchaseMileageForPurchase(updatedPurchase.id, { deleteIfDisabled: true });
+      } catch (error) {
+        setMileageSyncError((error as Error)?.message ?? "Fahrt konnte nicht gespeichert werden");
+        setFormTab("BASICS");
+        setFormOpen(true);
+        await qc.invalidateQueries({ queryKey: ["purchases"] });
+        await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
+        await qc.invalidateQueries({ queryKey: ["purchase-mileage", updatedPurchase.id] });
+        return;
+      }
       resetFormDraft();
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
@@ -857,6 +938,17 @@ export function PurchasesPage() {
     },
   });
 
+  const mileageKmNormalized = mileageKm.trim().replace(",", ".");
+  const mileageKmValue = mileageKmNormalized ? Number(mileageKmNormalized) : NaN;
+  const mileageDateValid = /^\d{4}-\d{2}-\d{2}$/.test(mileageLogDate);
+  const mileageInputValid =
+    !withMileage ||
+    (mileageDateValid &&
+      !!mileageStartLocation.trim() &&
+      !!mileageDestination.trim() &&
+      Number.isFinite(mileageKmValue) &&
+      mileageKmValue > 0);
+
   const canSubmit =
     purchaseDateValid &&
     counterpartyName.trim() &&
@@ -865,7 +957,8 @@ export function PurchasesPage() {
     splitOk &&
     totalCentsParsed !== null &&
     (kind !== "PRIVATE_DIFF" || extraCostsValid) &&
-    (kind === "PRIVATE_DIFF" || (externalInvoiceNumber.trim() && receiptUploadPath.trim()));
+    (kind === "PRIVATE_DIFF" || (externalInvoiceNumber.trim() && receiptUploadPath.trim())) &&
+    mileageInputValid;
 
   const platformOptions = useMemo(() => {
     const set = new Set<string>();
@@ -903,6 +996,31 @@ export function PurchasesPage() {
       setFormTab("BASICS");
     }
   }, [kind, formTab]);
+
+  useEffect(() => {
+    if (editingPurchaseId) return;
+    if (!withMileage) setMileageLogDate(purchaseDate);
+  }, [editingPurchaseId, purchaseDate, withMileage]);
+
+  useEffect(() => {
+    if (!editingPurchaseId || !purchaseMileage.isSuccess) return;
+    const linked = purchaseMileage.data;
+    if (!linked) {
+      setWithMileage(false);
+      setMileageLogDate(purchaseDate);
+      setMileageStartLocation("");
+      setMileageDestination("");
+      setMileageKm("");
+      setMileagePurposeText("");
+      return;
+    }
+    setWithMileage(true);
+    setMileageLogDate(linked.log_date);
+    setMileageStartLocation(linked.start_location);
+    setMileageDestination(linked.destination);
+    setMileageKm(kmFromMetersString(linked.distance_meters));
+    setMileagePurposeText(linked.purpose_text ?? "");
+  }, [editingPurchaseId, purchaseDate, purchaseMileage.data, purchaseMileage.isSuccess]);
 
   const stagedUploadCount = stagedAttachments.length;
   const stagedReadyCount = stagedAttachments.filter((item) => item.status === "uploaded" && item.upload_path).length;
@@ -947,6 +1065,13 @@ export function PurchasesPage() {
     setTotalAmount("0,00");
     setShippingCost("0,00");
     setBuyerProtectionFee("0,00");
+    setWithMileage(false);
+    setMileageLogDate(todayIsoLocal());
+    setMileageStartLocation("");
+    setMileageDestination("");
+    setMileageKm("");
+    setMileagePurposeText("");
+    setMileageSyncError(null);
     setExternalInvoiceNumber("");
     setReceiptUploadPath("");
     setTaxRateBp("2000");
@@ -976,6 +1101,13 @@ export function PurchasesPage() {
     setTotalAmount(formatEur(p.total_amount_cents));
     setShippingCost(formatEur(p.shipping_cost_cents ?? 0));
     setBuyerProtectionFee(formatEur(p.buyer_protection_fee_cents ?? 0));
+    setWithMileage(false);
+    setMileageLogDate(p.purchase_date);
+    setMileageStartLocation("");
+    setMileageDestination("");
+    setMileageKm("");
+    setMileagePurposeText("");
+    setMileageSyncError(null);
     setExternalInvoiceNumber(p.external_invoice_number ?? "");
     setReceiptUploadPath(p.receipt_upload_path ?? "");
     setTaxRateBp(String(p.tax_rate_bp ?? 2000));
@@ -1008,6 +1140,11 @@ export function PurchasesPage() {
   function hasDraftChanges(): boolean {
     if (stagedAttachments.length) return true;
     if (editingPurchaseId) return false;
+    if (withMileage) return true;
+    if (mileageStartLocation.trim()) return true;
+    if (mileageDestination.trim()) return true;
+    if (mileageKm.trim()) return true;
+    if (mileagePurposeText.trim()) return true;
     if (lines.length) return true;
     if (counterpartyName.trim()) return true;
     if (counterpartyAddress.trim()) return true;
@@ -1241,7 +1378,7 @@ export function PurchasesPage() {
               </TableHeader>
               <TableBody>
                 {(list.data ?? []).map((p) => (
-                  <TableRow key={p.id}>
+                  <TableRow key={p.id} className={TABLE_ROW_COMPACT_CLASS}>
                     {(() => {
                       const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
                       const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
@@ -1255,9 +1392,9 @@ export function PurchasesPage() {
                               <div className="text-xs text-gray-500 dark:text-gray-400">{p.source_platform}</div>
                             ) : null}
                           </TableCell>
-                          <TableCell className="text-right">{formatEur(p.total_amount_cents)} €</TableCell>
-                          <TableCell className="text-right">{formatEur(extraCosts)} €</TableCell>
-                          <TableCell className="text-right">{formatEur(totalPaid)} €</TableCell>
+                          <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(p.total_amount_cents)} €</TableCell>
+                          <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(extraCosts)} €</TableCell>
+                          <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(totalPaid)} €</TableCell>
                         </>
                       );
                     })()}
@@ -1417,6 +1554,74 @@ export function PurchasesPage() {
                       <Label>Adresse (optional)</Label>
                       <Input value={counterpartyAddress} onChange={(e) => setCounterpartyAddress(e.target.value)} placeholder="Adresse" />
                     </div>
+                  </div>
+
+                  <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-medium">Fahrt zum Einkauf (optional)</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Verknüpft eine Fahrt direkt mit diesem Einkauf für das Fahrtenbuch.
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant={withMileage ? "secondary" : "outline"}
+                        onClick={() => {
+                          setWithMileage((current) => !current);
+                          setMileageSyncError(null);
+                          if (!withMileage) {
+                            setMileageLogDate(mileageLogDate || purchaseDate);
+                          }
+                        }}
+                      >
+                        {withMileage ? "Aktiv" : "Hinzufügen"}
+                      </Button>
+                    </div>
+
+                    {editingPurchaseId && purchaseMileage.isFetching && (
+                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">Lade verknüpfte Fahrt…</div>
+                    )}
+                    {purchaseMileage.isError && (
+                      <div className="mt-2 text-xs text-red-700 dark:text-red-300">{(purchaseMileage.error as Error).message}</div>
+                    )}
+
+                    {withMileage && (
+                      <div className="mt-3 grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Fahrtdatum</Label>
+                          <Input type="date" value={mileageLogDate} onChange={(e) => setMileageLogDate(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Kilometer</Label>
+                          <Input value={mileageKm} onChange={(e) => setMileageKm(e.target.value)} placeholder="z. B. 12.4" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Start</Label>
+                          <Input
+                            value={mileageStartLocation}
+                            onChange={(e) => setMileageStartLocation(e.target.value)}
+                            placeholder="z. B. Lager"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Ziel</Label>
+                          <Input
+                            value={mileageDestination}
+                            onChange={(e) => setMileageDestination(e.target.value)}
+                            placeholder="z. B. Verkäuferadresse"
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <Label>Zweck-Notiz (optional)</Label>
+                          <Input
+                            value={mileagePurposeText}
+                            onChange={(e) => setMileagePurposeText(e.target.value)}
+                            placeholder="z. B. Abholung Konvolut"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {kind === "PRIVATE_DIFF" && (
@@ -1645,7 +1850,7 @@ export function PurchasesPage() {
                           const margin = estimateMargin(payout.payout_cents, costBasis);
 
                           return (
-                            <TableRow key={l.ui_id}>
+                            <TableRow key={l.ui_id} className={TABLE_ROW_COMPACT_CLASS}>
                               <TableCell>
                                 <MasterProductCombobox
                                   value={l.master_product_id}
@@ -1830,7 +2035,7 @@ export function PurchasesPage() {
                           </TableHeader>
                           <TableBody>
                             {stagedAttachments.map((item) => (
-                              <TableRow key={item.local_id}>
+                              <TableRow key={item.local_id} className={TABLE_ROW_COMPACT_CLASS}>
                                 <TableCell>
                                   <div className="font-mono text-xs">{item.file_name}</div>
                                   <div className="text-xs text-gray-500 dark:text-gray-400">
@@ -1922,7 +2127,7 @@ export function PurchasesPage() {
                           </TableHeader>
                           <TableBody>
                             {(purchaseAttachments.data ?? []).map((attachment) => (
-                              <TableRow key={attachment.id}>
+                              <TableRow key={attachment.id} className={TABLE_ROW_COMPACT_CLASS}>
                                 <TableCell>{optionLabel(PURCHASE_ATTACHMENT_KIND_OPTIONS, attachment.kind)}</TableCell>
                                 <TableCell className="font-mono text-xs">{attachment.original_filename}</TableCell>
                                 <TableCell>{attachment.note ?? "—"}</TableCell>
@@ -1970,9 +2175,10 @@ export function PurchasesPage() {
             </Tabs>
 
             <div className="shrink-0 space-y-3 border-t border-gray-200 px-4 pb-4 pt-3 sm:px-6 dark:border-gray-800">
-              {(create.isError || update.isError) && (
+              {(create.isError || update.isError || mileageSyncError) && (
                 <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-                  {(((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message}
+                  {mileageSyncError ??
+                    ((((create.error ?? update.error) as Error) ?? new Error("Unbekannter Fehler")).message)}
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2">
@@ -2000,6 +2206,11 @@ export function PurchasesPage() {
                 {stagedQueuedCount > 0 && (
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     Dateien werden vorbereitet. Speichern ist kurz blockiert.
+                  </div>
+                )}
+                {withMileage && !mileageInputValid && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Fahrt aktiv: Datum, Start, Ziel und km müssen gültig sein.
                   </div>
                 )}
               </div>
