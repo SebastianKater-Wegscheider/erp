@@ -5,7 +5,52 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 let lastSelectTriggerEl: HTMLElement | null = null;
-let lastSelectScroll: { x: number; y: number } | null = null;
+let lastSelectScrollSnapshot: SelectScrollSnapshot | null = null;
+
+type SelectScrollSnapshot = {
+  windowX: number;
+  windowY: number;
+  container: HTMLElement | null;
+  containerLeft: number;
+  containerTop: number;
+};
+
+function hasScrollableOverflow(value: string): boolean {
+  return value.includes("auto") || value.includes("scroll") || value.includes("overlay");
+}
+
+function findScrollableAncestor(element: HTMLElement | null): HTMLElement | null {
+  let current = element?.parentElement ?? null;
+  while (current && current !== document.body && current !== document.documentElement) {
+    const style = window.getComputedStyle(current);
+    const scrollableY = hasScrollableOverflow(style.overflowY) && current.scrollHeight > current.clientHeight;
+    const scrollableX = hasScrollableOverflow(style.overflowX) && current.scrollWidth > current.clientWidth;
+    if (scrollableX || scrollableY) return current;
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function captureScrollSnapshot(trigger: HTMLElement): SelectScrollSnapshot {
+  const container = findScrollableAncestor(trigger);
+  return {
+    windowX: window.scrollX,
+    windowY: window.scrollY,
+    container,
+    containerLeft: container?.scrollLeft ?? 0,
+    containerTop: container?.scrollTop ?? 0,
+  };
+}
+
+function restoreScrollSnapshot(snapshot: SelectScrollSnapshot | null): void {
+  if (!snapshot) return;
+  requestAnimationFrame(() => {
+    if (snapshot.container && snapshot.container.isConnected) {
+      snapshot.container.scrollTo(snapshot.containerLeft, snapshot.containerTop);
+    }
+    window.scrollTo(snapshot.windowX, snapshot.windowY);
+  });
+}
 
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
@@ -24,14 +69,14 @@ const SelectTrigger = React.forwardRef<
     )}
     onPointerDown={(event) => {
       lastSelectTriggerEl = event.currentTarget;
-      lastSelectScroll = { x: window.scrollX, y: window.scrollY };
+      lastSelectScrollSnapshot = captureScrollSnapshot(event.currentTarget);
       onPointerDown?.(event);
     }}
     onKeyDown={(event) => {
       // Capture for keyboard-opened selects as well.
       if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown" || event.key === "ArrowUp") {
         lastSelectTriggerEl = event.currentTarget;
-        lastSelectScroll = { x: window.scrollX, y: window.scrollY };
+        lastSelectScrollSnapshot = captureScrollSnapshot(event.currentTarget);
       }
       onKeyDown?.(event);
     }}
@@ -67,21 +112,18 @@ const SelectContent = React.forwardRef<
           event.preventDefault();
 
           const el = lastSelectTriggerEl;
-          const scroll = lastSelectScroll;
+          const scrollSnapshot = lastSelectScrollSnapshot;
           if (!el) return;
           lastSelectTriggerEl = null;
-          lastSelectScroll = null;
+          lastSelectScrollSnapshot = null;
           try {
             el.focus({ preventScroll: true });
           } catch {
             el.focus();
           }
 
-          // Some browsers can still jump the viewport when a portal closes.
-          // Restoring the scroll position keeps the edit form stable while interacting with dropdowns.
-          if (scroll) {
-            requestAnimationFrame(() => window.scrollTo(scroll.x, scroll.y));
-          }
+          // Restore both viewport and nearest scroll container to avoid jump-to-top in long forms/dialogs.
+          restoreScrollSnapshot(scrollSnapshot);
         }}
       >
         <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
@@ -126,4 +168,10 @@ export {
   SelectTrigger,
   SelectContent,
   SelectItem,
+};
+
+export const __selectTestUtils = {
+  findScrollableAncestor,
+  captureScrollSnapshot,
+  restoreScrollSnapshot,
 };
