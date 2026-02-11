@@ -532,14 +532,6 @@ function CopyIdPill({
   );
 }
 
-function MetaPill({ children }: { children: string | number }) {
-  return (
-    <span className="inline-flex max-w-[18rem] items-center truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
-      {children}
-    </span>
-  );
-}
-
 export function MasterProductsPage() {
   const api = useApi();
   const qc = useQueryClient();
@@ -1341,9 +1333,15 @@ export function MasterProductsPage() {
                   ))}
 
                 {!list.isPending &&
-                  rows.map((m) => (
-                    <Fragment key={m.id}>
-                      <TableRow>
+                  rows.map((m) => {
+                    const catalogMeta = [m.manufacturer, m.model, m.genre, m.release_year ? String(m.release_year) : null]
+                      .map((value) => (value ?? "").trim())
+                      .filter(Boolean)
+                      .join(" · ");
+
+                    return (
+                      <Fragment key={m.id}>
+                      <TableRow className="align-top [&>td]:py-2.5">
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
@@ -1369,12 +1367,9 @@ export function MasterProductsPage() {
                                 ) : null}
                               </div>
 
-                              {viewMode === "catalog" && (m.manufacturer || m.model || m.genre || m.release_year) ? (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {m.manufacturer ? <MetaPill>{m.manufacturer}</MetaPill> : null}
-                                  {m.model ? <MetaPill>{m.model}</MetaPill> : null}
-                                  {m.genre ? <MetaPill>{m.genre}</MetaPill> : null}
-                                  {m.release_year ? <MetaPill>{m.release_year}</MetaPill> : null}
+                              {viewMode === "catalog" && catalogMeta ? (
+                                <div className="mt-1 truncate text-[11px] text-gray-500 dark:text-gray-400">
+                                  {catalogMeta}
                                 </div>
                               ) : null}
 
@@ -1391,11 +1386,6 @@ export function MasterProductsPage() {
                                 </a>
                               ) : null}
 
-                              {viewMode === "amazon" && m.asin ? (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  <CopyIdPill label="ASIN" value={m.asin} />
-                                </div>
-                              ) : null}
                             </div>
                           </div>
                         </TableCell>
@@ -1403,9 +1393,9 @@ export function MasterProductsPage() {
                         {viewMode === "catalog" ? (
                           <TableCell className="text-sm">
                             {m.ean || m.asin ? (
-                              <div className="flex flex-wrap gap-1">
-                                {m.ean ? <CopyIdPill label="EAN" value={m.ean} /> : null}
-                                {m.asin ? <CopyIdPill label="ASIN" value={m.asin} /> : null}
+                              <div className="space-y-1 text-[11px] text-gray-600 dark:text-gray-300">
+                                {m.ean ? <div className="truncate font-mono">EAN {m.ean}</div> : null}
+                                {m.asin ? <div className="truncate font-mono">ASIN {m.asin}</div> : null}
                               </div>
                             ) : (
                               <span className="text-gray-500 dark:text-gray-400">—</span>
@@ -1427,7 +1417,6 @@ export function MasterProductsPage() {
                                   ) : (
                                     <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
                                   )}
-                                  <CopyIdPill label="ASIN" value={m.asin} />
                                   <Button
                                     type="button"
                                     variant="ghost"
@@ -1443,6 +1432,7 @@ export function MasterProductsPage() {
                                     {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                   </Button>
                                 </div>
+                                <div className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">ASIN {m.asin}</div>
                                 <div className="text-[11px] text-gray-500 dark:text-gray-400">
                                   Failures {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"} · Next retry{" "}
                                   {m.amazon_next_retry_at
@@ -1490,6 +1480,28 @@ export function MasterProductsPage() {
                                 <Copy className="h-4 w-4" />
                                 UUID kopieren
                               </DropdownMenuItem>
+                              {m.ean ? (
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(m.ean ?? "");
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  EAN kopieren
+                                </DropdownMenuItem>
+                              ) : null}
+                              {m.asin ? (
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(m.asin ?? "");
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  ASIN kopieren
+                                </DropdownMenuItem>
+                              ) : null}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
@@ -1614,8 +1626,9 @@ export function MasterProductsPage() {
                           </TableCell>
                         </TableRow>
                       ) : null}
-                    </Fragment>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
 
                 {!rows.length && (
                   <TableRow>

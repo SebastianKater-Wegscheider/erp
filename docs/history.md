@@ -579,3 +579,32 @@
   - CSV-Datei laden (liest Dateiinhalt in Textfeld),
   - CSV-Text direkt einfuegen.
 - Import-Resultat wird als strukturierte Zusammenfassung angezeigt (`importiert/fehlgeschlagen/leer`) plus aufklappbare Fehlerliste mit Zeilennummern.
+
+## 2026-02-11 - Einkaeufe: Modal-Rework fuer stabile Hoehe/Scroll
+
+### Ausgangslage
+- Der Bearbeitungsdialog fuer Einkaeufe wirkte visuell unruhig und produzierte in einzelnen Viewports Overflow/Clipping-Effekte.
+- Ursache war eine Mischung aus fixierter Dialoghoehe, mehreren Scroll-Layern und einem Fehlerblock ausserhalb der Footer-Struktur.
+
+### Business-Entscheidung
+- Der Bearbeitungsflow muss auf allen typischen Arbeitsflaechen stabil bleiben: klare Kopf-/Inhalts-/Footer-Hierarchie, kein abgeschnittener Content.
+- Fokus bleibt auf schnellen Eingaben; Low-prio Kontext bleibt sichtbar, aber ohne Layout-Spruenge.
+
+### Technische Entscheidung
+- Dialoglayout auf eine robuste Struktur umgestellt: `Header (fixed) + Content (single scroll region) + Footer (fixed)`.
+- Tab-Navigation in einen eigenen Header-Bereich verschoben; Tab-Content nutzt `mt-0`/`min-h-0`, um unnötige Hoeheninflation zu vermeiden.
+- Fehleranzeige in den Footer integriert (nicht mehr ausserhalb), damit bei validierungsfehlern kein Overflow mehr entsteht.
+
+## 2026-02-11 - Tabellen-Harmonisierung: Ops-Dichte als Referenz
+
+### Ausgangslage
+- Die kompakte `inventory?view=ops`-Tabelle wirkt klarer als andere Zeilenlayouts (`inventory?view=overview`, `master-products`).
+- Die anderen Ansichten nutzen mehr uneinheitliche Pills/Meta-Bloecke, was die Scanbarkeit reduziert.
+
+### Business-Entscheidung
+- Das kompakte Ops-Muster wird als Standard fuer Zeilenhierarchie genutzt: klarer Primärtext, eine kompakte Meta-Zeile, reduzierte visuelle Nebeninfos.
+- Low-prio Infos bleiben erreichbar, aber treten visuell hinter Kerninfos zurueck.
+
+### Technische Entscheidung
+- Zeilen in `inventory overview` und `master-products` werden auf konsistente Spacing-/Badge-/Meta-Patterns umgestellt.
+- Custom-Pill-Mischformen werden reduziert zugunsten einheitlicher Badge/Text-Muster (gleichere Hoehen, weniger visuelles Rauschen).

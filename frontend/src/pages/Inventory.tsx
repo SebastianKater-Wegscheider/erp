@@ -118,7 +118,7 @@ type InventoryQueue = "ALL" | "PHOTOS_MISSING" | "STORAGE_MISSING" | "AMAZON_STA
 const INVENTORY_VIEW_KEY = "inventory:view";
 const OVERVIEW_METRIC_CELL_CLASS = "w-[11.25rem] text-right";
 const OVERVIEW_METRIC_CARD_CLASS =
-  "inline-flex w-full min-h-[5.5rem] flex-col items-end justify-between rounded-xl border border-gray-200/90 bg-gray-50/80 px-3 py-2 text-right dark:border-gray-800 dark:bg-gray-900/50";
+  "inline-flex w-full min-h-[4.75rem] flex-col items-end justify-between rounded-lg border border-gray-200/90 bg-gray-50/80 px-2.5 py-2 text-right dark:border-gray-800 dark:bg-gray-900/50";
 const INVENTORY_QUEUE_OPTIONS: Array<{ value: InventoryQueue; label: string }> = [
   { value: "ALL", label: "Alle" },
   { value: "PHOTOS_MISSING", label: "Fotos fehlen" },
@@ -1272,7 +1272,7 @@ export function InventoryPage() {
                     const itemPrimaryUrl = itemPrimaryImage ? tablePreviewUrls[itemPrimaryImage.id] : null;
 
                     return (
-                      <TableRow key={it.id} className="align-top [&>td]:py-3">
+                      <TableRow key={it.id} className="align-top [&>td]:py-2.5">
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceThumb url={itemPrimaryUrl ?? mp?.reference_image_url ?? null} alt={mp?.title ?? "Produkt"} />
@@ -1296,27 +1296,29 @@ export function InventoryPage() {
                               ) : null}
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                                 {mp?.sku ? (
-                                  <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                                  <Badge variant="outline" className="font-mono text-[10px]">
                                     {mp.sku}
-                                  </span>
+                                  </Badge>
                                 ) : null}
                                 {!!itemImages.length ? (
                                   <>
-                                    <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
+                                    <Badge variant="outline" className="text-[10px]">
                                       {itemImages.length} Foto{itemImages.length === 1 ? "" : "s"}
-                                    </span>
-                                    <button
+                                    </Badge>
+                                    <Button
                                       type="button"
-                                      className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-gray-100"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-6 px-2 text-[11px]"
                                       onClick={() => setTablePreviewItemId(it.id)}
                                     >
                                       Vorschau
-                                    </button>
+                                    </Button>
                                   </>
                                 ) : (
-                                  <span className="inline-flex items-center rounded-full border border-gray-200/80 bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-500">
+                                  <Badge variant="outline" className="text-[10px] text-gray-400 dark:text-gray-500">
                                     Keine Fotos
-                                  </span>
+                                  </Badge>
                                 )}
                               </div>
                             </div>
