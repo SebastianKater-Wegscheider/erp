@@ -25,5 +25,9 @@ This repository is expected to grow quickly. To keep changes reviewable and audi
 - keep your notes pragmatic and concise, but include both business perspective and technical reasoning
 - before implementing new features, think about the implications and document them in `docs/history.md`
 - before making significant changes to the codebase, think about the implications and document them in `docs/history.md`
-</INSTRUCTIONS>
 
+# Deployment (production)
+- production SSH user/host: `seb@192.168.178.72`
+- production repo path: `/home/seb/kater-wegscheider-company`
+- publish flow: `git pull --ff-only origin master` and then `docker compose up -d --build`
+</INSTRUCTIONS>
