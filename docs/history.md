@@ -719,3 +719,18 @@
 - `MasterProductCombobox` portalt sein Dropdown jetzt bevorzugt in den Dialog-Container statt blind in `document.body`; Z-Layer wurde auf `z-[70]` angehoben.
 - Ergebnis: Dropdown bleibt im Modal-Interaktionskontext und ist nicht mehr vom Modal-Overlay blockiert.
 - Identitaetsdaten-Block in `Purchases` visuell entschlackt: kompakter Header + kleine Toggle-Aktion (`ghost`, `sm`), Felder nur bei Expand sichtbar.
+
+## 2026-02-11 - Master-Produktbilder lokal persistieren statt Remote-Link
+
+### Ausgangslage
+- Referenzbilder aus Amazon-Scrapes wurden bisher als externe URL in `reference_image_url` gespeichert.
+- Folge: Abhaengigkeit von externen Hosts, instabile Darstellung und kein kontrollierter Datenbestand.
+
+### Business-Entscheidung
+- Referenzbilder sollen lokal im App-Storage liegen, damit die Produktansicht stabil und reproduzierbar bleibt.
+- Das Overlay-"Oeffnen" auf dem Bild in der Tabelle soll zum Amazon-Listing fuehren (Arbeitsfluss), nicht zur Bilddatei.
+
+### Technische Entscheidung
+- Beim erfolgreichen Amazon-Scrape wird die ermittelte Bild-Quelle (Payload oder ASIN-Fallback) serverseitig heruntergeladen und unter `uploads/master-product-reference/` gespeichert.
+- In `reference_image_url` wird der lokale relative Storage-Pfad (kein externer URL-Link) persistiert.
+- Frontend-Rendering loest lokale Bildpfade ueber den API-Files-Endpunkt auf; fuer den Bild-Overlay-Link wird explizit die ASIN-Detailseite verwendet.

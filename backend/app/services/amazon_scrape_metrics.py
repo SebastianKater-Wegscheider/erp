@@ -6,7 +6,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
@@ -299,9 +301,72 @@ def _asin_image_fallback_url(asin: str | None) -> str | None:
     return f"https://images-eu.ssl-images-amazon.com/images/P/{value}.01.LZZZZZZZ.jpg"
 
 
+def _guess_image_extension(*, image_url: str, content_type: str | None) -> str:
+    path = urlparse(image_url).path
+    suffix = Path(path).suffix.lower()
+    if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"}:
+        return suffix
+
+    ct = (content_type or "").split(";", 1)[0].strip().lower()
+    if ct in {"image/jpeg", "image/jpg"}:
+        return ".jpg"
+    if ct == "image/png":
+        return ".png"
+    if ct == "image/webp":
+        return ".webp"
+    if ct == "image/gif":
+        return ".gif"
+    if ct == "image/avif":
+        return ".avif"
+    if ct == "image/bmp":
+        return ".bmp"
+    return ".jpg"
+
+
+async def _store_reference_image_locally(
+    *,
+    settings: Settings,
+    master_product_id: uuid.UUID,
+    image_url: str,
+) -> str | None:
+    timeout = httpx.Timeout(timeout=min(30, int(settings.amazon_scraper_timeout_seconds)))
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(image_url)
+        response.raise_for_status()
+    except Exception:
+        return None
+
+    content_type = response.headers.get("content-type")
+    if content_type and not content_type.lower().startswith("image/"):
+        return None
+    image_bytes = response.content
+    if not image_bytes:
+        return None
+
+    ext = _guess_image_extension(image_url=image_url, content_type=content_type)
+    rel_dir = Path("uploads") / "master-product-reference"
+    abs_dir = settings.app_storage_dir / rel_dir
+    await asyncio.to_thread(abs_dir.mkdir, parents=True, exist_ok=True)
+
+    stem = str(master_product_id)
+    for old_ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"):
+        if old_ext == ext:
+            continue
+        old_path = abs_dir / f"{stem}{old_ext}"
+        if old_path.exists():
+            await asyncio.to_thread(old_path.unlink)
+
+    filename = f"{stem}{ext}"
+    abs_path = abs_dir / filename
+    await asyncio.to_thread(abs_path.write_bytes, image_bytes)
+    return (rel_dir / filename).as_posix()
+
+
 async def persist_scrape_result(
     *,
     session: AsyncSession,
+    settings: Settings | None,
     master_product_id: uuid.UUID,
     asin: str,
     data: dict[str, Any] | None,
@@ -422,7 +487,16 @@ async def persist_scrape_result(
         if mp is not None:
             image_url = _extract_image_url(data) or _asin_image_fallback_url(mp.asin)
             if image_url is not None:
-                mp.reference_image_url = image_url
+                if settings is None:
+                    mp.reference_image_url = image_url
+                else:
+                    local_image_path = await _store_reference_image_locally(
+                        settings=settings,
+                        master_product_id=master_product_id,
+                        image_url=image_url,
+                    )
+                    if local_image_path is not None:
+                        mp.reference_image_url = local_image_path
     else:
         # failure or blocked: keep last_success_at intact, schedule retry externally
         latest.consecutive_failures = max(0, int(latest.consecutive_failures or 0)) + 1
@@ -452,6 +526,7 @@ async def scrape_master_product_once(
 
     run_id = await persist_scrape_result(
         session=session,
+        settings=settings,
         master_product_id=master_product_id,
         asin=asin,
         data=data,

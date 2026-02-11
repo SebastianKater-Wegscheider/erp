@@ -100,6 +100,7 @@ async def test_persist_scrape_result_updates_snapshot(db_session: AsyncSession) 
     async with db_session.begin():
         run_id = await persist_scrape_result(
             session=db_session,
+            settings=None,
             master_product_id=mp_id,
             asin="B000FC2BTQ",
             data=data,
@@ -171,6 +172,7 @@ async def test_persist_scrape_result_buybox_fallback_total(db_session: AsyncSess
     async with db_session.begin():
         await persist_scrape_result(
             session=db_session,
+            settings=None,
             master_product_id=mp_id,
             asin="B000FC2BTQ",
             data=data,
@@ -214,6 +216,7 @@ async def test_persist_scrape_result_image_fallback_from_asin(db_session: AsyncS
     async with db_session.begin():
         await persist_scrape_result(
             session=db_session,
+            settings=None,
             master_product_id=mp_id,
             asin="B000FC2BTQ",
             data=data,
@@ -258,6 +261,7 @@ async def test_persist_scrape_result_persists_best_prices_without_sales_ranks(db
     async with db_session.begin():
         run_id = await persist_scrape_result(
             session=db_session,
+            settings=None,
             master_product_id=mp_id,
             asin="B000FC2BTQ",
             data=data,

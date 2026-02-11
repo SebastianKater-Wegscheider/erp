@@ -17,6 +17,7 @@ import { useSearchParams } from "react-router-dom";
 import { useApi } from "../lib/api";
 import { computeUsedBest, estimateSellThroughFromBsr, formatSellThroughRange } from "../lib/amazon";
 import { formatEur, parseEurToCents } from "../lib/money";
+import { amazonListingUrl, resolveReferenceImageSrc } from "../lib/referenceImages";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -483,14 +484,17 @@ async function copyToClipboard(value: string): Promise<boolean> {
 
 function ReferenceImageThumb({
   url,
+  openHref,
   alt,
   size = 56,
 }: {
   url?: string | null;
+  openHref?: string | null;
   alt: string;
   size?: number;
 }) {
-  const src = (url ?? "").trim();
+  const src = resolveReferenceImageSrc(url);
+  const linkHref = (openHref ?? "").trim() || src;
   const [errored, setErrored] = useState(false);
 
   useEffect(() => {
@@ -498,22 +502,23 @@ function ReferenceImageThumb({
   }, [src]);
 
   const hasSrc = !!src;
+  const canOpen = !!linkHref;
 
   return (
     <a
-      href={hasSrc ? src : undefined}
-      target={hasSrc ? "_blank" : undefined}
-      rel={hasSrc ? "noreferrer" : undefined}
-      aria-label={hasSrc ? "Referenzbild öffnen" : "Kein Referenzbild"}
+      href={canOpen ? linkHref : undefined}
+      target={canOpen ? "_blank" : undefined}
+      rel={canOpen ? "noreferrer" : undefined}
+      aria-label={canOpen ? "Amazon-Listing öffnen" : "Kein Referenzbild"}
       className={[
         "group relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm",
         "dark:border-gray-800 dark:bg-gray-950/40",
-        hasSrc ? "cursor-pointer hover:ring-2 hover:ring-gray-900/10 dark:hover:ring-gray-100/10" : "cursor-default",
+        canOpen ? "cursor-pointer hover:ring-2 hover:ring-gray-900/10 dark:hover:ring-gray-100/10" : "cursor-default",
       ].join(" ")}
       style={{ width: size, height: size }}
       onClick={(e) => {
         e.stopPropagation();
-        if (!hasSrc) e.preventDefault();
+        if (!canOpen) e.preventDefault();
       }}
     >
       {hasSrc && !errored ? (
@@ -531,7 +536,7 @@ function ReferenceImageThumb({
         </div>
       )}
 
-      {hasSrc && (
+      {canOpen && (
         <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100">
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-black/20" />
           <div className="absolute bottom-1 right-1 rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">
@@ -1100,7 +1105,7 @@ export function MasterProductsPage() {
                   ].join(" ")}
                 >
                   <div className="flex items-start gap-3">
-                    <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
+                    <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
@@ -1458,7 +1463,7 @@ export function MasterProductsPage() {
                       <TableRow className={TABLE_ROW_COMPACT_CLASS}>
                         <TableCell>
                           <div className="flex items-start gap-3">
-                            <ReferenceImageThumb url={m.reference_image_url} alt={m.title} />
+                            <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
 
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
@@ -1489,14 +1494,14 @@ export function MasterProductsPage() {
 
                               {viewMode === "catalog" && m.reference_image_url?.trim() ? (
                                 <a
-                                  href={m.reference_image_url.trim()}
+                                  href={resolveReferenceImageSrc(m.reference_image_url)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
-                                  title={m.reference_image_url.trim()}
+                                  title={resolveReferenceImageSrc(m.reference_image_url)}
                                 >
                                   <ExternalLink className="h-3.5 w-3.5" />
-                                  {shortUrlLabel(m.reference_image_url.trim())}
+                                  {shortUrlLabel(resolveReferenceImageSrc(m.reference_image_url))}
                                 </a>
                               ) : null}
                               {viewMode === "amazon" ? (
@@ -2024,12 +2029,12 @@ export function MasterProductsPage() {
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Vorschau</div>
                           <a
-                            href={form.reference_image_url.trim()}
+                            href={resolveReferenceImageSrc(form.reference_image_url)}
                             target="_blank"
                             rel="noreferrer"
                             className="mt-1 block break-all text-xs text-blue-700 underline-offset-2 hover:underline dark:text-blue-300"
                           >
-                            {form.reference_image_url.trim()}
+                            {resolveReferenceImageSrc(form.reference_image_url)}
                           </a>
                           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                             Tipp: Klick auf das Bild öffnet die URL in einem neuen Tab.

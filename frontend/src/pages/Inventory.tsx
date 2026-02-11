@@ -13,6 +13,7 @@ import {
   formatSellThroughRange,
 } from "../lib/amazon";
 import { formatEur } from "../lib/money";
+import { resolveReferenceImageSrc } from "../lib/referenceImages";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -322,7 +323,7 @@ function ReferenceThumb({
   alt: string;
   size?: number;
 }) {
-  const src = (url ?? "").trim();
+  const src = resolveReferenceImageSrc(url);
   const [errored, setErrored] = useState(false);
 
   useEffect(() => setErrored(false), [src]);

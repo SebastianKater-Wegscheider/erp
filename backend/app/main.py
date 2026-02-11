@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -37,6 +38,30 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/public/master-product-images/{file_path:path}", include_in_schema=False)
+    async def public_master_product_image(file_path: str) -> FileResponse:
+        rel = file_path.lstrip("/")
+        if not rel.startswith("uploads/master-product-reference/"):
+            raise HTTPException(status_code=403, detail="Forbidden path")
+
+        base_dir = settings.app_storage_dir.resolve()
+        abs_path = (settings.app_storage_dir / rel).resolve()
+        try:
+            abs_path.relative_to(base_dir)
+        except ValueError as e:
+            raise HTTPException(status_code=403, detail="Forbidden path") from e
+
+        if not abs_path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+
+        return FileResponse(
+            path=str(abs_path),
+            filename=Path(rel).name,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+            },
+        )
 
     @app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(require_basic_auth)])
     async def openapi_json() -> JSONResponse:
