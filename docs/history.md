@@ -400,3 +400,30 @@
 - Dashboard-Inbox-Link "Produkte ohne ASIN" verweist auf `/master-products?missing=asin&view=catalog`.
 - Frontend-Test-Setup haertet `localStorage`/`sessionStorage` explizit auf Storage-kompatible Methoden, damit Tests robust gegen fehlerhafte Runtime-Shims laufen.
 - Neue Component-Tests fuer `MasterProducts` decken Modus-Sichtbarkeit (`Katalog` vs `Amazon`), URL-Filter `missing=asin` und die UUID-Copy-Aktion ab.
+
+## 2026-02-11 - Produktstamm + Lagerbestand: KPI-Fokus (Marktpreis, Abverkauf, Marge)
+
+### Ausgangslage
+- Produktstamm (Amazon-Modus) zeigt relevante Signale (BSR/Used best), aber die Zeile ist textlastig; der Nutzer muss Werte "zusammenlesen".
+- Lagerbestand mischt operative Pflege (SN/Lagerplatz/Fotos/IDs) mit Entscheidungs-KPIs (Marktpreis/Marge) in einer Ansicht; dadurch entsteht visuelle Dichte und wenig Scanbarkeit.
+- Technische IDs (UUIDs) sind teilweise inline sichtbar, obwohl sie fuer den Daily Flow selten gebraucht werden.
+
+### Business-Entscheidungen
+- Ziel: Ein Master-Reseller soll pro Zeile in <5 Sekunden entscheiden koennen:
+  - Marktpreis (Used / zustandsgemappt)
+  - Sales Velocity (aus BSR, optional Offer-Konkurrenz)
+  - (im Lagerbestand) Profit/Marge aus Kostenbasis vs. FBA-Payout
+- Progressive Disclosure:
+  - UUIDs nie inline, sondern ueber Copy-Aktionen erreichbar.
+  - EAN/ASIN in Listen nur, wenn vorhanden (keine "—" Platzhalter); in Amazon-Fokus nur ASIN.
+- Lagerbestand bekommt zwei Arbeitsmodi:
+  - `Uebersicht` (Default): KPI-getrieben fuer Priorisierung/Preisentscheidungen.
+  - `Ops`: Pflegefokus (SN/Lagerplatz/Fotos), ohne KPI-Rauschen.
+
+### Technische Entscheidungen
+- Neue, einfache Sell-Through-Heuristik:
+  - Piecewise Mapping von BSR auf Tages-Range.
+  - Konkurrenzanpassung ueber `sqrt(offers)` (gekappt), um "viele Angebote" als langsameren Abverkauf zu modellieren.
+  - Confidence-Flag (HIGH/MEDIUM/LOW) abhaengig von Freshness/Blocked.
+  - Disclaimer: Schätzung; echte Verkäufe variieren (BSR ist zeit-/kategorieabhaengig).
+- UI: KPI-Strips mit `tabular-nums` und klarer Typo-Hierarchie (Zahlen gross, Labels klein).
