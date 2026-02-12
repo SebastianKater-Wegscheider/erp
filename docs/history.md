@@ -106,3 +106,15 @@
 - `PurchaseOut` exponiert `primary_mileage_log_id`, damit Frontend den Hinweis ohne N+1-Abfragen berechnen kann.
 - Liste zeigt ein klares Warning-Badge fuer `payment_source == CASH` und fehlende `primary_mileage_log_id`.
 - E2E-Login-Helper loescht gespeicherte Basic-Auth-Credentials deterministisch vor jedem Loginlauf, um flaky Tests durch alte Browser-Sessiondaten zu vermeiden.
+
+## 2026-02-12 - Bugfix: Cash-ohne-Fahrt Hinweis beruecksichtigt verknuepfte Mileage-Logs
+
+### Ausgangslage
+- Der Badge "Bar ohne Fahrt" nutzte nur `primary_mileage_log_id`.
+- Fahrten, die im Fahrtenbuch ueber `purchase_ids` verknuepft wurden (ohne Primary-Link), wurden dadurch nicht erkannt.
+
+### Entscheidung
+- Frontend berechnet den Hinweis auf Basis beider Signale:
+  - `primary_mileage_log_id` (direkter Link)
+  - verknuepfte Kauf-IDs aus `/mileage` (`purchase_ids`)
+- Damit werden bestehende Altdaten und Fahrtenbuch-Workflows konsistent abgedeckt.
