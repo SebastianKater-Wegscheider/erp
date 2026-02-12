@@ -95,6 +95,7 @@ it("defaults to Priorisieren and shows KPI columns without inline IDs", async ()
   expect(screen.getAllByText("Marktpreis").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Abverkauf").length).toBeGreaterThan(0);
   expect(screen.getAllByText("Marge").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Offers 1").length).toBeGreaterThan(0);
   expect(screen.queryAllByText(/^ID:/)).toHaveLength(0);
 });
 

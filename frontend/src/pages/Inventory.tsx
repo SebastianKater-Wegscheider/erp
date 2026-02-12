@@ -946,6 +946,7 @@ export function InventoryPage() {
                 const sell = estimateSellThroughFromBsr(mp ?? {});
                 const sellRange = formatSellThroughRange(sell.range_days);
                 const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                const offersLabel = typeof sell.offers === "number" ? `Offers ${sell.offers}` : "Offers —";
                 const bsrRank = mp
                   ? typeof mp.amazon_rank_overall === "number"
                     ? mp.amazon_rank_overall
@@ -1073,6 +1074,7 @@ export function InventoryPage() {
                                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                                   <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
                                   <span className="tabular-nums">{typeof bsrRank === "number" ? `BSR #${bsrRank}` : "BSR —"}</span>
+                                  <span className="tabular-nums">{offersLabel}</span>
                                 </div>
                               </div>
 
@@ -1280,6 +1282,7 @@ export function InventoryPage() {
                     const sell = estimateSellThroughFromBsr(mp ?? {});
                     const sellRange = formatSellThroughRange(sell.range_days);
                     const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                    const offersLabel = typeof sell.offers === "number" ? `Offers ${sell.offers}` : "Offers —";
                     const bsrRank = mp
                       ? typeof mp.amazon_rank_overall === "number"
                         ? mp.amazon_rank_overall
@@ -1369,7 +1372,7 @@ export function InventoryPage() {
                               <div className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
                             </div>
                             <div className={`${TABLE_CELL_META_CLASS} w-full truncate text-right`}>
-                              {bsrLabel} · Sicherheit {sellThroughConfidenceLabel(sell.confidence)}
+                              {bsrLabel} · {offersLabel} · Sicherheit {sellThroughConfidenceLabel(sell.confidence)}
                             </div>
                           </div>
                         </TableCell>
