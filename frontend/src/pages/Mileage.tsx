@@ -583,15 +583,30 @@ export function MileagePage() {
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Select value={roundTrip ? "ROUND" : "ONE_WAY"} onValueChange={(value) => setRoundTrip(value === "ROUND") }>
-                        <SelectTrigger className="w-full sm:w-[12rem]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ONE_WAY">Einfach</SelectItem>
-                          <SelectItem value="ROUND">Hin- und Rückfahrt</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div
+                        role="radiogroup"
+                        aria-label="Routenmodus"
+                        className="grid w-full grid-cols-2 gap-2 sm:w-[16rem]"
+                      >
+                        <Button
+                          type="button"
+                          variant={roundTrip ? "outline" : "secondary"}
+                          size="sm"
+                          aria-pressed={!roundTrip}
+                          onClick={() => setRoundTrip(false)}
+                        >
+                          Einfach
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={roundTrip ? "secondary" : "outline"}
+                          size="sm"
+                          aria-pressed={roundTrip}
+                          onClick={() => setRoundTrip(true)}
+                        >
+                          Hin- und Rückfahrt
+                        </Button>
+                      </div>
 
                       <Button
                         type="button"
