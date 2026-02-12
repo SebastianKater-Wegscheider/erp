@@ -7,8 +7,8 @@
 }
 
 :root {
-  --pdf-bg: #fffdf7;
-  --pdf-surface: #fffcf5;
+  --pdf-bg: #ffffff;
+  --pdf-surface: #ffffff;
   --pdf-border: #d7d0c1;
   --pdf-border-soft: #e7e1d4;
   --pdf-border-strong: #c9c0ae;
@@ -251,10 +251,6 @@ table.items th {
 
 table.items td {
   border-bottom: 1px solid var(--pdf-border-soft);
-}
-
-table.items tbody tr:nth-child(even) td {
-  background: #fffaf0;
 }
 
 table.items tbody tr:last-child td {
