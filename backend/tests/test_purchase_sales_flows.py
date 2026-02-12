@@ -159,7 +159,7 @@ async def test_create_and_update_private_purchase_source_metadata(db_session: As
 
     row = await db_session.get(Purchase, purchase_id)
     assert row is not None
-    assert row.source_platform == "kleinanzeigen"
+    assert row.source_platform == "Kleinanzeigen"
     assert row.listing_url == "https://www.kleinanzeigen.de/s-anzeige/123"
     assert row.notes == "Mit Controller und Spiel"
     await db_session.rollback()

@@ -21,10 +21,12 @@ from app.schemas.purchase_attachment import (
 from app.schemas.purchase import PurchaseCreate, PurchaseOut, PurchaseRefOut, PurchaseUpdate
 from app.schemas.purchase_mileage import PurchaseMileageUpsert
 from app.services.purchases import (
+    CANONICAL_SOURCE_PLATFORMS,
     create_purchase,
     delete_purchase_primary_mileage,
     generate_purchase_credit_note_pdf,
     get_purchase_primary_mileage,
+    normalize_source_platform_label,
     reopen_purchase_for_edit,
     upsert_purchase_primary_mileage,
     update_purchase,
@@ -32,14 +34,6 @@ from app.services.purchases import (
 
 
 router = APIRouter()
-
-DEFAULT_SOURCE_PLATFORMS = [
-    "kleinanzeigen",
-    "ebay",
-    "willhaben.at",
-    "ländleanzeiger.at",
-]
-
 
 @router.post("", response_model=PurchaseOut)
 async def create_purchase_endpoint(
@@ -83,9 +77,9 @@ async def list_purchase_source_platforms(session: AsyncSession = Depends(get_ses
             .order_by(Purchase.source_platform.asc())
         )
     ).scalars().all()
-    out = set(DEFAULT_SOURCE_PLATFORMS)
+    out = set(CANONICAL_SOURCE_PLATFORMS)
     for value in rows:
-        normalized = str(value or "").strip()
+        normalized = normalize_source_platform_label(str(value or "").strip())
         if normalized:
             out.add(normalized)
     return sorted(out, key=str.casefold)

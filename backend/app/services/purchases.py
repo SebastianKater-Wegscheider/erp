@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import uuid
+import unicodedata
 from pathlib import Path
 
 from sqlalchemy import delete, func, insert, select
@@ -58,6 +60,46 @@ def _optional_str(value: str | None) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+CANONICAL_SOURCE_PLATFORMS = [
+    "Kleinanzeigen",
+    "eBay",
+    "willhaben.at",
+    "Laendleanzeiger.at",
+]
+
+_SOURCE_PLATFORM_ALIAS_TO_CANONICAL: dict[str, str] = {
+    "kleinanzeigen": "Kleinanzeigen",
+    "kleinanzeigende": "Kleinanzeigen",
+    "ebaykleinanzeigen": "Kleinanzeigen",
+    "ebay": "eBay",
+    "ebayde": "eBay",
+    "willhaben": "willhaben.at",
+    "willhabenat": "willhaben.at",
+    "laendleanzeiger": "Laendleanzeiger.at",
+    "laendleanzeigerat": "Laendleanzeiger.at",
+    "landleanzeiger": "Laendleanzeiger.at",
+    "landleanzeigerat": "Laendleanzeiger.at",
+}
+
+
+def _source_platform_key(value: str) -> str:
+    folded = (
+        unicodedata.normalize("NFKD", value)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .strip()
+        .lower()
+    )
+    return re.sub(r"[^a-z0-9]+", "", folded)
+
+
+def normalize_source_platform_label(value: str | None) -> str | None:
+    normalized = _optional_str(value)
+    if normalized is None:
+        return None
+    return _SOURCE_PLATFORM_ALIAS_TO_CANONICAL.get(_source_platform_key(normalized), normalized)
 
 
 def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Path]:
@@ -206,7 +248,7 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         total_tax_cents=total_tax,
         tax_rate_bp=tax_rate_bp,
         payment_source=data.payment_source,
-        source_platform=_optional_str(data.source_platform),
+        source_platform=normalize_source_platform_label(data.source_platform),
         listing_url=_optional_str(data.listing_url),
         notes=_optional_str(data.notes),
         document_number=document_number,
@@ -483,7 +525,7 @@ async def update_purchase(
     purchase.total_tax_cents = total_tax
     purchase.tax_rate_bp = tax_rate_bp
     purchase.payment_source = data.payment_source
-    purchase.source_platform = _optional_str(data.source_platform)
+    purchase.source_platform = normalize_source_platform_label(data.source_platform)
     purchase.listing_url = _optional_str(data.listing_url)
     purchase.notes = _optional_str(data.notes)
     purchase.external_invoice_number = data.external_invoice_number

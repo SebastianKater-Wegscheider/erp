@@ -306,9 +306,10 @@ async def test_purchase_source_platform_suggestions_include_defaults_and_saved_v
         )
 
     suggestions = await list_purchase_source_platforms(session=db_session)
-    assert "kleinanzeigen" in suggestions
-    assert "ebay" in suggestions
+    assert "Kleinanzeigen" in suggestions
+    assert "eBay" in suggestions
     assert "willhaben.at" in suggestions
+    assert "Laendleanzeiger.at" in suggestions
     assert "Flohmarkt Dornbirn" in suggestions
 
 

@@ -150,7 +150,49 @@ const MASTER_KIND_OPTIONS: Array<{ value: MasterProductKind; label: string }> = 
   { value: "OTHER", label: "Sonstiges" },
 ];
 
-const DEFAULT_SOURCE_PLATFORMS = ["kleinanzeigen", "ebay", "willhaben.at", "ländleanzeiger.at"];
+type SourcePlatformOption = {
+  value: string;
+  label: string;
+  aliases: string[];
+  bgClass: string;
+  fgClass: string;
+  glyph: string;
+};
+
+const SOURCE_PLATFORM_OPTIONS: SourcePlatformOption[] = [
+  {
+    value: "Kleinanzeigen",
+    label: "Kleinanzeigen",
+    aliases: ["kleinanzeigen", "kleinanzeigen.de", "ebay kleinanzeigen", "ebay-kleinanzeigen", "ebaykleinanzeigen"],
+    bgClass: "bg-[#e9ff98]",
+    fgClass: "text-[#1f3f2b]",
+    glyph: "KA",
+  },
+  {
+    value: "eBay",
+    label: "eBay",
+    aliases: ["ebay", "ebay.de", "e-bay"],
+    bgClass: "bg-[#fff0f0]",
+    fgClass: "text-[#b60037]",
+    glyph: "eB",
+  },
+  {
+    value: "willhaben.at",
+    label: "willhaben.at",
+    aliases: ["willhaben", "willhaben.at"],
+    bgClass: "bg-[#e8f2ff]",
+    fgClass: "text-[#1f4ea8]",
+    glyph: "wh",
+  },
+  {
+    value: "Laendleanzeiger.at",
+    label: "Laendleanzeiger.at",
+    aliases: ["laendleanzeiger", "laendleanzeiger.at", "ländleanzeiger", "ländleanzeiger.at", "landleanzeiger"],
+    bgClass: "bg-[#fff0d6]",
+    fgClass: "text-[#9a5600]",
+    glyph: "LA",
+  },
+];
 
 const PURCHASE_ATTACHMENT_KIND_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "LISTING", label: "Anzeige" },
@@ -169,6 +211,46 @@ const PURCHASE_TABLE_MAIN_SLOT_CLASS = "flex min-w-[11.5rem] justify-end";
 
 function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
   return options.find((o) => o.value === value)?.label ?? value;
+}
+
+function sourcePlatformKey(value: string): string {
+  const folded = value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return folded.replace(/[^a-z0-9]+/g, "");
+}
+
+function canonicalSourcePlatform(value?: string | null): SourcePlatformOption | null {
+  const key = sourcePlatformKey(value ?? "");
+  if (!key) return null;
+  for (const option of SOURCE_PLATFORM_OPTIONS) {
+    if (sourcePlatformKey(option.value) === key) return option;
+    for (const alias of option.aliases) {
+      if (sourcePlatformKey(alias) === key) return option;
+    }
+  }
+  return null;
+}
+
+function SourcePlatformLogo({
+  platform,
+  size = "md",
+}: {
+  platform: SourcePlatformOption;
+  size?: "sm" | "md";
+}) {
+  const sizeClass = size === "sm" ? "h-5 w-5 text-[9px]" : "h-6 w-6 text-[10px]";
+  return (
+    <span
+      className={`inline-flex ${sizeClass} items-center justify-center rounded-full border border-gray-200 font-semibold uppercase tracking-tight dark:border-gray-700 ${platform.bgClass} ${platform.fgClass}`}
+      title={platform.label}
+      aria-label={platform.label}
+    >
+      {platform.glyph}
+    </span>
+  );
 }
 
 function todayIsoLocal(): string {
@@ -555,11 +637,6 @@ export function PurchasesPage() {
     queryFn: () => api.request<PurchaseOut[]>("/purchases"),
   });
 
-  const sourcePlatformSuggestions = useQuery({
-    queryKey: ["purchases", "source-platforms"],
-    queryFn: () => api.request<string[]>("/purchases/source-platforms"),
-  });
-
   const generatePdf = useMutation({
     mutationFn: (purchaseId: string) => api.request<PurchaseOut>(`/purchases/${purchaseId}/generate-pdf`, { method: "POST" }),
     onSuccess: async () => {
@@ -582,7 +659,6 @@ export function PurchasesPage() {
   const [counterpartyBirthdate, setCounterpartyBirthdate] = useState("");
   const [counterpartyIdNumber, setCounterpartyIdNumber] = useState("");
   const [sourcePlatform, setSourcePlatform] = useState("");
-  const [sourcePlatformMode, setSourcePlatformMode] = useState<"PRESET" | "CUSTOM">("PRESET");
   const [listingUrl, setListingUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [identityFieldsOpen, setIdentityFieldsOpen] = useState(false);
@@ -832,7 +908,6 @@ export function PurchasesPage() {
           setFormOpen(true);
           setFormTab("ATTACHMENTS");
           await qc.invalidateQueries({ queryKey: ["purchases"] });
-          await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
           return;
         }
       }
@@ -844,14 +919,12 @@ export function PurchasesPage() {
         setFormOpen(true);
         setFormTab("BASICS");
         await qc.invalidateQueries({ queryKey: ["purchases"] });
-        await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
         await qc.invalidateQueries({ queryKey: ["purchase-mileage", created.id] });
         return;
       }
       resetFormDraft();
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
-      await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
     },
   });
 
@@ -899,7 +972,6 @@ export function PurchasesPage() {
           setFormTab("ATTACHMENTS");
           setFormOpen(true);
           await qc.invalidateQueries({ queryKey: ["purchases"] });
-          await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
           return;
         }
       }
@@ -910,14 +982,12 @@ export function PurchasesPage() {
         setFormTab("BASICS");
         setFormOpen(true);
         await qc.invalidateQueries({ queryKey: ["purchases"] });
-        await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
         await qc.invalidateQueries({ queryKey: ["purchase-mileage", updatedPurchase.id] });
         return;
       }
       resetFormDraft();
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
-      await qc.invalidateQueries({ queryKey: ["purchases", "source-platforms"] });
     },
   });
 
@@ -985,21 +1055,8 @@ export function PurchasesPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [master.data]);
 
-  const sourcePlatformOptions = useMemo(() => {
-    const out = new Set<string>(DEFAULT_SOURCE_PLATFORMS);
-    for (const entry of sourcePlatformSuggestions.data ?? []) {
-      const normalized = (entry ?? "").trim();
-      if (normalized) out.add(normalized);
-    }
-    return Array.from(out).sort((a, b) => a.localeCompare(b));
-  }, [sourcePlatformSuggestions.data]);
-
-  const sourcePlatformSelectValue =
-    sourcePlatformMode === "CUSTOM"
-      ? PLATFORM_OTHER
-      : sourcePlatform.trim()
-        ? sourcePlatform.trim()
-        : PLATFORM_NONE;
+  const sourcePlatformOptions = SOURCE_PLATFORM_OPTIONS;
+  const sourcePlatformSelectValue = sourcePlatform.trim() ? sourcePlatform.trim() : PLATFORM_NONE;
 
   const quickCreatePlatformSelectValue =
     quickCreatePlatformMode === "CUSTOM"
@@ -1074,7 +1131,6 @@ export function PurchasesPage() {
     setCounterpartyBirthdate("");
     setCounterpartyIdNumber("");
     setSourcePlatform("");
-    setSourcePlatformMode("PRESET");
     setListingUrl("");
     setNotes("");
     setIdentityFieldsOpen(false);
@@ -1109,8 +1165,7 @@ export function PurchasesPage() {
     setCounterpartyAddress(p.counterparty_address ?? "");
     setCounterpartyBirthdate(p.counterparty_birthdate ?? "");
     setCounterpartyIdNumber(p.counterparty_id_number ?? "");
-    setSourcePlatform(p.source_platform ?? "");
-    setSourcePlatformMode(p.source_platform?.trim() ? (sourcePlatformOptions.includes(p.source_platform.trim()) ? "PRESET" : "CUSTOM") : "PRESET");
+    setSourcePlatform(canonicalSourcePlatform(p.source_platform)?.value ?? "");
     setListingUrl(p.listing_url ?? "");
     setNotes(p.notes ?? "");
     setIdentityFieldsOpen(false);
@@ -1283,6 +1338,7 @@ export function PurchasesPage() {
               (list.data ?? []).map((p) => {
                 const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
                 const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
+                const sourcePlatformInfo = canonicalSourcePlatform(p.source_platform);
                 return (
                   <div
                     key={p.id}
@@ -1304,8 +1360,10 @@ export function PurchasesPage() {
 
                         <div className="mt-2">
                           <div className="truncate font-medium text-gray-900 dark:text-gray-100">{p.counterparty_name}</div>
-                          {p.source_platform ? (
-                            <div className="truncate text-xs text-gray-500 dark:text-gray-400">{p.source_platform}</div>
+                          {sourcePlatformInfo ? (
+                            <div className="mt-1">
+                              <SourcePlatformLogo platform={sourcePlatformInfo} />
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -1399,14 +1457,17 @@ export function PurchasesPage() {
                     {(() => {
                       const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
                       const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
+                      const sourcePlatformInfo = canonicalSourcePlatform(p.source_platform);
                       return (
                         <>
                           <TableCell>{formatDateEuFromIso(p.purchase_date)}</TableCell>
                           <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
                           <TableCell>
                             <div>{p.counterparty_name}</div>
-                            {p.source_platform ? (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">{p.source_platform}</div>
+                            {sourcePlatformInfo ? (
+                              <div className="mt-1">
+                                <SourcePlatformLogo platform={sourcePlatformInfo} size="sm" />
+                              </div>
                             ) : null}
                           </TableCell>
                           <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(p.total_amount_cents)} €</TableCell>
@@ -1649,31 +1710,26 @@ export function PurchasesPage() {
                           <Select
                             value={sourcePlatformSelectValue}
                             onValueChange={(value) => {
-                              if (value === PLATFORM_OTHER) {
-                                setSourcePlatformMode("CUSTOM");
-                                if (!sourcePlatform.trim()) setSourcePlatform("");
-                                return;
-                              }
                               if (value === PLATFORM_NONE) {
-                                setSourcePlatformMode("PRESET");
                                 setSourcePlatform("");
                                 return;
                               }
-                              setSourcePlatformMode("PRESET");
                               setSourcePlatform(value);
                             }}
                           >
                             <SelectTrigger>
-                              <SelectValue />
+                              <SelectValue placeholder="Keine Angabe" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value={PLATFORM_NONE}>Keine Angabe</SelectItem>
                               {sourcePlatformOptions.map((entry) => (
-                                <SelectItem key={entry} value={entry}>
-                                  {entry}
+                                <SelectItem key={entry.value} value={entry.value}>
+                                  <div className="flex items-center gap-2">
+                                    <SourcePlatformLogo platform={entry} size="sm" />
+                                    <span>{entry.label}</span>
+                                  </div>
                                 </SelectItem>
                               ))}
-                              <SelectItem value={PLATFORM_OTHER}>Andere …</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -1682,17 +1738,6 @@ export function PurchasesPage() {
                           <Input value={listingUrl} onChange={(e) => setListingUrl(e.target.value)} placeholder="https://..." />
                         </div>
                       </div>
-
-                      {sourcePlatformMode === "CUSTOM" && (
-                        <div className="space-y-2">
-                          <Label>Eigene Plattform</Label>
-                          <Input
-                            value={sourcePlatform}
-                            onChange={(e) => setSourcePlatform(e.target.value)}
-                            placeholder="z.B. Flohmarkt, Forum, local trade"
-                          />
-                        </div>
-                      )}
 
                       <div className="space-y-2">
                         <Label>Notizen (optional)</Label>
