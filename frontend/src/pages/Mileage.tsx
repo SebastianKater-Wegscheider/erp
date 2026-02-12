@@ -1,6 +1,8 @@
-import { Plus, RefreshCw, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Pencil, Plus, RefreshCw, Route, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { latLngBounds } from "leaflet";
+import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from "react-leaflet";
 
 import { useApi } from "../lib/api";
 import { formatDateEuFromIso } from "../lib/dates";
@@ -39,12 +41,38 @@ type PurchaseRefOut = {
   document_number?: string | null;
 };
 
+type GeoPoint = [number, number];
+
+type RoutePreview = {
+  start: GeoPoint;
+  destination: GeoPoint;
+  polyline: GeoPoint[];
+  oneWayMeters: number;
+};
+
+type NominatimResult = {
+  lat: string;
+  lon: string;
+};
+
+type OsrmRouteResponse = {
+  code?: string;
+  routes?: Array<{
+    distance?: number;
+    geometry?: {
+      coordinates?: Array<[number, number]>;
+    };
+  }>;
+};
+
 const PURPOSE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "BUYING", label: "Einkauf" },
   { value: "POST", label: "Post" },
   { value: "MATERIAL", label: "Material" },
   { value: "OTHER", label: "Sonstiges" },
 ];
+
+const DEFAULT_MAP_CENTER: GeoPoint = [47.5, 9.74];
 
 function optionLabel(options: Array<{ value: string; label: string }>, value: string): string {
   return options.find((o) => o.value === value)?.label ?? value;
@@ -54,18 +82,97 @@ function purchaseRefLabel(p: PurchaseRefOut): string {
   return `${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name} · ${formatEur(p.total_amount_cents)} €`;
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function kmFromMeters(meters: number): string {
+  const km = Math.max(0, meters) / 1000;
+  return km.toFixed(2).replace(".", ",");
+}
+
+function normalizeKm(value: string): string {
+  return value.trim().replace(",", ".");
+}
+
+function kmLabelFromMeters(meters: number): string {
+  return `${(meters / 1000).toFixed(2)} km`;
+}
+
+async function geocodeAddress(query: string): Promise<GeoPoint> {
+  const endpoint = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: "application/json",
+      "Accept-Language": "de",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Geocoding fehlgeschlagen (${response.status})`);
+  }
+  const rows = (await response.json()) as NominatimResult[];
+  const first = rows[0];
+  if (!first) {
+    throw new Error(`Adresse nicht gefunden: ${query}`);
+  }
+
+  const lat = Number(first.lat);
+  const lon = Number(first.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error(`Ungültige Koordinaten für: ${query}`);
+  }
+  return [lat, lon];
+}
+
+function FitRouteBounds({ points }: { points: GeoPoint[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (points.length < 2) return;
+    map.fitBounds(latLngBounds(points), { padding: [24, 24] });
+  }, [map, points]);
+
+  return null;
+}
+
+function RouteMap({ route }: { route: RoutePreview }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+      <MapContainer center={DEFAULT_MAP_CENTER} zoom={11} scrollWheelZoom={false} className="h-56 w-full">
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <Polyline positions={route.polyline} pathOptions={{ color: "#0e766e", weight: 5 }} />
+        <CircleMarker center={route.start} radius={6} pathOptions={{ color: "#0e766e", fillOpacity: 0.95 }} />
+        <CircleMarker center={route.destination} radius={6} pathOptions={{ color: "#1d4ed8", fillOpacity: 0.95 }} />
+        <FitRouteBounds points={route.polyline} />
+      </MapContainer>
+    </div>
+  );
+}
+
 export function MileagePage() {
   const api = useApi();
   const qc = useQueryClient();
   const formRef = useRef<HTMLDivElement | null>(null);
+
   const [formOpen, setFormOpen] = useState(false);
-  const [logDate, setLogDate] = useState(new Date().toISOString().slice(0, 10));
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+
+  const [logDate, setLogDate] = useState(todayIso());
   const [start, setStart] = useState("");
   const [destination, setDestination] = useState("");
   const [purpose, setPurpose] = useState("BUYING");
   const [purposeText, setPurposeText] = useState("");
   const [km, setKm] = useState("0");
   const [purchaseIds, setPurchaseIds] = useState<string[]>([]);
+
+  const [roundTrip, setRoundTrip] = useState(false);
+  const [routePreview, setRoutePreview] = useState<RoutePreview | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [routePending, setRoutePending] = useState(false);
+
   const [purchasePickerOpen, setPurchasePickerOpen] = useState(false);
   const [purchaseQ, setPurchaseQ] = useState("");
   const [search, setSearch] = useState("");
@@ -80,26 +187,30 @@ export function MileagePage() {
     queryFn: () => api.request<MileageOut[]>("/mileage"),
   });
 
-  const create = useMutation({
-    mutationFn: () =>
-      api.request<MileageOut>("/mileage", {
-        method: "POST",
-        json: {
-          log_date: logDate,
-          start_location: start,
-          destination,
-          purpose: purchaseIds.length ? "BUYING" : purpose,
-          km,
-          purchase_ids: purchaseIds,
-          purpose_text: purchaseIds.length ? null : purposeText.trim() || null,
-        },
-      }),
+  const kmNormalized = normalizeKm(km);
+  const kmValue = kmNormalized ? Number(kmNormalized) : NaN;
+  const kmIsValid = Number.isFinite(kmValue) && kmValue > 0;
+
+  const save = useMutation({
+    mutationFn: () => {
+      const payload = {
+        log_date: logDate,
+        start_location: start,
+        destination,
+        purpose: purchaseIds.length ? "BUYING" : purpose,
+        km: kmNormalized,
+        purchase_ids: purchaseIds,
+        purpose_text: purchaseIds.length ? null : purposeText.trim() || null,
+      };
+
+      if (editingLogId) {
+        return api.request<MileageOut>(`/mileage/${editingLogId}`, { method: "PUT", json: payload });
+      }
+      return api.request<MileageOut>("/mileage", { method: "POST", json: payload });
+    },
     onSuccess: async () => {
-      setStart("");
-      setDestination("");
-      setKm("0");
-      setPurchaseIds([]);
-      setPurposeText("");
+      resetForm();
+      setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["mileage"] });
     },
   });
@@ -130,22 +241,120 @@ export function MileagePage() {
 
   const totalCount = list.data?.length ?? 0;
 
-  function openForm() {
-    create.reset();
+  useEffect(() => {
+    if (!routePreview) return;
+    const computedMeters = roundTrip ? routePreview.oneWayMeters * 2 : routePreview.oneWayMeters;
+    setKm(kmFromMeters(computedMeters));
+  }, [routePreview, roundTrip]);
+
+  useEffect(() => {
+    setRoutePreview(null);
+    setRouteError(null);
+  }, [start, destination]);
+
+  function resetForm() {
+    setEditingLogId(null);
+    setLogDate(todayIso());
+    setStart("");
+    setDestination("");
+    setPurpose("BUYING");
+    setPurposeText("");
+    setKm("0");
+    setPurchaseIds([]);
+    setRoundTrip(false);
+    setRoutePreview(null);
+    setRouteError(null);
+    setRoutePending(false);
+    setPurchasePickerOpen(false);
+    setPurchaseQ("");
+    save.reset();
+  }
+
+  function openCreateForm() {
+    resetForm();
+    setFormOpen(true);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function openEditForm(m: MileageOut) {
+    save.reset();
+    setEditingLogId(m.id);
+    setLogDate(m.log_date);
+    setStart(m.start_location);
+    setDestination(m.destination);
+    setPurpose(m.purpose);
+    setPurposeText(m.purpose_text ?? "");
+    setKm(kmFromMeters(m.distance_meters));
+    setPurchaseIds(m.purchase_ids ?? []);
+    setRoundTrip(false);
+    setRoutePreview(null);
+    setRouteError(null);
+    setRoutePending(false);
+    setPurchasePickerOpen(false);
+    setPurchaseQ("");
     setFormOpen(true);
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function closeForm() {
-    create.reset();
+    resetForm();
     setFormOpen(false);
+  }
+
+  async function calculateRoute() {
+    if (!start.trim() || !destination.trim()) {
+      setRouteError("Bitte Start und Ziel ausfüllen.");
+      return;
+    }
+
+    setRouteError(null);
+    setRoutePending(true);
+    try {
+      const [startPoint, destinationPoint] = await Promise.all([
+        geocodeAddress(start.trim()),
+        geocodeAddress(destination.trim()),
+      ]);
+
+      const endpoint = `https://router.project-osrm.org/route/v1/driving/${startPoint[1]},${startPoint[0]};${destinationPoint[1]},${destinationPoint[0]}?overview=full&geometries=geojson`;
+      const response = await fetch(endpoint, {
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        throw new Error(`Routenberechnung fehlgeschlagen (${response.status})`);
+      }
+
+      const data = (await response.json()) as OsrmRouteResponse;
+      const route = data.routes?.[0];
+      const oneWayMeters = Math.round(Number(route?.distance ?? 0));
+      const coords = route?.geometry?.coordinates ?? [];
+      const polyline = coords.map(([lon, lat]) => [lat, lon] as GeoPoint);
+
+      if (!oneWayMeters || polyline.length < 2) {
+        throw new Error("Keine Route gefunden. Bitte Eingabe prüfen.");
+      }
+
+      setRoutePreview({
+        start: startPoint,
+        destination: destinationPoint,
+        polyline,
+        oneWayMeters,
+      });
+
+      const distanceMeters = roundTrip ? oneWayMeters * 2 : oneWayMeters;
+      setKm(kmFromMeters(distanceMeters));
+    } catch (error) {
+      setRoutePreview(null);
+      setRouteError((error as Error)?.message ?? "Route konnte nicht berechnet werden");
+    } finally {
+      setRoutePending(false);
+    }
   }
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Fahrtenbuch"
-        description="Fahrten erfassen, Einkäufe verknüpfen und den steuerlichen Betrag berechnen."
+        description="Fahrten erfassen, bearbeiten, Einkäufe verknüpfen und den steuerlichen Betrag berechnen."
         actions={
           <>
             <Button
@@ -160,7 +369,7 @@ export function MileagePage() {
               <RefreshCw className="h-4 w-4" />
               Aktualisieren
             </Button>
-            <Button className="w-full sm:w-auto" onClick={openForm}>
+            <Button className="w-full sm:w-auto" onClick={openCreateForm}>
               <Plus className="h-4 w-4" />
               Fahrt erfassen
             </Button>
@@ -196,8 +405,8 @@ export function MileagePage() {
 
           <div className="md:hidden space-y-2">
             {rows.map((m) => {
-              const kmLabel = `${(m.distance_meters / 1000).toFixed(2)} km`;
-              const purchaseRefs = (m.purchase_ids ?? [])
+              const kmLabel = kmLabelFromMeters(m.distance_meters);
+              const linkedPurchases = (m.purchase_ids ?? [])
                 .map((id) => purchaseRefById.get(id))
                 .filter((p): p is PurchaseRefOut => !!p);
               return (
@@ -221,11 +430,11 @@ export function MileagePage() {
                             </Badge>
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {purchaseRefs
+                            {linkedPurchases
                               .slice(0, 2)
                               .map((p) => `${formatDateEuFromIso(p.purchase_date)} · ${p.counterparty_name}`)
                               .join(", ")}
-                            {purchaseRefs.length > 2 ? ` +${purchaseRefs.length - 2}` : ""}
+                            {linkedPurchases.length > 2 ? ` +${linkedPurchases.length - 2}` : ""}
                           </div>
                         </div>
                       ) : (
@@ -238,6 +447,13 @@ export function MileagePage() {
                     <div className="shrink-0 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">
                       {formatEur(m.amount_cents)} €
                     </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <Button type="button" className="w-full" variant="secondary" onClick={() => openEditForm(m)}>
+                      <Pencil className="h-4 w-4" />
+                      Bearbeiten
+                    </Button>
                   </div>
                 </div>
               );
@@ -257,6 +473,7 @@ export function MileagePage() {
                   <TableHead>Strecke</TableHead>
                   <TableHead>Zweck</TableHead>
                   <TableHead className="text-right">Betrag</TableHead>
+                  <TableHead className="text-right">Aktion</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -267,7 +484,7 @@ export function MileagePage() {
                       <div className="font-medium">
                         {m.start_location} → {m.destination}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{(m.distance_meters / 1000).toFixed(2)} km</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{kmLabelFromMeters(m.distance_meters)}</div>
                     </TableCell>
                     <TableCell>
                       {m.purchase_ids?.length ? (
@@ -290,11 +507,17 @@ export function MileagePage() {
                       )}
                     </TableCell>
                     <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(m.amount_cents)} €</TableCell>
+                    <TableCell className="text-right">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => openEditForm(m)}>
+                        <Pencil className="h-4 w-4" />
+                        Bearbeiten
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {!rows.length && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                    <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
                       Keine Daten.
                     </TableCell>
                   </TableRow>
@@ -309,7 +532,7 @@ export function MileagePage() {
         <div ref={formRef}>
           <Card>
             <CardHeader>
-              <CardTitle>Erfassen</CardTitle>
+              <CardTitle>{editingLogId ? "Fahrt bearbeiten" : "Fahrt erfassen"}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-4">
@@ -328,6 +551,60 @@ export function MileagePage() {
                 <div className="space-y-2">
                   <Label>km</Label>
                   <Input value={km} onChange={(e) => setKm(e.target.value)} placeholder="z. B. 12.3" />
+                </div>
+
+                <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800 md:col-span-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div className="space-y-2">
+                      <Label>Routenberechnung (OpenStreetMap)</Label>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Distanz wird aus der Route berechnet und in das km-Feld übernommen.
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Select value={roundTrip ? "ROUND" : "ONE_WAY"} onValueChange={(value) => setRoundTrip(value === "ROUND") }>
+                        <SelectTrigger className="w-full sm:w-[12rem]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ONE_WAY">Einfach</SelectItem>
+                          <SelectItem value="ROUND">Hin- und Rückfahrt</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          void calculateRoute();
+                        }}
+                        disabled={routePending || !start.trim() || !destination.trim()}
+                      >
+                        <Route className="h-4 w-4" />
+                        Route berechnen
+                      </Button>
+                    </div>
+                  </div>
+
+                  {routePreview && (
+                    <div className="mt-3 text-xs text-gray-600 dark:text-gray-300">
+                      Berechnet: {kmLabelFromMeters(routePreview.oneWayMeters)}
+                      {roundTrip ? ` (gesamt ${kmLabelFromMeters(routePreview.oneWayMeters * 2)})` : ""}
+                    </div>
+                  )}
+
+                  {routeError && (
+                    <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+                      {routeError}
+                    </div>
+                  )}
+
+                  {routePreview && (
+                    <div className="mt-3">
+                      <RouteMap route={routePreview} />
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2 md:col-span-4">
@@ -506,17 +783,21 @@ export function MileagePage() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-between">
-                <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={closeForm} disabled={create.isPending}>
+                <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={closeForm} disabled={save.isPending}>
                   Schließen
                 </Button>
-                <Button className="w-full sm:w-auto" onClick={() => create.mutate()} disabled={!start.trim() || !destination.trim() || create.isPending}>
-                  Erstellen
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={() => save.mutate()}
+                  disabled={!start.trim() || !destination.trim() || !kmIsValid || save.isPending}
+                >
+                  {editingLogId ? "Änderungen speichern" : "Erstellen"}
                 </Button>
               </div>
 
-              {create.isError && (
+              {save.isError && (
                 <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200">
-                  {(create.error as Error).message}
+                  {(save.error as Error).message}
                 </div>
               )}
             </CardContent>

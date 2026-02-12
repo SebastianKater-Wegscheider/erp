@@ -13,7 +13,7 @@ from app.core.db import get_session
 from app.core.security import require_basic_auth
 from app.models.mileage_log import MileageLog
 from app.schemas.mileage import MileageCreate, MileageOut
-from app.services.mileage import create_mileage_log
+from app.services.mileage import create_mileage_log, update_mileage_log
 
 
 router = APIRouter()
@@ -36,6 +36,35 @@ async def create_mileage_endpoint(
             )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+
+    row = (
+        await session.execute(
+            select(MileageLog).where(MileageLog.id == log.id).options(selectinload(MileageLog.purchases))
+        )
+    ).scalar_one()
+    return MileageOut.model_validate(row)
+
+
+@router.put("/{log_id}", response_model=MileageOut)
+async def update_mileage_endpoint(
+    log_id: uuid.UUID,
+    data: MileageCreate,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> MileageOut:
+    settings = get_settings()
+    try:
+        async with session.begin():
+            log = await update_mileage_log(
+                session,
+                actor=actor,
+                log_id=log_id,
+                data=data,
+                rate_cents_per_km=settings.mileage_rate_cents_per_km,
+            )
+    except ValueError as e:
+        detail = str(e)
+        raise HTTPException(status_code=404 if detail == "Mileage log not found" else 409, detail=detail) from e
 
     row = (
         await session.execute(
