@@ -171,3 +171,22 @@
 ### Beobachtung nach Check
 - Status waehrend Diagnose: `enabled=true`, `total_with_asin=83`, `blocked_last=0`; `stale` sank im Live-Lauf bis auf `0`.
 - Drei manuelle Trigger auf zuvor stale Produkte liefen erfolgreich durch (`ok=true`, `blocked=false`, `error=null`).
+
+## 2026-02-12 - Amazon Intelligence im Dashboard: Sell Value (net) + kompakte Chancen
+
+### Ausgangslage
+- Amazon-Metriken (BSR, Preislevel, Offer Counts, Freshness) liegen bereits pro Produkt vor, werden aber im Dashboard kaum zur operativen Priorisierung genutzt.
+- Nutzer benoetigen eine schnelle, nicht ueberladene Sicht auf den potentiellen Verkaufswert des aktuellen Bestands.
+
+### Business-Entscheidungen
+- Dashboard bleibt kompakt; keine neue Analytics-Seite im ersten Schritt.
+- Primaere Kennzahl wird `Amazon Sell Value (net)` (geschaetzter FBA payout) statt Brutto-Marktpreis, weil sie naeher am erwarteten Cash-In liegt.
+- Berechnungsbasis ist der gesamte In-Stock-Bestand (inkl. DRAFT/INBOUND/RESERVED/RETURNED/DISCREPANCY), damit der KPI den realen Bestand abbildet.
+- Actionable Liste "Top Chancen" wird auf direkt verkaeufliche Einheiten (`AVAILABLE`, `FBA_WAREHOUSE`) begrenzt.
+
+### Technische Entscheidungen
+- `GET /reports/company-dashboard` wird um ein aggregiertes Objekt `amazon_inventory` erweitert (Totals, Coverage, Fresh/Stale/Blocked, Top-Chancen).
+- Marktpreis pro Item folgt exakt der bestehenden Condition-Logik (Neu/Used-Fallbacks), damit Dashboard und Inventar konsistent sind.
+- FBA payout nutzt bestehendes Fee-Profil aus Settings; Referral-Fee-Rundung erfolgt deterministisch per Integer-Half-Up.
+- Top-Chancen werden auf Master-Produkt-Ebene gruppiert und nach Gesamtmarge sortiert, um doppelte Zeilen bei Mehrfachbestand zu vermeiden.
+- UI zeigt zusaetzlich Offer-Kontext in der Inventar-Ansicht, aber nur als kompakte Meta-Information ohne neue komplexe Controls.
