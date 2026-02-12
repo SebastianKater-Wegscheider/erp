@@ -36,6 +36,50 @@ class CompanyDashboardProductAgg(BaseModel):
     profit_cents: int
 
 
+class AmazonInventoryOpportunityOut(BaseModel):
+    master_product_id: str
+    sku: str
+    title: str
+    platform: str
+    region: str
+    variant: str
+
+    units_total: int = Field(ge=0)
+    units_priced: int = Field(ge=0)
+
+    market_gross_cents_total: int
+    fba_payout_cents_total: int
+    margin_cents_total: int
+
+    amazon_last_success_at: str | None = None
+    amazon_blocked_last: bool | None = None
+    amazon_rank_overall: int | None = None
+    amazon_rank_specific: int | None = None
+    amazon_offers_count_total: int | None = None
+    amazon_offers_count_used_priced_total: int | None = None
+
+
+class AmazonInventoryInsightsOut(BaseModel):
+    computed_at: str
+
+    in_stock_units_total: int = Field(ge=0)
+    in_stock_units_priced: int = Field(ge=0)
+
+    in_stock_market_gross_cents: int
+    in_stock_fba_payout_cents: int
+    in_stock_margin_cents: int
+
+    in_stock_units_missing_asin: int = Field(ge=0)
+    in_stock_units_fresh: int = Field(ge=0)
+    in_stock_units_stale_or_blocked: int = Field(ge=0)
+    in_stock_units_blocked: int = Field(ge=0)
+
+    positive_margin_units: int = Field(ge=0)
+    negative_margin_units: int = Field(ge=0)
+
+    top_opportunities: list[AmazonInventoryOpportunityOut]
+
+
 class CompanyDashboardOut(BaseModel):
     inventory_value_cents: int = Field(ge=0)
     cash_balance_cents: dict[str, int]
@@ -60,6 +104,8 @@ class CompanyDashboardOut(BaseModel):
     inventory_old_stock_90d_count: int = Field(ge=0)
     negative_profit_orders_30d_count: int = Field(ge=0)
     master_products_missing_asin_count: int = Field(ge=0)
+
+    amazon_inventory: AmazonInventoryInsightsOut
 
     top_products_30d: list[CompanyDashboardProductAgg]
     worst_products_30d: list[CompanyDashboardProductAgg]

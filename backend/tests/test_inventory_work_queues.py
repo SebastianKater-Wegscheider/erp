@@ -45,13 +45,16 @@ async def _create_inventory_item(
     status: InventoryStatus,
     storage_location: str | None,
     acquired_date: date,
+    condition: InventoryCondition = InventoryCondition.GOOD,
+    purchase_price_cents: int = 1_000,
+    allocated_costs_cents: int = 0,
 ) -> InventoryItem:
     item = InventoryItem(
         master_product_id=master_product.id,
-        condition=InventoryCondition.GOOD,
+        condition=condition,
         purchase_type=PurchaseType.DIFF,
-        purchase_price_cents=1_000,
-        allocated_costs_cents=0,
+        purchase_price_cents=purchase_price_cents,
+        allocated_costs_cents=allocated_costs_cents,
         storage_location=storage_location,
         serial_number=None,
         status=status,
@@ -68,6 +71,15 @@ def _metrics_row(
     now_utc: datetime,
     last_success_delta_hours: int | None,
     blocked_last: bool,
+    rank_overall: int | None = None,
+    rank_specific: int | None = None,
+    offers_count_total: int | None = None,
+    offers_count_used_priced_total: int | None = None,
+    price_new_cents: int | None = None,
+    price_used_like_new_cents: int | None = None,
+    price_used_very_good_cents: int | None = None,
+    price_used_good_cents: int | None = None,
+    price_used_acceptable_cents: int | None = None,
 ) -> AmazonProductMetricsLatest:
     last_success_at = None if last_success_delta_hours is None else now_utc - timedelta(hours=last_success_delta_hours)
     return AmazonProductMetricsLatest(
@@ -78,20 +90,20 @@ def _metrics_row(
         blocked_last=blocked_last,
         block_reason_last=None,
         last_error=None,
-        rank_overall=None,
+        rank_overall=rank_overall,
         rank_overall_category=None,
-        rank_specific=None,
+        rank_specific=rank_specific,
         rank_specific_category=None,
-        price_new_cents=None,
-        price_used_like_new_cents=None,
-        price_used_very_good_cents=None,
-        price_used_good_cents=None,
-        price_used_acceptable_cents=None,
+        price_new_cents=price_new_cents,
+        price_used_like_new_cents=price_used_like_new_cents,
+        price_used_very_good_cents=price_used_very_good_cents,
+        price_used_good_cents=price_used_good_cents,
+        price_used_acceptable_cents=price_used_acceptable_cents,
         price_collectible_cents=None,
         buybox_total_cents=None,
-        offers_count_total=None,
+        offers_count_total=offers_count_total,
         offers_count_priced_total=None,
-        offers_count_used_priced_total=None,
+        offers_count_used_priced_total=offers_count_used_priced_total,
         next_retry_at=None,
         consecutive_failures=0,
     )
@@ -329,3 +341,120 @@ async def test_company_dashboard_returns_work_queue_counts(db_session: AsyncSess
     assert out["inventory_missing_storage_location_count"] == 1
     assert out["inventory_amazon_stale_count"] == 3
     assert out["inventory_old_stock_90d_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_company_dashboard_returns_amazon_inventory_insights(db_session: AsyncSession) -> None:
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date()
+    recent_date = today - timedelta(days=12)
+
+    async with db_session.begin():
+        mp_top = await _create_master_product(db_session, suffix="insights-top", asin="B00INSIGHTS1")
+        mp_stale = await _create_master_product(db_session, suffix="insights-stale", asin="B00INSIGHTS2")
+        mp_missing = await _create_master_product(db_session, suffix="insights-missing", asin=None)
+        mp_blocked = await _create_master_product(db_session, suffix="insights-blocked", asin="B00INSIGHTS3")
+
+        await _create_inventory_item(
+            db_session,
+            master_product=mp_top,
+            status=InventoryStatus.AVAILABLE,
+            storage_location="A-1",
+            acquired_date=recent_date,
+            purchase_price_cents=2_000,
+            allocated_costs_cents=200,
+        )
+        await _create_inventory_item(
+            db_session,
+            master_product=mp_top,
+            status=InventoryStatus.FBA_WAREHOUSE,
+            storage_location="A-2",
+            acquired_date=recent_date,
+            purchase_price_cents=2_100,
+        )
+        await _create_inventory_item(
+            db_session,
+            master_product=mp_stale,
+            status=InventoryStatus.RESERVED,
+            storage_location="B-1",
+            acquired_date=recent_date,
+            purchase_price_cents=6_000,
+        )
+        await _create_inventory_item(
+            db_session,
+            master_product=mp_missing,
+            status=InventoryStatus.DRAFT,
+            storage_location="C-1",
+            acquired_date=recent_date,
+        )
+        await _create_inventory_item(
+            db_session,
+            master_product=mp_blocked,
+            status=InventoryStatus.AVAILABLE,
+            storage_location="D-1",
+            acquired_date=recent_date,
+            condition=InventoryCondition.NEW,
+            purchase_price_cents=5_000,
+        )
+
+        db_session.add_all(
+            [
+                _metrics_row(
+                    master_product_id=mp_top.id,
+                    now_utc=now_utc,
+                    last_success_delta_hours=2,
+                    blocked_last=False,
+                    rank_overall=1200,
+                    offers_count_total=6,
+                    offers_count_used_priced_total=3,
+                    price_used_like_new_cents=4_200,
+                    price_used_very_good_cents=4_000,
+                    price_used_good_cents=3_900,
+                ),
+                _metrics_row(
+                    master_product_id=mp_stale.id,
+                    now_utc=now_utc,
+                    last_success_delta_hours=30,
+                    blocked_last=False,
+                    rank_specific=5500,
+                    offers_count_total=8,
+                    price_used_like_new_cents=5_800,
+                ),
+                _metrics_row(
+                    master_product_id=mp_blocked.id,
+                    now_utc=now_utc,
+                    last_success_delta_hours=1,
+                    blocked_last=True,
+                    rank_overall=3000,
+                    offers_count_total=4,
+                    offers_count_used_priced_total=2,
+                    price_new_cents=8_000,
+                ),
+            ]
+        )
+
+    out = await company_dashboard(db_session, today=today)
+    amazon = out["amazon_inventory"]
+
+    assert amazon["in_stock_units_total"] == 5
+    assert amazon["in_stock_units_priced"] == 4
+    assert amazon["in_stock_units_missing_asin"] == 1
+    assert amazon["in_stock_units_fresh"] == 2
+    assert amazon["in_stock_units_stale_or_blocked"] == 2
+    assert amazon["in_stock_units_blocked"] == 1
+
+    assert amazon["in_stock_market_gross_cents"] == 21_600
+    assert amazon["in_stock_fba_payout_cents"] == 18_960
+    assert amazon["in_stock_margin_cents"] == 1_660
+    assert amazon["positive_margin_units"] == 3
+    assert amazon["negative_margin_units"] == 1
+
+    top = amazon["top_opportunities"]
+    assert len(top) == 1
+    assert top[0]["master_product_id"] == str(mp_top.id)
+    assert top[0]["units_total"] == 2
+    assert top[0]["units_priced"] == 2
+    assert top[0]["market_gross_cents_total"] == 7_800
+    assert top[0]["fba_payout_cents_total"] == 5_930
+    assert top[0]["margin_cents_total"] == 1_630
+    assert top[0]["amazon_rank_overall"] == 1200

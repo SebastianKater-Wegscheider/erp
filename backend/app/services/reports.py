@@ -50,6 +50,21 @@ QUEUE_STATUSES_OLD_STOCK_90D = (
     InventoryStatus.DISCREPANCY,
 )
 
+IN_STOCK_STATUSES = (
+    InventoryStatus.DRAFT,
+    InventoryStatus.AVAILABLE,
+    InventoryStatus.FBA_INBOUND,
+    InventoryStatus.FBA_WAREHOUSE,
+    InventoryStatus.RESERVED,
+    InventoryStatus.RETURNED,
+    InventoryStatus.DISCREPANCY,
+)
+
+AMAZON_OPPORTUNITY_STATUSES = (
+    InventoryStatus.AVAILABLE,
+    InventoryStatus.FBA_WAREHOUSE,
+)
+
 
 @dataclass(frozen=True)
 class MonthRange:
@@ -66,19 +81,229 @@ def month_range(*, year: int, month: int) -> MonthRange:
     return MonthRange(start=start, end=end)
 
 
-async def dashboard(session: AsyncSession, *, today: date) -> dict:
-    in_stock_statuses = [
-        InventoryStatus.DRAFT,
-        InventoryStatus.AVAILABLE,
-        InventoryStatus.FBA_INBOUND,
-        InventoryStatus.FBA_WAREHOUSE,
-        InventoryStatus.RESERVED,
-        InventoryStatus.RETURNED,
-        InventoryStatus.DISCREPANCY,
+def _used_best_price_cents(
+    *,
+    price_used_like_new_cents: int | None,
+    price_used_very_good_cents: int | None,
+    price_used_good_cents: int | None,
+    price_used_acceptable_cents: int | None,
+) -> int | None:
+    values = [
+        v
+        for v in (
+            price_used_like_new_cents,
+            price_used_very_good_cents,
+            price_used_good_cents,
+            price_used_acceptable_cents,
+        )
+        if isinstance(v, int)
     ]
+    return min(values) if values else None
+
+
+def _market_price_for_condition_cents(
+    *,
+    inventory_condition: str,
+    price_new_cents: int | None,
+    price_used_like_new_cents: int | None,
+    price_used_very_good_cents: int | None,
+    price_used_good_cents: int | None,
+    price_used_acceptable_cents: int | None,
+) -> int | None:
+    used_best = _used_best_price_cents(
+        price_used_like_new_cents=price_used_like_new_cents,
+        price_used_very_good_cents=price_used_very_good_cents,
+        price_used_good_cents=price_used_good_cents,
+        price_used_acceptable_cents=price_used_acceptable_cents,
+    )
+    condition = inventory_condition.upper().strip()
+    if condition == "NEW":
+        return price_new_cents if isinstance(price_new_cents, int) else used_best
+    if condition == "LIKE_NEW":
+        return price_used_like_new_cents if isinstance(price_used_like_new_cents, int) else used_best
+    if condition == "GOOD":
+        if isinstance(price_used_good_cents, int):
+            return price_used_good_cents
+        if isinstance(price_used_very_good_cents, int):
+            return price_used_very_good_cents
+        return used_best
+    if condition == "ACCEPTABLE":
+        if isinstance(price_used_acceptable_cents, int):
+            return price_used_acceptable_cents
+        if isinstance(price_used_good_cents, int):
+            return price_used_good_cents
+        return used_best
+    return None
+
+
+def _referral_fee_cents(price_cents: int, referral_fee_bp: int) -> int:
+    # Deterministic half-up rounding for basis-point fee calculation.
+    return ((price_cents * referral_fee_bp) + 5_000) // 10_000
+
+
+def _fba_payout_cents(
+    *,
+    market_price_cents: int,
+    referral_fee_bp: int,
+    fulfillment_fee_cents: int,
+    inbound_shipping_cents: int,
+) -> int:
+    referral_cents = _referral_fee_cents(market_price_cents, referral_fee_bp)
+    return market_price_cents - referral_cents - fulfillment_fee_cents - inbound_shipping_cents
+
+
+async def _amazon_inventory_insights(session: AsyncSession) -> dict:
+    settings = get_settings()
+    now_utc = datetime.now(timezone.utc)
+    stale_before = now_utc - timedelta(hours=24)
+
+    rows = (
+        await session.execute(
+            select(
+                InventoryItem.master_product_id,
+                InventoryItem.status,
+                InventoryItem.condition,
+                InventoryItem.purchase_price_cents,
+                InventoryItem.allocated_costs_cents,
+                MasterProduct.sku,
+                MasterProduct.title,
+                MasterProduct.platform,
+                MasterProduct.region,
+                MasterProduct.variant,
+                MasterProduct.asin,
+                AmazonProductMetricsLatest.last_success_at,
+                AmazonProductMetricsLatest.blocked_last,
+                AmazonProductMetricsLatest.rank_overall,
+                AmazonProductMetricsLatest.rank_specific,
+                AmazonProductMetricsLatest.offers_count_total,
+                AmazonProductMetricsLatest.offers_count_used_priced_total,
+                AmazonProductMetricsLatest.price_new_cents,
+                AmazonProductMetricsLatest.price_used_like_new_cents,
+                AmazonProductMetricsLatest.price_used_very_good_cents,
+                AmazonProductMetricsLatest.price_used_good_cents,
+                AmazonProductMetricsLatest.price_used_acceptable_cents,
+            )
+            .select_from(InventoryItem)
+            .join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id)
+            .outerjoin(AmazonProductMetricsLatest, AmazonProductMetricsLatest.master_product_id == MasterProduct.id)
+            .where(InventoryItem.status.in_(IN_STOCK_STATUSES))
+        )
+    ).all()
+
+    out: dict[str, object] = {
+        "computed_at": now_utc.isoformat(),
+        "in_stock_units_total": 0,
+        "in_stock_units_priced": 0,
+        "in_stock_market_gross_cents": 0,
+        "in_stock_fba_payout_cents": 0,
+        "in_stock_margin_cents": 0,
+        "in_stock_units_missing_asin": 0,
+        "in_stock_units_fresh": 0,
+        "in_stock_units_stale_or_blocked": 0,
+        "in_stock_units_blocked": 0,
+        "positive_margin_units": 0,
+        "negative_margin_units": 0,
+    }
+    opportunities: dict[str, dict] = {}
+
+    for r in rows:
+        out["in_stock_units_total"] = int(out["in_stock_units_total"]) + 1
+
+        asin = (r.asin or "").strip()
+        has_asin = bool(asin)
+        if not has_asin:
+            out["in_stock_units_missing_asin"] = int(out["in_stock_units_missing_asin"]) + 1
+        else:
+            blocked = bool(r.blocked_last is True)
+            stale = r.last_success_at is None or r.last_success_at < stale_before
+            if blocked:
+                out["in_stock_units_blocked"] = int(out["in_stock_units_blocked"]) + 1
+            if blocked or stale:
+                out["in_stock_units_stale_or_blocked"] = int(out["in_stock_units_stale_or_blocked"]) + 1
+            else:
+                out["in_stock_units_fresh"] = int(out["in_stock_units_fresh"]) + 1
+
+        market_price_cents = _market_price_for_condition_cents(
+            inventory_condition=r.condition.value,
+            price_new_cents=r.price_new_cents,
+            price_used_like_new_cents=r.price_used_like_new_cents,
+            price_used_very_good_cents=r.price_used_very_good_cents,
+            price_used_good_cents=r.price_used_good_cents,
+            price_used_acceptable_cents=r.price_used_acceptable_cents,
+        )
+        if market_price_cents is None:
+            continue
+
+        payout_cents = _fba_payout_cents(
+            market_price_cents=market_price_cents,
+            referral_fee_bp=settings.amazon_fba_referral_fee_bp,
+            fulfillment_fee_cents=settings.amazon_fba_fulfillment_fee_cents,
+            inbound_shipping_cents=settings.amazon_fba_inbound_shipping_cents,
+        )
+        cost_basis_cents = int(r.purchase_price_cents) + int(r.allocated_costs_cents)
+        margin_cents = payout_cents - cost_basis_cents
+
+        out["in_stock_units_priced"] = int(out["in_stock_units_priced"]) + 1
+        out["in_stock_market_gross_cents"] = int(out["in_stock_market_gross_cents"]) + market_price_cents
+        out["in_stock_fba_payout_cents"] = int(out["in_stock_fba_payout_cents"]) + payout_cents
+        out["in_stock_margin_cents"] = int(out["in_stock_margin_cents"]) + margin_cents
+        if margin_cents > 0:
+            out["positive_margin_units"] = int(out["positive_margin_units"]) + 1
+        elif margin_cents < 0:
+            out["negative_margin_units"] = int(out["negative_margin_units"]) + 1
+
+        if r.status not in AMAZON_OPPORTUNITY_STATUSES or margin_cents <= 0 or r.blocked_last is True:
+            continue
+
+        key = str(r.master_product_id)
+        agg = opportunities.get(key)
+        if agg is None:
+            agg = {
+                "master_product_id": key,
+                "sku": r.sku,
+                "title": r.title,
+                "platform": r.platform,
+                "region": r.region,
+                "variant": r.variant,
+                "units_total": 0,
+                "units_priced": 0,
+                "market_gross_cents_total": 0,
+                "fba_payout_cents_total": 0,
+                "margin_cents_total": 0,
+                "amazon_last_success_at": r.last_success_at.isoformat() if r.last_success_at else None,
+                "amazon_blocked_last": bool(r.blocked_last) if r.blocked_last is not None else None,
+                "amazon_rank_overall": int(r.rank_overall) if r.rank_overall is not None else None,
+                "amazon_rank_specific": int(r.rank_specific) if r.rank_specific is not None else None,
+                "amazon_offers_count_total": int(r.offers_count_total) if r.offers_count_total is not None else None,
+                "amazon_offers_count_used_priced_total": int(r.offers_count_used_priced_total)
+                if r.offers_count_used_priced_total is not None
+                else None,
+            }
+            opportunities[key] = agg
+
+        agg["units_total"] = int(agg["units_total"]) + 1
+        agg["units_priced"] = int(agg["units_priced"]) + 1
+        agg["market_gross_cents_total"] = int(agg["market_gross_cents_total"]) + market_price_cents
+        agg["fba_payout_cents_total"] = int(agg["fba_payout_cents_total"]) + payout_cents
+        agg["margin_cents_total"] = int(agg["margin_cents_total"]) + margin_cents
+
+    def _opportunity_sort_key(row: dict) -> tuple[int, int, str]:
+        rank_overall = row.get("amazon_rank_overall")
+        rank_specific = row.get("amazon_rank_specific")
+        rank_value = int(rank_overall) if isinstance(rank_overall, int) and rank_overall > 0 else (
+            int(rank_specific) if isinstance(rank_specific, int) and rank_specific > 0 else 10**9
+        )
+        return (-int(row.get("margin_cents_total", 0)), rank_value, str(row.get("title", "")))
+
+    top_opportunities = sorted(opportunities.values(), key=_opportunity_sort_key)[:5]
+    out["top_opportunities"] = top_opportunities
+    return out
+
+
+async def dashboard(session: AsyncSession, *, today: date) -> dict:
     inv_value_stmt = select(
         func.coalesce(func.sum(InventoryItem.purchase_price_cents + InventoryItem.allocated_costs_cents), 0)
-    ).where(InventoryItem.status.in_(in_stock_statuses))
+    ).where(InventoryItem.status.in_(IN_STOCK_STATUSES))
     inventory_value_cents = int((await session.execute(inv_value_stmt)).scalar_one())
 
     cash_stmt = select(LedgerEntry.account, func.coalesce(func.sum(LedgerEntry.amount_cents), 0)).group_by(
@@ -218,15 +443,6 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
     inventory_status_rows = (await session.execute(inventory_status_stmt)).all()
     inventory_status_counts = {status.value: int(count) for status, count in inventory_status_rows}
 
-    in_stock_statuses = [
-        InventoryStatus.DRAFT,
-        InventoryStatus.AVAILABLE,
-        InventoryStatus.FBA_INBOUND,
-        InventoryStatus.FBA_WAREHOUSE,
-        InventoryStatus.RESERVED,
-        InventoryStatus.RETURNED,
-        InventoryStatus.DISCREPANCY,
-    ]
     inv_age_rows = (
         await session.execute(
             select(
@@ -234,7 +450,7 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
                 InventoryItem.allocated_costs_cents,
                 InventoryItem.acquired_date,
                 InventoryItem.created_at,
-            ).where(InventoryItem.status.in_(in_stock_statuses))
+            ).where(InventoryItem.status.in_(IN_STOCK_STATUSES))
         )
     ).all()
 
@@ -395,6 +611,8 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
             "profit_cents": int(r.profit_cents),
         }
 
+    amazon_inventory = await _amazon_inventory_insights(session)
+
     return {
         **base,
         "sales_revenue_30d_cents": sales_revenue_30d_cents,
@@ -414,6 +632,7 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
         "inventory_old_stock_90d_count": inventory_old_stock_90d_count,
         "negative_profit_orders_30d_count": negative_profit_orders_30d_count,
         "master_products_missing_asin_count": master_products_missing_asin_count,
+        "amazon_inventory": amazon_inventory,
         "top_products_30d": [_product_row_to_dict(r) for r in top_products_rows],
         "worst_products_30d": [_product_row_to_dict(r) for r in worst_products_rows],
     }
