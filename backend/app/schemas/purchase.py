@@ -12,7 +12,10 @@ class PurchaseLineCreate(BaseModel):
     master_product_id: UUID
     condition: InventoryCondition
     purchase_type: PurchaseType
-    purchase_price_cents: int = Field(ge=0)
+    purchase_price_cents: int | None = Field(default=None, ge=0)
+    market_value_cents: int | None = Field(default=None, ge=0)
+    held_privately_over_12_months: bool | None = None
+    valuation_reason: str | None = Field(default=None, max_length=2000)
 
 
 class PurchaseLineUpsert(BaseModel):
@@ -20,7 +23,10 @@ class PurchaseLineUpsert(BaseModel):
     master_product_id: UUID
     condition: InventoryCondition
     purchase_type: PurchaseType
-    purchase_price_cents: int = Field(ge=0)
+    purchase_price_cents: int | None = Field(default=None, ge=0)
+    market_value_cents: int | None = Field(default=None, ge=0)
+    held_privately_over_12_months: bool | None = None
+    valuation_reason: str | None = Field(default=None, max_length=2000)
 
 
 class PurchaseCreate(BaseModel):
@@ -60,11 +66,26 @@ class PurchaseCreate(BaseModel):
                 raise ValueError("external_invoice_number is required for COMMERCIAL_REGULAR purchases")
             if not self.receipt_upload_path:
                 raise ValueError("receipt_upload_path is required for COMMERCIAL_REGULAR purchases")
+            for line in self.lines:
+                if line.purchase_price_cents is None:
+                    raise ValueError("purchase_price_cents is required for COMMERCIAL_REGULAR purchase lines")
+        elif self.kind == PurchaseKind.PRIVATE_EQUITY:
+            self.tax_rate_bp = 0
+            if self.shipping_cost_cents != 0 or self.buyer_protection_fee_cents != 0:
+                raise ValueError(
+                    "shipping_cost_cents and buyer_protection_fee_cents must be 0 for PRIVATE_EQUITY purchases"
+                )
+            for line in self.lines:
+                if line.market_value_cents is None:
+                    raise ValueError("market_value_cents is required for PRIVATE_EQUITY purchase lines")
         else:
             if self.tax_rate_bp is None:
                 self.tax_rate_bp = 0
             if self.tax_rate_bp != 0:
                 raise ValueError("tax_rate_bp must be 0 for PRIVATE_DIFF purchases")
+            for line in self.lines:
+                if line.purchase_price_cents is None:
+                    raise ValueError("purchase_price_cents is required for PRIVATE_DIFF purchase lines")
         return self
 
 
@@ -105,11 +126,26 @@ class PurchaseUpdate(BaseModel):
                 raise ValueError("external_invoice_number is required for COMMERCIAL_REGULAR purchases")
             if not self.receipt_upload_path:
                 raise ValueError("receipt_upload_path is required for COMMERCIAL_REGULAR purchases")
+            for line in self.lines:
+                if line.purchase_price_cents is None:
+                    raise ValueError("purchase_price_cents is required for COMMERCIAL_REGULAR purchase lines")
+        elif self.kind == PurchaseKind.PRIVATE_EQUITY:
+            self.tax_rate_bp = 0
+            if self.shipping_cost_cents != 0 or self.buyer_protection_fee_cents != 0:
+                raise ValueError(
+                    "shipping_cost_cents and buyer_protection_fee_cents must be 0 for PRIVATE_EQUITY purchases"
+                )
+            for line in self.lines:
+                if line.market_value_cents is None:
+                    raise ValueError("market_value_cents is required for PRIVATE_EQUITY purchase lines")
         else:
             if self.tax_rate_bp is None:
                 self.tax_rate_bp = 0
             if self.tax_rate_bp != 0:
                 raise ValueError("tax_rate_bp must be 0 for PRIVATE_DIFF purchases")
+            for line in self.lines:
+                if line.purchase_price_cents is None:
+                    raise ValueError("purchase_price_cents is required for PRIVATE_DIFF purchase lines")
         return self
 
 
@@ -126,6 +162,9 @@ class PurchaseLineOut(BaseModel):
     purchase_price_net_cents: int
     purchase_price_tax_cents: int
     tax_rate_bp: int
+    market_value_cents: int | None
+    held_privately_over_12_months: bool | None
+    valuation_reason: str | None
 
 
 class PurchaseOut(BaseModel):

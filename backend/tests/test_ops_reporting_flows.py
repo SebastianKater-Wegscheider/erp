@@ -5,6 +5,7 @@ import zipfile
 from datetime import date
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -343,6 +344,10 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
                 ],
             ),
         )
+    purchase_row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    purchase_line_id = purchase_row.lines[0].id
 
     uploads_dir = tmp_path / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -368,6 +373,35 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
     )
     assert len(created) == 2
 
+    with pytest.raises(HTTPException):
+        await add_purchase_attachments(
+            purchase_id=purchase.id,
+            data=PurchaseAttachmentBatchCreate(
+                attachments=[
+                    {
+                        "upload_path": "uploads/listing-1.png",
+                        "kind": "MARKET_COMP",
+                    },
+                ]
+            ),
+            session=db_session,
+        )
+
+    market_comp = await add_purchase_attachments(
+        purchase_id=purchase.id,
+        data=PurchaseAttachmentBatchCreate(
+            attachments=[
+                {
+                    "upload_path": "uploads/listing-1.png",
+                    "kind": "MARKET_COMP",
+                    "purchase_line_id": str(purchase_line_id),
+                },
+            ]
+        ),
+        session=db_session,
+    )
+    assert market_comp[0].purchase_line_id == purchase_line_id
+
     listed = await list_purchase_attachments(purchase_id=purchase.id, session=db_session)
     assert len(listed) == 2
     assert {item.kind for item in listed} == {"CHAT", "LISTING"}
@@ -388,6 +422,42 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
         csv_content = zf.read("csv/purchase_attachments.csv").decode("utf-8")
 
     assert "csv/purchase_attachments.csv" in names
+    assert "csv/private_equity_bookings.csv" in names
     assert "input_docs/purchase_attachments/uploads/listing-1.png" in names
     assert "willhaben.at" in csv_content
     assert "LISTING" in csv_content
+
+
+@pytest.mark.asyncio
+async def test_month_close_includes_private_equity_booking_rows(db_session: AsyncSession, tmp_path) -> None:
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, "PAIV")
+        await create_purchase(
+            db_session,
+            actor=ACTOR,
+            data=PurchaseCreate(
+                kind=PurchaseKind.PRIVATE_EQUITY,
+                purchase_date=date(2026, 2, 13),
+                counterparty_name="Inhaber",
+                total_amount_cents=1700,
+                payment_source=PaymentSource.CASH,
+                lines=[
+                    PurchaseLineCreate(
+                        master_product_id=mp.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.DIFF,
+                        market_value_cents=2000,
+                        purchase_price_cents=None,
+                        held_privately_over_12_months=True,
+                    )
+                ],
+            ),
+        )
+
+    filename, content = await monthly_close_zip(db_session, year=2026, month=2, storage_dir=tmp_path)
+    assert filename == "month-close-2026-02.zip"
+    with zipfile.ZipFile(io.BytesIO(content), "r") as zf:
+        pe_csv = zf.read("csv/private_equity_bookings.csv").decode("utf-8")
+
+    assert "Privateinlagen" in pe_csv
+    assert "Wareneingang 19%" in pe_csv or "Wareneingang 0%" in pe_csv

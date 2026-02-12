@@ -21,6 +21,7 @@ from app.models.master_product import MasterProduct
 from app.models.mileage_log import MileageLog
 from app.models.opex_expense import OpexExpense
 from app.models.purchase import Purchase
+from app.models.purchase import PurchaseLine
 from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrder, SalesOrderLine
 from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
@@ -662,6 +663,80 @@ async def monthly_close_zip(
             )
             _zip_add_if_exists(zf, storage_dir, row.upload_path, base_folder="input_docs/purchase_attachments")
         zf.writestr("csv/purchase_attachments.csv", pa_csv.getvalue())
+
+        # Private equity accounting export (bookings view: Soll/Haben).
+        debit_account = "Wareneingang 19%" if get_settings().vat_enabled else "Wareneingang 0%"
+        credit_account = "Privateinlagen"
+        market_comp_count_sq = (
+            select(
+                PurchaseAttachment.purchase_line_id,
+                func.count(PurchaseAttachment.id).label("market_comp_count"),
+            )
+            .where(PurchaseAttachment.kind == "MARKET_COMP")
+            .group_by(PurchaseAttachment.purchase_line_id)
+            .subquery()
+        )
+        private_equity_rows = (
+            await session.execute(
+                select(
+                    Purchase.purchase_date,
+                    Purchase.document_number,
+                    Purchase.id.label("purchase_id"),
+                    PurchaseLine.id.label("purchase_line_id"),
+                    MasterProduct.title,
+                    PurchaseLine.purchase_price_cents,
+                    PurchaseLine.market_value_cents,
+                    PurchaseLine.held_privately_over_12_months,
+                    func.coalesce(market_comp_count_sq.c.market_comp_count, 0).label("market_comp_count"),
+                )
+                .select_from(PurchaseLine)
+                .join(Purchase, Purchase.id == PurchaseLine.purchase_id)
+                .join(MasterProduct, MasterProduct.id == PurchaseLine.master_product_id)
+                .outerjoin(market_comp_count_sq, market_comp_count_sq.c.purchase_line_id == PurchaseLine.id)
+                .where(
+                    and_(
+                        Purchase.kind == PurchaseKind.PRIVATE_EQUITY,
+                        Purchase.purchase_date >= mr.start,
+                        Purchase.purchase_date < mr.end,
+                    )
+                )
+                .order_by(Purchase.purchase_date.asc(), Purchase.id.asc(), PurchaseLine.id.asc())
+            )
+        ).all()
+        pe_csv = io.StringIO()
+        pew = csv.writer(pe_csv)
+        pew.writerow(
+            [
+                "date",
+                "document_number",
+                "purchase_id",
+                "purchase_line_id",
+                "article_title",
+                "contribution_value_cents",
+                "market_value_cents",
+                "debit_account",
+                "credit_account",
+                "held_privately_over_12_months",
+                "market_comp_count",
+            ]
+        )
+        for row in private_equity_rows:
+            pew.writerow(
+                [
+                    row.purchase_date,
+                    row.document_number or "",
+                    row.purchase_id,
+                    row.purchase_line_id,
+                    row.title,
+                    row.purchase_price_cents,
+                    row.market_value_cents or "",
+                    debit_account,
+                    credit_account,
+                    row.held_privately_over_12_months,
+                    row.market_comp_count,
+                ]
+            )
+        zf.writestr("csv/private_equity_bookings.csv", pe_csv.getvalue())
 
         expenses = (
             await session.execute(

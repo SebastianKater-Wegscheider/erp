@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 # Pillow is optional at runtime; without it we skip cropping/slicing evidence images.
 
-from app.core.enums import DocumentType, InventoryStatus, MileagePurpose, PurchaseKind, PurchaseType
+from app.core.enums import DocumentType, InventoryStatus, MileagePurpose, PaymentSource, PurchaseKind, PurchaseType
 from app.core.config import get_settings
 from app.models.cost_allocation import CostAllocationLine
 from app.models.inventory_item import InventoryItem
@@ -40,9 +40,11 @@ def _validate_extra_purchase_costs(
         raise ValueError("shipping_cost_cents must be >= 0")
     if buyer_protection_fee_cents < 0:
         raise ValueError("buyer_protection_fee_cents must be >= 0")
-    if kind == PurchaseKind.COMMERCIAL_REGULAR and (shipping_cost_cents != 0 or buyer_protection_fee_cents != 0):
+    if kind in {PurchaseKind.COMMERCIAL_REGULAR, PurchaseKind.PRIVATE_EQUITY} and (
+        shipping_cost_cents != 0 or buyer_protection_fee_cents != 0
+    ):
         raise ValueError(
-            "shipping_cost_cents and buyer_protection_fee_cents must be 0 for COMMERCIAL_REGULAR purchases"
+            f"shipping_cost_cents and buyer_protection_fee_cents must be 0 for {kind} purchases"
         )
 
 
@@ -60,6 +62,21 @@ def _optional_str(value: str | None) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _purchase_line_effective_price_cents(
+    *,
+    kind: PurchaseKind,
+    purchase_price_cents: int | None,
+    market_value_cents: int | None,
+) -> int:
+    if purchase_price_cents is not None:
+        return int(purchase_price_cents)
+    if kind == PurchaseKind.PRIVATE_EQUITY:
+        if market_value_cents is None:
+            raise ValueError("market_value_cents is required for PRIVATE_EQUITY purchase lines")
+        return int((int(market_value_cents) * 85) // 100)
+    raise ValueError("purchase_price_cents is required")
 
 
 CANONICAL_SOURCE_PLATFORMS = [
@@ -200,8 +217,16 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
 async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCreate) -> Purchase:
     settings = get_settings()
     vat_enabled = settings.vat_enabled
+    effective_line_prices = [
+        _purchase_line_effective_price_cents(
+            kind=data.kind,
+            purchase_price_cents=line.purchase_price_cents,
+            market_value_cents=line.market_value_cents,
+        )
+        for line in data.lines
+    ]
 
-    if sum(line.purchase_price_cents for line in data.lines) != data.total_amount_cents:
+    if sum(effective_line_prices) != data.total_amount_cents:
         raise ValueError("Sum(lines.purchase_price_cents) must equal total_amount_cents")
     _validate_extra_purchase_costs(
         kind=data.kind,
@@ -209,11 +234,13 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         buyer_protection_fee_cents=data.buyer_protection_fee_cents,
     )
 
-    expected_type = PurchaseType.DIFF if data.kind == PurchaseKind.PRIVATE_DIFF else PurchaseType.REGULAR
+    expected_type = (
+        PurchaseType.DIFF if data.kind in {PurchaseKind.PRIVATE_DIFF, PurchaseKind.PRIVATE_EQUITY} else PurchaseType.REGULAR
+    )
     if any(line.purchase_type != expected_type for line in data.lines):
         raise ValueError(f"All lines.purchase_type must be {expected_type} for {data.kind}")
 
-    tax_rate_bp = 0 if data.kind == PurchaseKind.PRIVATE_DIFF else int(data.tax_rate_bp or 0)
+    tax_rate_bp = 0 if data.kind in {PurchaseKind.PRIVATE_DIFF, PurchaseKind.PRIVATE_EQUITY} else int(data.tax_rate_bp or 0)
     if not vat_enabled:
         tax_rate_bp = 0
     elif data.kind == PurchaseKind.COMMERCIAL_REGULAR and tax_rate_bp <= 0:
@@ -222,8 +249,8 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
     line_splits: list[tuple[int, int]] = []
     total_net = 0
     total_tax = 0
-    for line in data.lines:
-        net, tax = split_gross_to_net_and_tax(gross_cents=line.purchase_price_cents, tax_rate_bp=tax_rate_bp)
+    for line, line_price_cents in zip(data.lines, effective_line_prices, strict=True):
+        net, tax = split_gross_to_net_and_tax(gross_cents=line_price_cents, tax_rate_bp=tax_rate_bp)
         line_splits.append((net, tax))
         total_net += net
         total_tax += tax
@@ -232,6 +259,10 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
     if data.kind == PurchaseKind.PRIVATE_DIFF:
         document_number = await next_document_number(
             session, doc_type=DocumentType.PURCHASE_CREDIT_NOTE, issue_date=data.purchase_date
+        )
+    elif data.kind == PurchaseKind.PRIVATE_EQUITY:
+        document_number = await next_document_number(
+            session, doc_type=DocumentType.PRIVATE_EQUITY_NOTE, issue_date=data.purchase_date
         )
 
     purchase = Purchase(
@@ -247,7 +278,7 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
         total_net_cents=total_net,
         total_tax_cents=total_tax,
         tax_rate_bp=tax_rate_bp,
-        payment_source=data.payment_source,
+        payment_source=PaymentSource.PRIVATE_EQUITY if data.kind == PurchaseKind.PRIVATE_EQUITY else data.payment_source,
         source_platform=normalize_source_platform_label(data.source_platform),
         listing_url=_optional_str(data.listing_url),
         notes=_optional_str(data.notes),
@@ -259,23 +290,26 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
     await session.flush()
 
     created_line_items: list[tuple[PurchaseLine, InventoryItem, int]] = []
-    for line, (line_net, line_tax) in zip(data.lines, line_splits, strict=True):
+    for line, line_price_cents, (line_net, line_tax) in zip(data.lines, effective_line_prices, line_splits, strict=True):
         pl = PurchaseLine(
             purchase_id=purchase.id,
             master_product_id=line.master_product_id,
             condition=line.condition,
             purchase_type=line.purchase_type,
-            purchase_price_cents=line.purchase_price_cents,
+            purchase_price_cents=line_price_cents,
             shipping_allocated_cents=0,
             buyer_protection_fee_allocated_cents=0,
             purchase_price_net_cents=line_net,
             purchase_price_tax_cents=line_tax,
             tax_rate_bp=tax_rate_bp,
+            market_value_cents=line.market_value_cents,
+            held_privately_over_12_months=line.held_privately_over_12_months,
+            valuation_reason=_optional_str(line.valuation_reason),
         )
         session.add(pl)
         await session.flush()
 
-        inventory_cost_cents = line_net if line.purchase_type == PurchaseType.REGULAR else line.purchase_price_cents
+        inventory_cost_cents = line_net if line.purchase_type == PurchaseType.REGULAR else line_price_cents
         item = InventoryItem(
             master_product_id=line.master_product_id,
             purchase_line_id=pl.id,
@@ -305,7 +339,7 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
                 "status": item.status,
             },
         )
-        created_line_items.append((pl, item, int(line.purchase_price_cents)))
+        created_line_items.append((pl, item, int(line_price_cents)))
 
     weights = [weight for _, _, weight in created_line_items]
     shipping_allocations = allocate_proportional(total_cents=data.shipping_cost_cents, weights=weights)
@@ -339,20 +373,21 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
                 },
             )
 
-    session.add(
-        LedgerEntry(
-            entry_date=data.purchase_date,
-            account=data.payment_source,
-            amount_cents=-_total_paid_cents(
-                total_amount_cents=data.total_amount_cents,
-                shipping_cost_cents=data.shipping_cost_cents,
-                buyer_protection_fee_cents=data.buyer_protection_fee_cents,
-            ),
-            entity_type="purchase",
-            entity_id=purchase.id,
-            memo=f"{data.kind} {purchase.document_number or ''}".strip(),
+    if data.kind != PurchaseKind.PRIVATE_EQUITY:
+        session.add(
+            LedgerEntry(
+                entry_date=data.purchase_date,
+                account=data.payment_source,
+                amount_cents=-_total_paid_cents(
+                    total_amount_cents=data.total_amount_cents,
+                    shipping_cost_cents=data.shipping_cost_cents,
+                    buyer_protection_fee_cents=data.buyer_protection_fee_cents,
+                ),
+                entity_type="purchase",
+                entity_id=purchase.id,
+                memo=f"{data.kind} {purchase.document_number or ''}".strip(),
+            )
         )
-    )
 
     await audit_log(
         session,
@@ -374,6 +409,15 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
             "notes": purchase.notes,
             "document_number": purchase.document_number,
             "external_invoice_number": purchase.external_invoice_number,
+            "line_valuations": [
+                {
+                    "purchase_line_id": str(pl.id),
+                    "market_value_cents": pl.market_value_cents,
+                    "held_privately_over_12_months": pl.held_privately_over_12_months,
+                    "valuation_reason": pl.valuation_reason,
+                }
+                for pl in purchase.lines
+            ],
         },
     )
 
@@ -399,7 +443,16 @@ async def update_purchase(
     if data.kind != purchase.kind:
         raise ValueError("Changing kind of an existing purchase is not supported")
 
-    if sum(line.purchase_price_cents for line in data.lines) != data.total_amount_cents:
+    effective_line_prices = [
+        _purchase_line_effective_price_cents(
+            kind=data.kind,
+            purchase_price_cents=line.purchase_price_cents,
+            market_value_cents=line.market_value_cents,
+        )
+        for line in data.lines
+    ]
+
+    if sum(effective_line_prices) != data.total_amount_cents:
         raise ValueError("Sum(lines.purchase_price_cents) must equal total_amount_cents")
     _validate_extra_purchase_costs(
         kind=data.kind,
@@ -407,13 +460,15 @@ async def update_purchase(
         buyer_protection_fee_cents=data.buyer_protection_fee_cents,
     )
 
-    expected_type = PurchaseType.DIFF if data.kind == PurchaseKind.PRIVATE_DIFF else PurchaseType.REGULAR
+    expected_type = (
+        PurchaseType.DIFF if data.kind in {PurchaseKind.PRIVATE_DIFF, PurchaseKind.PRIVATE_EQUITY} else PurchaseType.REGULAR
+    )
     if any(line.purchase_type != expected_type for line in data.lines):
         raise ValueError(f"All lines.purchase_type must be {expected_type} for {data.kind}")
 
     settings = get_settings()
     vat_enabled = settings.vat_enabled
-    tax_rate_bp = 0 if data.kind == PurchaseKind.PRIVATE_DIFF else int(data.tax_rate_bp or 0)
+    tax_rate_bp = 0 if data.kind in {PurchaseKind.PRIVATE_DIFF, PurchaseKind.PRIVATE_EQUITY} else int(data.tax_rate_bp or 0)
     if not vat_enabled:
         tax_rate_bp = 0
     elif data.kind == PurchaseKind.COMMERCIAL_REGULAR and tax_rate_bp <= 0:
@@ -507,8 +562,8 @@ async def update_purchase(
     line_splits: list[tuple[int, int]] = []
     total_net = 0
     total_tax = 0
-    for line in data.lines:
-        net, tax = split_gross_to_net_and_tax(gross_cents=line.purchase_price_cents, tax_rate_bp=tax_rate_bp)
+    for line_price_cents in effective_line_prices:
+        net, tax = split_gross_to_net_and_tax(gross_cents=line_price_cents, tax_rate_bp=tax_rate_bp)
         line_splits.append((net, tax))
         total_net += net
         total_tax += tax
@@ -524,7 +579,7 @@ async def update_purchase(
     purchase.total_net_cents = total_net
     purchase.total_tax_cents = total_tax
     purchase.tax_rate_bp = tax_rate_bp
-    purchase.payment_source = data.payment_source
+    purchase.payment_source = PaymentSource.PRIVATE_EQUITY if data.kind == PurchaseKind.PRIVATE_EQUITY else data.payment_source
     purchase.source_platform = normalize_source_platform_label(data.source_platform)
     purchase.listing_url = _optional_str(data.listing_url)
     purchase.notes = _optional_str(data.notes)
@@ -532,23 +587,26 @@ async def update_purchase(
     purchase.receipt_upload_path = data.receipt_upload_path
 
     # Upserts / inserts
-    for line, (line_net, line_tax) in zip(data.lines, line_splits, strict=True):
+    for line, line_price_cents, (line_net, line_tax) in zip(data.lines, effective_line_prices, line_splits, strict=True):
         if line.id is not None:
             pl = existing_lines_by_id[line.id]
             pl.master_product_id = line.master_product_id
             pl.condition = line.condition
             pl.purchase_type = line.purchase_type
-            pl.purchase_price_cents = line.purchase_price_cents
+            pl.purchase_price_cents = line_price_cents
             pl.purchase_price_net_cents = line_net
             pl.purchase_price_tax_cents = line_tax
             pl.tax_rate_bp = tax_rate_bp
+            pl.market_value_cents = line.market_value_cents
+            pl.held_privately_over_12_months = line.held_privately_over_12_months
+            pl.valuation_reason = _optional_str(line.valuation_reason)
 
             inv = inv_by_purchase_line_id.get(pl.id)
             if inv is not None:
                 inv.master_product_id = line.master_product_id
                 inv.condition = line.condition
                 inv.purchase_type = line.purchase_type
-                inv.purchase_price_cents = line_net if line.purchase_type == PurchaseType.REGULAR else line.purchase_price_cents
+                inv.purchase_price_cents = line_net if line.purchase_type == PurchaseType.REGULAR else line_price_cents
                 inv.acquired_date = data.purchase_date
         else:
             pl = PurchaseLine(
@@ -556,17 +614,20 @@ async def update_purchase(
                 master_product_id=line.master_product_id,
                 condition=line.condition,
                 purchase_type=line.purchase_type,
-                purchase_price_cents=line.purchase_price_cents,
+                purchase_price_cents=line_price_cents,
                 shipping_allocated_cents=0,
                 buyer_protection_fee_allocated_cents=0,
                 purchase_price_net_cents=line_net,
                 purchase_price_tax_cents=line_tax,
                 tax_rate_bp=tax_rate_bp,
+                market_value_cents=line.market_value_cents,
+                held_privately_over_12_months=line.held_privately_over_12_months,
+                valuation_reason=_optional_str(line.valuation_reason),
             )
             session.add(pl)
             await session.flush()
 
-            inventory_cost_cents = line_net if line.purchase_type == PurchaseType.REGULAR else line.purchase_price_cents
+            inventory_cost_cents = line_net if line.purchase_type == PurchaseType.REGULAR else line_price_cents
             item = InventoryItem(
                 master_product_id=line.master_product_id,
                 purchase_line_id=pl.id,
@@ -657,7 +718,7 @@ async def update_purchase(
             },
         )
 
-    # Update ledger entry (create if missing).
+    # Update ledger entry (create if missing), except for PRIVATE_EQUITY cash-neutral entries.
     entry = (
         (await session.execute(
             select(LedgerEntry).where(LedgerEntry.entity_type == "purchase", LedgerEntry.entity_id == purchase.id)
@@ -665,18 +726,29 @@ async def update_purchase(
         .scalars()
         .first()
     )
-    if entry is None:
-        entry = LedgerEntry(entity_type="purchase", entity_id=purchase.id, memo=None, entry_date=data.purchase_date, account=data.payment_source, amount_cents=0)
-        session.add(entry)
+    if data.kind == PurchaseKind.PRIVATE_EQUITY:
+        if entry is not None:
+            await session.delete(entry)
+    else:
+        if entry is None:
+            entry = LedgerEntry(
+                entity_type="purchase",
+                entity_id=purchase.id,
+                memo=None,
+                entry_date=data.purchase_date,
+                account=data.payment_source,
+                amount_cents=0,
+            )
+            session.add(entry)
 
-    entry.entry_date = data.purchase_date
-    entry.account = data.payment_source
-    entry.amount_cents = -_total_paid_cents(
-        total_amount_cents=data.total_amount_cents,
-        shipping_cost_cents=data.shipping_cost_cents,
-        buyer_protection_fee_cents=data.buyer_protection_fee_cents,
-    )
-    entry.memo = f"{data.kind} {purchase.document_number or ''}".strip()
+        entry.entry_date = data.purchase_date
+        entry.account = data.payment_source
+        entry.amount_cents = -_total_paid_cents(
+            total_amount_cents=data.total_amount_cents,
+            shipping_cost_cents=data.shipping_cost_cents,
+            buyer_protection_fee_cents=data.buyer_protection_fee_cents,
+        )
+        entry.memo = f"{data.kind} {purchase.document_number or ''}".strip()
 
     await audit_log(
         session,
@@ -697,6 +769,15 @@ async def update_purchase(
             "listing_url": purchase.listing_url,
             "notes": purchase.notes,
             "lines_count": len(data.lines),
+            "line_valuations": [
+                {
+                    "purchase_line_id": str(pl.id),
+                    "market_value_cents": pl.market_value_cents,
+                    "held_privately_over_12_months": pl.held_privately_over_12_months,
+                    "valuation_reason": pl.valuation_reason,
+                }
+                for pl in purchase.lines
+            ],
         },
     )
 
@@ -710,7 +791,7 @@ async def generate_purchase_credit_note_pdf(
     purchase_id: uuid.UUID,
 ) -> Purchase:
     """
-    Generate the Eigenbeleg (credit note) PDF for a PRIVATE_DIFF purchase.
+    Generate the Eigenbeleg PDF for a PRIVATE_DIFF or PRIVATE_EQUITY purchase.
 
     This is intentionally separated from `create_purchase()` so purchases can be
     recorded first and the document can be generated manually once all data is ready.
@@ -718,12 +799,17 @@ async def generate_purchase_credit_note_pdf(
     purchase = await session.get(Purchase, purchase_id)
     if purchase is None:
         raise ValueError("Purchase not found")
-    if purchase.kind != PurchaseKind.PRIVATE_DIFF:
-        raise ValueError("Only PRIVATE_DIFF purchases have an Eigenbeleg PDF")
+    if purchase.kind not in {PurchaseKind.PRIVATE_DIFF, PurchaseKind.PRIVATE_EQUITY}:
+        raise ValueError("Only PRIVATE_DIFF and PRIVATE_EQUITY purchases have an Eigenbeleg PDF")
 
     if not purchase.document_number:
+        doc_type = (
+            DocumentType.PRIVATE_EQUITY_NOTE
+            if purchase.kind == PurchaseKind.PRIVATE_EQUITY
+            else DocumentType.PURCHASE_CREDIT_NOTE
+        )
         purchase.document_number = await next_document_number(
-            session, doc_type=DocumentType.PURCHASE_CREDIT_NOTE, issue_date=purchase.purchase_date
+            session, doc_type=doc_type, issue_date=purchase.purchase_date
         )
 
     mp_rows = (
@@ -732,6 +818,9 @@ async def generate_purchase_credit_note_pdf(
                 PurchaseLine.id,
                 PurchaseLine.condition,
                 PurchaseLine.purchase_price_cents,
+                PurchaseLine.market_value_cents,
+                PurchaseLine.held_privately_over_12_months,
+                PurchaseLine.valuation_reason,
                 InventoryItem.serial_number,
                 MasterProduct.title,
                 MasterProduct.platform,
@@ -765,13 +854,19 @@ async def generate_purchase_credit_note_pdf(
                 "condition": condition_label,
                 "serial_number": r.serial_number,
                 "purchase_price_eur": format_eur(r.purchase_price_cents),
+                "market_value_eur": format_eur(r.market_value_cents) if r.market_value_cents is not None else None,
+                "held_privately_over_12_months": r.held_privately_over_12_months,
+                "valuation_reason": _optional_str(r.valuation_reason),
+                "purchase_line_id": str(r.id),
             }
         )
 
+    market_comp_count_by_line_id: dict[str, int] = {}
     attachment_rows = (
         await session.execute(
             select(
                 PurchaseAttachment.id,
+                PurchaseAttachment.purchase_line_id,
                 PurchaseAttachment.kind,
                 PurchaseAttachment.original_filename,
                 PurchaseAttachment.note,
@@ -784,6 +879,7 @@ async def generate_purchase_credit_note_pdf(
     ).all()
     attachment_kind_labels = {
         "LISTING": "Anzeige",
+        "MARKET_COMP": "Marktvergleich",
         "CHAT": "Konversation",
         "PAYMENT": "Zahlung",
         "DELIVERY": "Versand",
@@ -811,6 +907,7 @@ async def generate_purchase_credit_note_pdf(
         attachments_ctx.append(
             {
                 "id": str(r.id),
+                "purchase_line_id": str(r.purchase_line_id) if r.purchase_line_id else None,
                 "kind": r.kind,
                 "kind_label": attachment_kind_labels.get(str(r.kind).upper(), str(r.kind)),
                 "original_filename": r.original_filename,
@@ -821,6 +918,9 @@ async def generate_purchase_credit_note_pdf(
                 "file_uri": file_uri,
             }
         )
+        if str(r.kind).upper() == "MARKET_COMP" and r.purchase_line_id is not None:
+            key = str(r.purchase_line_id)
+            market_comp_count_by_line_id[key] = market_comp_count_by_line_id.get(key, 0) + 1
         if is_image and file_uri and abs_path.exists():
             stem = f"{r.id}"
             slice_paths = _slice_image_for_pdf(src_path=abs_path, out_dir=tmp_dir, stem=stem)
@@ -835,6 +935,20 @@ async def generate_purchase_credit_note_pdf(
                         "part_label": f"Teil {idx}/{len(slice_paths)}" if len(slice_paths) > 1 else None,
                         "file_uri": p.as_uri(),
                     }
+                )
+
+    compliance_warnings: list[str] = []
+    if purchase.kind == PurchaseKind.PRIVATE_EQUITY:
+        for line in lines_ctx:
+            line_id = str(line["purchase_line_id"])
+            comp_count = market_comp_count_by_line_id.get(line_id, 0)
+            if comp_count < 3:
+                compliance_warnings.append(
+                    f"Position '{line['title']}': nur {comp_count} Marktvergleich(e) (empfohlen: mindestens 3)."
+                )
+            if line.get("held_privately_over_12_months") is not True:
+                compliance_warnings.append(
+                    f"Position '{line['title']}': 12-Monats-Privatbesitz ist nicht bestaetigt."
                 )
 
     templates_dir = Path(__file__).resolve().parents[1] / "templates"
@@ -866,6 +980,8 @@ async def generate_purchase_credit_note_pdf(
                 "purchase_attachment_images": attachment_images_ctx,
                 "lines": lines_ctx,
                 "total_amount_eur": format_eur(purchase.total_amount_cents),
+                "is_private_equity": purchase.kind == PurchaseKind.PRIVATE_EQUITY,
+                "compliance_warnings": compliance_warnings,
             },
             output_path=out_path,
             css_paths=[templates_dir / "base.css"],
