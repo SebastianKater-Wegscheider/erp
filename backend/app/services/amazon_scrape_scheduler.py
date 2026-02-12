@@ -30,6 +30,15 @@ def _lock_holder_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}"
 
 
+def _next_busy_retry_seconds(*, settings: Settings, retry_after_seconds: int | None) -> int:
+    min_retry = max(10, int(settings.amazon_scraper_busy_retry_min_seconds))
+    max_retry = max(min_retry, int(settings.amazon_scraper_busy_retry_max_seconds))
+    retry = random.randint(min_retry, max_retry)
+    if retry_after_seconds is not None:
+        retry = max(retry, max(1, int(retry_after_seconds)))
+    return min(max(60, int(settings.amazon_scraper_max_backoff_seconds)), retry)
+
+
 async def _try_acquire_or_renew_lock(*, name: str, holder: str, ttl_seconds: int) -> bool:
     now = utcnow()
     expires = now + timedelta(seconds=max(30, int(ttl_seconds)))
@@ -59,7 +68,7 @@ async def _try_acquire_or_renew_lock(*, name: str, holder: str, ttl_seconds: int
             return bool(res.rowcount == 1)
 
 
-async def _process_one_due(settings: Settings) -> None:
+async def _process_one_due(settings: Settings) -> int:
     now = utcnow()
     async with SessionLocal() as session:
         async with session.begin():
@@ -69,7 +78,7 @@ async def _process_one_due(settings: Settings) -> None:
                 now=now,
             )
             if not due:
-                return
+                return 0
             master_product_id, asin = due[0]
 
         # Run scrape in its own transaction so we can safely retry scheduling on errors.
@@ -81,20 +90,32 @@ async def _process_one_due(settings: Settings) -> None:
                     master_product_id=master_product_id,
                     asin=asin,
                 )
-            except ScraperBusyError:
+            except ScraperBusyError as busy_error:
+                busy_retry = _next_busy_retry_seconds(
+                    settings=settings,
+                    retry_after_seconds=busy_error.retry_after_seconds,
+                )
                 await set_next_retry_at(
                     session=session,
                     master_product_id=master_product_id,
-                    next_retry_at=utcnow() + timedelta(seconds=random.randint(10, 30)),
+                    next_retry_at=utcnow() + timedelta(seconds=busy_retry),
                 )
-                logger.info("Scraper busy (429); retry scheduled", extra={"master_product_id": str(master_product_id), "asin": asin})
-                return
+                logger.info(
+                    "Scraper busy (429); retry scheduled",
+                    extra={
+                        "master_product_id": str(master_product_id),
+                        "asin": asin,
+                        "retry_seconds": busy_retry,
+                        "retry_after_seconds": busy_error.retry_after_seconds,
+                    },
+                )
+                return max(0, int(settings.amazon_scraper_busy_global_cooldown_seconds))
 
             run = await session.get(AmazonScrapeRun, run_id)
             latest = await session.get(AmazonProductMetricsLatest, master_product_id)
 
             if run is None or latest is None:
-                return
+                return 0
 
             if not run.ok:
                 backoff = next_backoff_seconds(
@@ -125,6 +146,7 @@ async def _process_one_due(settings: Settings) -> None:
                         "run_id": str(run_id),
                     },
                 )
+            return 0
 
 
 async def amazon_scrape_scheduler_loop(settings: Settings) -> None:
@@ -139,9 +161,16 @@ async def amazon_scrape_scheduler_loop(settings: Settings) -> None:
     holder = _lock_holder_id()
     lock_name = "amazon_scrape_scheduler"
     tick = max(5, int(settings.amazon_scraper_loop_tick_seconds))
+    cooldown_until = utcnow()
 
     while True:
         try:
+            now = utcnow()
+            if now < cooldown_until:
+                wait_seconds = (cooldown_until - now).total_seconds()
+                await asyncio.sleep(min(tick, max(1.0, wait_seconds)))
+                continue
+
             acquired = await _try_acquire_or_renew_lock(
                 name=lock_name,
                 holder=holder,
@@ -151,7 +180,9 @@ async def amazon_scrape_scheduler_loop(settings: Settings) -> None:
                 await asyncio.sleep(tick)
                 continue
 
-            await _process_one_due(settings)
+            cooldown_seconds = await _process_one_due(settings)
+            if cooldown_seconds > 0:
+                cooldown_until = utcnow() + timedelta(seconds=cooldown_seconds)
 
         except asyncio.CancelledError:
             raise
@@ -198,4 +229,3 @@ async def amazon_scrape_due_counts(settings: Settings) -> dict[str, int]:
                 "stale": int(stale),
                 "blocked_last": int(blocked_last),
             }
-

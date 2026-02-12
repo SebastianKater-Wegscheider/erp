@@ -734,3 +734,18 @@
 - Beim erfolgreichen Amazon-Scrape wird die ermittelte Bild-Quelle (Payload oder ASIN-Fallback) serverseitig heruntergeladen und unter `uploads/master-product-reference/` gespeichert.
 - In `reference_image_url` wird der lokale relative Storage-Pfad (kein externer URL-Link) persistiert.
 - Frontend-Rendering loest lokale Bildpfade ueber einen oeffentlichen Backend-Endpoint (`/public/master-product-images/...`) auf; fuer den Bild-Overlay-Link wird explizit die ASIN-Detailseite verwendet.
+
+## 2026-02-12 - Amazon Scrape Robustheit: leere Success-Payloads duerfen BSR/Offers nicht loeschen
+
+### Ausgangslage
+- Produktionsdiagnose zeigte wiederkehrende `429`-Phasen im Scraper plus mehrere Scrape-Runs mit `ok=true`, aber ohne Sales-Ranks und ohne Best-Price-Eintraege.
+- Diese Runs wurden als erfolgreicher Snapshot gewertet und konnten bestehende BSR-/Offer-Werte mit leeren Werten (insb. `rank_overall=NULL`, `offers_count_total=0`) ueberschreiben.
+
+### Business-Entscheidung
+- Bereits vorhandene Marktsignale (BSR/Offers) haben Vorrang gegenueber "leeren" Success-Payloads.
+- Leere/teilweise Scrape-Antworten duerfen vorhandene operative Signale nicht degradieren.
+
+### Technische Entscheidung
+- Snapshot-Update fuer BSR erfolgt nur noch, wenn im neuen Payload tatsaechlich ein Rank-Wert vorhanden ist.
+- Snapshot-Update fuer Offer-Counts erfolgt nur noch bei nicht-leerer Offer-Liste.
+- Regressionstest deckt den Ablauf "gueltiger Scrape -> leerer Success-Scrape" ab und stellt sicher, dass BSR/Offer-Counts erhalten bleiben.

@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     amazon_scraper_min_success_interval_seconds: int = Field(172800, alias="AMAZON_SCRAPER_MIN_SUCCESS_INTERVAL_SECONDS")
     amazon_scraper_max_backoff_seconds: int = Field(43200, alias="AMAZON_SCRAPER_MAX_BACKOFF_SECONDS")
     amazon_scraper_lock_ttl_seconds: int = Field(300, alias="AMAZON_SCRAPER_LOCK_TTL_SECONDS")
+    amazon_scraper_busy_retry_min_seconds: int = Field(90, alias="AMAZON_SCRAPER_BUSY_RETRY_MIN_SECONDS")
+    amazon_scraper_busy_retry_max_seconds: int = Field(240, alias="AMAZON_SCRAPER_BUSY_RETRY_MAX_SECONDS")
+    amazon_scraper_busy_global_cooldown_seconds: int = Field(45, alias="AMAZON_SCRAPER_BUSY_GLOBAL_COOLDOWN_SECONDS")
 
     # Amazon fee estimates (global defaults; for margin heuristics, not accounting).
     amazon_fba_referral_fee_bp: int = Field(1500, alias="AMAZON_FBA_REFERRAL_FEE_BP")

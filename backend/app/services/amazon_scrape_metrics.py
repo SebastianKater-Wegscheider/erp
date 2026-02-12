@@ -25,7 +25,9 @@ from app.models.master_product import MasterProduct
 
 
 class ScraperBusyError(RuntimeError):
-    pass
+    def __init__(self, message: str = "Scraper busy (429)", *, retry_after_seconds: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 ConditionBucket = str
@@ -176,7 +178,13 @@ async def fetch_scraper_json(*, settings: Settings, asin: str) -> dict[str, Any]
         url = f"{settings.amazon_scraper_base_url.rstrip('/')}/api/scrape"
         r = await client.get(url, params={"asin": asin})
         if r.status_code == 429:
-            raise ScraperBusyError("Scraper busy (429)")
+            retry_after_raw = r.headers.get("retry-after")
+            retry_after: int | None = None
+            if isinstance(retry_after_raw, str):
+                retry_after_raw = retry_after_raw.strip()
+                if retry_after_raw.isdigit():
+                    retry_after = max(1, int(retry_after_raw))
+            raise ScraperBusyError("Scraper busy (429)", retry_after_seconds=retry_after)
         r.raise_for_status()
         data = r.json()
         if not isinstance(data, dict):
@@ -452,32 +460,40 @@ async def persist_scrape_result(
 
     if ok and data is not None:
         overall_rank, overall_cat, specific_rank, specific_cat = _derived_ranks(data)
-        latest.rank_overall = overall_rank
-        latest.rank_overall_category = overall_cat
-        latest.rank_specific = specific_rank
-        latest.rank_specific_category = specific_cat
+        if overall_rank is not None:
+            latest.rank_overall = overall_rank
+            if overall_cat is not None:
+                latest.rank_overall_category = overall_cat
+        if specific_rank is not None:
+            latest.rank_specific = specific_rank
+            if specific_cat is not None:
+                latest.rank_specific_category = specific_cat
 
-        best = compute_best_prices(data.get("offers"))
-        latest.price_new_cents = best.get(BUCKET_NEW).total_cents if BUCKET_NEW in best else None
-        latest.price_used_like_new_cents = (
-            best.get(BUCKET_USED_LIKE_NEW).total_cents if BUCKET_USED_LIKE_NEW in best else None
-        )
-        latest.price_used_very_good_cents = (
-            best.get(BUCKET_USED_VERY_GOOD).total_cents if BUCKET_USED_VERY_GOOD in best else None
-        )
-        latest.price_used_good_cents = best.get(BUCKET_USED_GOOD).total_cents if BUCKET_USED_GOOD in best else None
-        latest.price_used_acceptable_cents = (
-            best.get(BUCKET_USED_ACCEPTABLE).total_cents if BUCKET_USED_ACCEPTABLE in best else None
-        )
-        latest.price_collectible_cents = (
-            best.get(BUCKET_COLLECTIBLE).total_cents if BUCKET_COLLECTIBLE in best else None
-        )
+        offers_payload = data.get("offers")
+        has_non_empty_offers = isinstance(offers_payload, list) and len(offers_payload) > 0
+        if has_non_empty_offers:
+            best = compute_best_prices(offers_payload)
+            latest.price_new_cents = best.get(BUCKET_NEW).total_cents if BUCKET_NEW in best else None
+            latest.price_used_like_new_cents = (
+                best.get(BUCKET_USED_LIKE_NEW).total_cents if BUCKET_USED_LIKE_NEW in best else None
+            )
+            latest.price_used_very_good_cents = (
+                best.get(BUCKET_USED_VERY_GOOD).total_cents if BUCKET_USED_VERY_GOOD in best else None
+            )
+            latest.price_used_good_cents = best.get(BUCKET_USED_GOOD).total_cents if BUCKET_USED_GOOD in best else None
+            latest.price_used_acceptable_cents = (
+                best.get(BUCKET_USED_ACCEPTABLE).total_cents if BUCKET_USED_ACCEPTABLE in best else None
+            )
+            latest.price_collectible_cents = (
+                best.get(BUCKET_COLLECTIBLE).total_cents if BUCKET_COLLECTIBLE in best else None
+            )
 
         latest.buybox_total_cents = _best_total_cents_for_buybox(data.get("buybox"))
-        offers_count_total, offers_count_priced_total, offers_count_used_priced_total = _offer_counts(data.get("offers"))
-        latest.offers_count_total = offers_count_total
-        latest.offers_count_priced_total = offers_count_priced_total
-        latest.offers_count_used_priced_total = offers_count_used_priced_total
+        if has_non_empty_offers:
+            offers_count_total, offers_count_priced_total, offers_count_used_priced_total = _offer_counts(offers_payload)
+            latest.offers_count_total = offers_count_total
+            latest.offers_count_priced_total = offers_count_priced_total
+            latest.offers_count_used_priced_total = offers_count_used_priced_total
 
         latest.last_success_at = finished_at
         latest.next_retry_at = None

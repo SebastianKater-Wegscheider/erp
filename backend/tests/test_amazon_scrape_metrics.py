@@ -272,3 +272,139 @@ async def test_persist_scrape_result_persists_best_prices_without_sales_ranks(db
     prices = (await db_session.execute(select(AmazonScrapeBestPrice).where(AmazonScrapeBestPrice.run_id == run_id))).scalars().all()
     by_bucket = {p.condition_bucket: p.price_total_cents for p in prices}
     assert by_bucket[BUCKET_USED_VERY_GOOD] == 800
+
+
+@pytest.mark.asyncio
+async def test_persist_scrape_result_keeps_rank_and_offers_on_empty_success_payload(db_session: AsyncSession) -> None:
+    mp_id = uuid.uuid4()
+    mp = MasterProduct(
+        id=mp_id,
+        sku=master_product_sku_from_id(mp_id),
+        kind="GAME",
+        title="Test Product",
+        platform="PS2",
+        region="EU",
+        variant="",
+        asin="B000FC2BTQ",
+    )
+    db_session.add(mp)
+    await db_session.commit()
+
+    first_finished_at = datetime(2026, 2, 10, 20, 0, 10, tzinfo=UTC)
+    first_data = {
+        "ts_utc": "2026-02-10T20:00:00Z",
+        "marketplace": "amazon.de",
+        "asin": "B000FC2BTQ",
+        "blocked": False,
+        "offers_truncated": False,
+        "sales_rank_overall": {"rank": 12, "category": "Foo"},
+        "sales_rank_specific": {"rank": 3, "category": "Bar"},
+        "offers": [
+            {"condition_group": "new", "condition_raw": "Neu", "price_total": "12.00", "currency": "EUR", "page": 1, "position": 1},
+            {"condition_group": "used", "condition_raw": "Gebraucht - Wie neu", "price_total": "10.00", "currency": "EUR", "page": 1, "position": 2},
+        ],
+    }
+    second_finished_at = datetime(2026, 2, 10, 21, 0, 10, tzinfo=UTC)
+    second_data = {
+        "ts_utc": "2026-02-10T21:00:00Z",
+        "marketplace": "amazon.de",
+        "asin": "B000FC2BTQ",
+        "blocked": False,
+        "offers_truncated": False,
+        "title": "Amazon.de",
+        "sales_ranks": [],
+        "offers": [],
+    }
+
+    async with db_session.begin():
+        await persist_scrape_result(
+            session=db_session,
+            settings=None,
+            master_product_id=mp_id,
+            asin="B000FC2BTQ",
+            data=first_data,
+            error=None,
+            finished_at=first_finished_at,
+        )
+    async with db_session.begin():
+        await persist_scrape_result(
+            session=db_session,
+            settings=None,
+            master_product_id=mp_id,
+            asin="B000FC2BTQ",
+            data=second_data,
+            error=None,
+            finished_at=second_finished_at,
+        )
+
+    latest = await db_session.get(AmazonProductMetricsLatest, mp_id)
+    assert latest is not None
+    assert latest.rank_overall == 12
+    assert latest.rank_specific == 3
+    assert latest.offers_count_total == 2
+    assert latest.offers_count_priced_total == 2
+    assert latest.offers_count_used_priced_total == 1
+
+
+@pytest.mark.asyncio
+async def test_persist_scrape_result_keeps_rank_and_offers_on_error_failure(db_session: AsyncSession) -> None:
+    mp_id = uuid.uuid4()
+    mp = MasterProduct(
+        id=mp_id,
+        sku=master_product_sku_from_id(mp_id),
+        kind="GAME",
+        title="Test Product",
+        platform="PS2",
+        region="EU",
+        variant="",
+        asin="B000FC2BTQ",
+    )
+    db_session.add(mp)
+    await db_session.commit()
+
+    success_finished_at = datetime(2026, 2, 10, 20, 0, 10, tzinfo=UTC)
+    success_data = {
+        "ts_utc": "2026-02-10T20:00:00Z",
+        "marketplace": "amazon.de",
+        "asin": "B000FC2BTQ",
+        "blocked": False,
+        "offers_truncated": False,
+        "sales_rank_overall": {"rank": 12, "category": "Foo"},
+        "sales_rank_specific": {"rank": 3, "category": "Bar"},
+        "offers": [
+            {"condition_group": "new", "condition_raw": "Neu", "price_total": "12.00", "currency": "EUR", "page": 1, "position": 1},
+            {"condition_group": "used", "condition_raw": "Gebraucht - Wie neu", "price_total": "10.00", "currency": "EUR", "page": 1, "position": 2},
+        ],
+    }
+    fail_finished_at = datetime(2026, 2, 10, 21, 0, 10, tzinfo=UTC)
+
+    async with db_session.begin():
+        await persist_scrape_result(
+            session=db_session,
+            settings=None,
+            master_product_id=mp_id,
+            asin="B000FC2BTQ",
+            data=success_data,
+            error=None,
+            finished_at=success_finished_at,
+        )
+    async with db_session.begin():
+        await persist_scrape_result(
+            session=db_session,
+            settings=None,
+            master_product_id=mp_id,
+            asin="B000FC2BTQ",
+            data=None,
+            error="ReadTimeout: scraper request timed out",
+            finished_at=fail_finished_at,
+        )
+
+    latest = await db_session.get(AmazonProductMetricsLatest, mp_id)
+    assert latest is not None
+    stored_success = latest.last_success_at if latest.last_success_at.tzinfo is not None else latest.last_success_at.replace(tzinfo=UTC)
+    assert stored_success == success_finished_at
+    assert latest.rank_overall == 12
+    assert latest.rank_specific == 3
+    assert latest.offers_count_total == 2
+    assert latest.offers_count_priced_total == 2
+    assert latest.offers_count_used_priced_total == 1
