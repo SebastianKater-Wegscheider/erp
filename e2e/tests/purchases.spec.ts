@@ -44,6 +44,17 @@ test("create purchase via UI persists successfully", async ({ page, request }) =
   const sellerRow = page.getByRole("row").filter({ hasText: sellerName }).first();
   await expect(sellerRow).toBeVisible();
   await expect(sellerRow.getByText("Bar ohne Fahrt")).toBeVisible();
+
+  const deleteResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      /\/api\/v1\/purchases\/[^/]+$/.test(response.url()) &&
+      response.status() === 204,
+  );
+  page.once("dialog", (dialogEvent) => void dialogEvent.accept());
+  await sellerRow.getByRole("button", { name: "Löschen" }).first().click();
+  await deleteResponse;
+  await expect(page.getByRole("row").filter({ hasText: sellerName })).toHaveCount(0);
 });
 
 test("cash purchase reminder clears when mileage is linked via fahrtenbuch", async ({ page, request }) => {

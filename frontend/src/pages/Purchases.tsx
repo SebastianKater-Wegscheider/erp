@@ -772,6 +772,19 @@ export function PurchasesPage() {
       startEdit(purchase);
     },
   });
+  const deletePurchase = useMutation({
+    mutationFn: (purchaseId: string) => api.request<void>(`/purchases/${purchaseId}`, { method: "DELETE" }),
+    onSuccess: async (_out, purchaseId) => {
+      if (editingPurchaseId === purchaseId) {
+        cancelEdit();
+        setFormOpen(false);
+      }
+      await qc.invalidateQueries({ queryKey: ["purchases"] });
+      await qc.invalidateQueries({ queryKey: ["mileage"] });
+      await qc.invalidateQueries({ queryKey: ["purchase-mileage", purchaseId] });
+      await qc.invalidateQueries({ queryKey: ["purchase-attachments", purchaseId] });
+    },
+  });
 
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [kind, setKind] = useState<string>("PRIVATE_DIFF");
@@ -1539,6 +1552,15 @@ export function PurchasesPage() {
     setFormOpen(false);
   }
 
+  function requestDeletePurchase(purchase: PurchaseOut): void {
+    const label = `${formatDateEuFromIso(purchase.purchase_date)} · ${purchase.counterparty_name}`;
+    const confirmed = window.confirm(
+      `Einkauf "${label}" wirklich löschen?\n\nDer Vorgang ist dauerhaft. Löschen ist nur möglich, wenn die zugehörigen Lagerpositionen noch verfügbar sind.`,
+    );
+    if (!confirmed) return;
+    deletePurchase.mutate(purchase.id);
+  }
+
   async function handleStageFileInput(fileList: FileList | null): Promise<void> {
     const files = Array.from(fileList ?? []);
     await stageAttachmentFiles(files);
@@ -1602,9 +1624,15 @@ export function PurchasesPage() {
               {(list.error as Error).message}
             </InlineMessage>
           )}
-          {(generatePdf.isError || reopenPurchase.isError) && (
+          {(generatePdf.isError || reopenPurchase.isError || deletePurchase.isError) && (
             <InlineMessage tone="error">
-              {String(((generatePdf.error as Error) ?? (reopenPurchase.error as Error))?.message ?? "Unbekannter Fehler")}
+              {String(
+                (
+                  (generatePdf.error as Error) ??
+                  (reopenPurchase.error as Error) ??
+                  (deletePurchase.error as Error)
+                )?.message ?? "Unbekannter Fehler",
+              )}
             </InlineMessage>
           )}
 
@@ -1710,7 +1738,7 @@ export function PurchasesPage() {
                           variant="secondary"
                           className="w-full sm:flex-1"
                           onClick={() => startEdit(p)}
-                          disabled={create.isPending || update.isPending}
+                          disabled={create.isPending || update.isPending || deletePurchase.isPending}
                         >
                           Bearbeiten
                         </Button>
@@ -1719,11 +1747,20 @@ export function PurchasesPage() {
                           variant="secondary"
                           className="w-full sm:flex-1"
                           onClick={() => reopenPurchase.mutate(p.id)}
-                          disabled={reopenPurchase.isPending || create.isPending || update.isPending}
+                          disabled={reopenPurchase.isPending || create.isPending || update.isPending || deletePurchase.isPending}
                         >
                           Zur Bearbeitung öffnen
                         </Button>
                       )}
+
+                      <Button
+                        variant="destructive"
+                        className="w-full sm:flex-1"
+                        onClick={() => requestDeletePurchase(p)}
+                        disabled={deletePurchase.isPending || create.isPending || update.isPending || reopenPurchase.isPending}
+                      >
+                        Löschen
+                      </Button>
                     </div>
                   </div>
                 );
@@ -1817,7 +1854,7 @@ export function PurchasesPage() {
                               variant="secondary"
                               className="min-w-[7.5rem]"
                               onClick={() => startEdit(p)}
-                              disabled={create.isPending || update.isPending}
+                              disabled={create.isPending || update.isPending || deletePurchase.isPending}
                             >
                               Bearbeiten
                             </Button>
@@ -1828,11 +1865,20 @@ export function PurchasesPage() {
                               variant="secondary"
                               className="min-w-[11.5rem]"
                               onClick={() => reopenPurchase.mutate(p.id)}
-                              disabled={reopenPurchase.isPending || create.isPending || update.isPending}
+                              disabled={reopenPurchase.isPending || create.isPending || update.isPending || deletePurchase.isPending}
                             >
                               Zur Bearbeitung öffnen
                             </Button>
                           )}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="min-w-[7.5rem]"
+                            onClick={() => requestDeletePurchase(p)}
+                            disabled={deletePurchase.isPending || create.isPending || update.isPending || reopenPurchase.isPending}
+                          >
+                            Löschen
+                          </Button>
                         </div>
                       </div>
                     </TableCell>
