@@ -118,3 +118,19 @@
   - `primary_mileage_log_id` (direkter Link)
   - verknuepfte Kauf-IDs aus `/mileage` (`purchase_ids`)
 - Damit werden bestehende Altdaten und Fahrtenbuch-Workflows konsistent abgedeckt.
+
+## 2026-02-12 - Loeschfunktion fuer Einkaeufe (Produktiv-Bereinigung)
+
+### Ausgangslage
+- In Produktion wurden Test-Einkaeufe angelegt; bisher existiert keine dedizierte Loeschfunktion fuer Einkaeufe.
+- Manuelle DB-Eingriffe waeren fehleranfaellig und audit-technisch unguenstig.
+
+### Business-Entscheidung
+- Einkaeufe sollen direkt in der UI loeschbar sein, damit fehlerhafte/Test-Daten schnell entfernt werden koennen.
+- Loeschen bleibt fachlich eingeschraenkt: nur wenn die zugehoerigen Bestandspositionen noch unverbraucht sind.
+
+### Technische Entscheidung
+- Neuer Backend-Service + API `DELETE /purchases/{id}` mit Konsistenzpruefungen:
+  - nur moeglich, wenn verknuepfte Inventory-Items `AVAILABLE` und nicht in Sales/Kostenallokationen/Bildern referenziert sind.
+  - bereinigt verknuepfte Ledger- und Mileage-Links; primary Mileage-Log wird entfernt.
+- Frontend erhaelt pro Einkauf einen klaren "Loeschen"-Action-Button mit Confirm-Dialog und Query-Invalidation.
