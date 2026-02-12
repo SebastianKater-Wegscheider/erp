@@ -194,6 +194,7 @@ class PurchaseOut(BaseModel):
     pdf_path: str | None
     external_invoice_number: str | None
     receipt_upload_path: str | None
+    primary_mileage_log_id: UUID | None
 
     created_at: datetime
     updated_at: datetime

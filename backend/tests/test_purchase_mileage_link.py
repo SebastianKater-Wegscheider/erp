@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.v1.endpoints.mileage import create_mileage_endpoint, update_mileage_endpoint
 from app.api.v1.endpoints.purchases import delete_purchase_mileage, get_purchase_mileage, upsert_purchase_mileage
@@ -16,6 +17,7 @@ from app.core.enums import PaymentSource, PurchaseKind
 from app.models.mileage_log import MileageLog
 from app.models.purchase import Purchase
 from app.schemas.mileage import MileageCreate
+from app.schemas.purchase import PurchaseOut
 from app.schemas.purchase_mileage import PurchaseMileageUpsert
 
 
@@ -69,9 +71,14 @@ async def test_purchase_mileage_upsert_creates_primary_mileage_log(db_session: A
     assert out.distance_meters == 12_400
     assert out.amount_cents > 0
 
-    refreshed = await db_session.get(Purchase, purchase.id)
+    refreshed = (
+        await db_session.execute(
+            select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines))
+        )
+    ).scalar_one_or_none()
     assert refreshed is not None
     assert refreshed.primary_mileage_log_id == out.id
+    assert PurchaseOut.model_validate(refreshed).primary_mileage_log_id == out.id
 
     fetched = await get_purchase_mileage(purchase.id, session=db_session)
     assert fetched is not None
