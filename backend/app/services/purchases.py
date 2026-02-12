@@ -1039,6 +1039,140 @@ async def reopen_purchase_for_edit(
     return purchase
 
 
+async def delete_purchase(
+    session: AsyncSession,
+    *,
+    actor: str,
+    purchase_id: uuid.UUID,
+) -> None:
+    purchase = (
+        await session.execute(
+            select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines))
+        )
+    ).scalar_one_or_none()
+    if purchase is None:
+        raise ValueError("Purchase not found")
+
+    line_ids = [line.id for line in purchase.lines]
+    inventory_items: list[InventoryItem] = []
+    if line_ids:
+        inventory_items = (
+            await session.execute(select(InventoryItem).where(InventoryItem.purchase_line_id.in_(line_ids)))
+        ).scalars().all()
+    inventory_by_line_id: dict[uuid.UUID, InventoryItem] = {
+        item.purchase_line_id: item for item in inventory_items if item.purchase_line_id
+    }
+
+    for line in purchase.lines:
+        item = inventory_by_line_id.get(line.id)
+        if item is None:
+            raise ValueError("Inventory item not found for purchase line")
+        if item.status != InventoryStatus.AVAILABLE:
+            raise ValueError("Cannot delete purchase: inventory item is not AVAILABLE")
+
+        sales_count = (
+            await session.scalar(
+                select(func.count()).select_from(SalesOrderLine).where(SalesOrderLine.inventory_item_id == item.id)
+            )
+        ) or 0
+        if sales_count:
+            raise ValueError("Cannot delete purchase: inventory item is referenced by sales")
+
+        allocation_count = (
+            await session.scalar(
+                select(func.count())
+                .select_from(CostAllocationLine)
+                .where(CostAllocationLine.inventory_item_id == item.id)
+            )
+        ) or 0
+        if allocation_count:
+            raise ValueError("Cannot delete purchase: inventory item has allocated costs")
+
+        image_count = (
+            await session.scalar(
+                select(func.count())
+                .select_from(InventoryItemImage)
+                .where(InventoryItemImage.inventory_item_id == item.id)
+            )
+        ) or 0
+        if image_count:
+            raise ValueError("Cannot delete purchase: inventory item has images")
+
+    old_pdf_path = str(purchase.pdf_path) if purchase.pdf_path else None
+    if old_pdf_path:
+        settings = get_settings()
+        abs_pdf_path = settings.app_storage_dir / old_pdf_path
+        if abs_pdf_path.exists():
+            abs_pdf_path.unlink()
+
+    primary_mileage_log_id = purchase.primary_mileage_log_id
+    purchase.primary_mileage_log_id = None
+
+    await session.execute(delete(_mileage_log_purchases).where(_mileage_log_purchases.c.purchase_id == purchase.id))
+
+    legacy_mileage_logs = (
+        await session.execute(select(MileageLog).where(MileageLog.purchase_id == purchase.id))
+    ).scalars().all()
+    for mileage_log in legacy_mileage_logs:
+        if primary_mileage_log_id is not None and mileage_log.id == primary_mileage_log_id:
+            continue
+        mileage_log.purchase_id = None
+
+    if primary_mileage_log_id is not None:
+        primary_log = await session.get(MileageLog, primary_mileage_log_id)
+        if primary_log is not None:
+            remaining_links = (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(_mileage_log_purchases)
+                    .where(_mileage_log_purchases.c.mileage_log_id == primary_mileage_log_id)
+                )
+            ) or 0
+            if remaining_links == 0:
+                await session.delete(primary_log)
+            elif primary_log.purchase_id == purchase.id:
+                primary_log.purchase_id = None
+
+    await session.execute(
+        delete(LedgerEntry).where(LedgerEntry.entity_type == "purchase", LedgerEntry.entity_id == purchase.id)
+    )
+
+    for item in inventory_items:
+        await audit_log(
+            session,
+            actor=actor,
+            entity_type="inventory_item",
+            entity_id=item.id,
+            action="delete",
+            before={"status": item.status, "purchase_line_id": str(item.purchase_line_id)},
+            after=None,
+        )
+        await session.delete(item)
+
+    await audit_log(
+        session,
+        actor=actor,
+        entity_type="purchase",
+        entity_id=purchase.id,
+        action="delete",
+        before={
+            "kind": purchase.kind,
+            "purchase_date": purchase.purchase_date,
+            "counterparty_name": purchase.counterparty_name,
+            "total_amount_cents": purchase.total_amount_cents,
+            "shipping_cost_cents": purchase.shipping_cost_cents,
+            "buyer_protection_fee_cents": purchase.buyer_protection_fee_cents,
+            "payment_source": purchase.payment_source,
+            "lines_count": len(purchase.lines),
+            "pdf_path": old_pdf_path,
+            "primary_mileage_log_id": str(primary_mileage_log_id) if primary_mileage_log_id else None,
+        },
+        after=None,
+    )
+
+    await session.delete(purchase)
+
+
 async def get_purchase_primary_mileage(
     session: AsyncSession,
     *,

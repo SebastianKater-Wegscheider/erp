@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,19 +25,23 @@ from app.core.enums import (
 from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
+from app.models.mileage_log import MileageLog, _mileage_log_purchases
 from app.models.purchase import Purchase, PurchaseLine
 from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrder
 from app.models.sales_correction import SalesCorrection
 from app.schemas.fba_shipment import FBAShipmentCreate, FBAShipmentReceive, FBAShipmentReceiveDiscrepancy
+from app.schemas.purchase_mileage import PurchaseMileageUpsert
 from app.schemas.purchase import PurchaseCreate, PurchaseLineCreate, PurchaseLineUpsert, PurchaseUpdate
 from app.schemas.sales import SalesOrderCreate, SalesOrderLineCreate, SalesOrderUpdate
 from app.schemas.sales_correction import SalesCorrectionCreate, SalesCorrectionLineCreate
 from app.services.fba_shipments import create_fba_shipment, mark_fba_shipment_received, mark_fba_shipment_shipped
 from app.services.purchases import (
     create_purchase,
+    delete_purchase,
     generate_purchase_credit_note_pdf,
     reopen_purchase_for_edit,
+    upsert_purchase_primary_mileage,
     update_purchase,
 )
 from app.services.sales import (
@@ -648,6 +652,101 @@ async def test_update_purchase_rejects_removal_when_item_not_available(db_sessio
                     ],
                 ),
             )
+
+
+@pytest.mark.asyncio
+async def test_delete_purchase_removes_inventory_ledger_and_primary_mileage(db_session: AsyncSession) -> None:
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, suffix="DEL-A")
+        purchase = await _create_private_purchase(
+            db_session,
+            purchase_date=date(2026, 2, 12),
+            lines=[(mp.id, 1_200)],
+        )
+        purchase_id = purchase.id
+        mileage = await upsert_purchase_primary_mileage(
+            db_session,
+            actor=ACTOR,
+            purchase_id=purchase_id,
+            data=PurchaseMileageUpsert(
+                log_date=date(2026, 2, 12),
+                start_location="Lager",
+                destination="Verkaeufer",
+                km="9.4",
+                purpose_text="Abholung Testkauf",
+            ),
+            rate_cents_per_km=30,
+        )
+
+    purchase_row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    line_ids = [line.id for line in purchase_row.lines]
+    mileage_id = mileage.id
+    await db_session.rollback()
+
+    async with db_session.begin():
+        await delete_purchase(db_session, actor=ACTOR, purchase_id=purchase_id)
+
+    assert await db_session.get(Purchase, purchase_id) is None
+    assert await db_session.get(MileageLog, mileage_id) is None
+
+    line_count = (
+        await db_session.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == purchase_id))
+    ) or 0
+    assert line_count == 0
+
+    inventory_count = (
+        await db_session.scalar(
+            select(func.count()).select_from(InventoryItem).where(InventoryItem.purchase_line_id.in_(line_ids))
+        )
+    ) or 0
+    assert inventory_count == 0
+
+    ledger_count = (
+        await db_session.scalar(
+            select(func.count()).select_from(LedgerEntry).where(
+                LedgerEntry.entity_type == "purchase",
+                LedgerEntry.entity_id == purchase_id,
+            )
+        )
+    ) or 0
+    assert ledger_count == 0
+
+    mileage_link_count = (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(_mileage_log_purchases)
+            .where(_mileage_log_purchases.c.purchase_id == purchase_id)
+        )
+    ) or 0
+    assert mileage_link_count == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_purchase_rejects_when_inventory_not_available(db_session: AsyncSession) -> None:
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, suffix="DEL-B")
+        purchase = await _create_private_purchase(
+            db_session,
+            purchase_date=date(2026, 2, 12),
+            lines=[(mp.id, 1_350)],
+        )
+        purchase_id = purchase.id
+
+    purchase_row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    line_id = purchase_row.lines[0].id
+    item = (await db_session.execute(select(InventoryItem).where(InventoryItem.purchase_line_id == line_id))).scalar_one()
+    item.status = InventoryStatus.SOLD
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match="not AVAILABLE"):
+        async with db_session.begin():
+            await delete_purchase(db_session, actor=ACTOR, purchase_id=purchase_id)
+
+    assert await db_session.get(Purchase, purchase_id) is not None
 
 
 @pytest.mark.asyncio

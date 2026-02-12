@@ -24,6 +24,7 @@ from app.schemas.purchase_mileage import PurchaseMileageUpsert
 from app.services.purchases import (
     CANONICAL_SOURCE_PLATFORMS,
     create_purchase,
+    delete_purchase,
     delete_purchase_primary_mileage,
     generate_purchase_credit_note_pdf,
     get_purchase_primary_mileage,
@@ -219,6 +220,21 @@ async def delete_purchase_mileage(
             await delete_purchase_primary_mileage(session, actor=actor, purchase_id=purchase_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    return Response(status_code=204)
+
+
+@router.delete("/{purchase_id}", status_code=204)
+async def delete_purchase_endpoint(
+    purchase_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> Response:
+    try:
+        async with session.begin():
+            await delete_purchase(session, actor=actor, purchase_id=purchase_id)
+    except ValueError as e:
+        detail = str(e)
+        raise HTTPException(status_code=404 if detail == "Purchase not found" else 409, detail=detail) from e
     return Response(status_code=204)
 
 
