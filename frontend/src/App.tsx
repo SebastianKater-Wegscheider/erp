@@ -18,9 +18,16 @@ const VatPage = lazy(() => import("./pages/Vat").then((m) => ({ default: m.VatPa
 export function App() {
   return (
     <AuthGate>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="relative min-h-screen text-[color:var(--app-text)]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-x-0 top-0 z-0 h-[44vh] bg-[radial-gradient(110%_90%_at_50%_0%,color-mix(in_oklab,var(--app-primary)_14%,transparent)_0%,transparent_70%)]"
+        />
+        <div aria-hidden="true" className="pointer-events-none fixed left-[-12rem] top-[10rem] z-0 h-72 w-72 rounded-full bg-amber-300/20 blur-3xl dark:bg-amber-600/12" />
+        <div aria-hidden="true" className="pointer-events-none fixed bottom-[-9rem] right-[-8rem] z-0 h-72 w-72 rounded-full bg-teal-400/18 blur-3xl dark:bg-teal-500/14" />
+
         <Topbar />
-        <div className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">
+        <main className="relative z-10 mx-auto w-full max-w-[1240px] px-3 pb-8 pt-4 sm:px-4 sm:pb-10 sm:pt-6">
           <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -36,7 +43,7 @@ export function App() {
               <Route path="/vat" element={<VatPage />} />
             </Routes>
           </Suspense>
-        </div>
+        </main>
       </div>
     </AuthGate>
   );
@@ -44,7 +51,7 @@ export function App() {
 
 function PageFallback() {
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
+    <div className="surface-panel rise-in rounded-xl p-4 text-sm text-[color:var(--app-text-muted)]">
       Seite wird geladen…
     </div>
   );

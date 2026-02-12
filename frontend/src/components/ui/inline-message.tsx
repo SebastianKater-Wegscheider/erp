@@ -5,9 +5,9 @@ import { cn } from "../../lib/utils";
 type InlineMessageTone = "neutral" | "error" | "info";
 
 const INLINE_MESSAGE_TONE_CLASS: Record<InlineMessageTone, string> = {
-  neutral: "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300",
-  error: "border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-200",
-  info: "border-gray-200 bg-gray-50 text-gray-800 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-100",
+  neutral: "border-[color:var(--app-border)] bg-[color:var(--app-surface)] text-[color:var(--app-text-muted)]",
+  error: "border-rose-200 bg-[color:var(--app-danger-soft)] text-rose-900 dark:border-rose-900/60 dark:text-rose-200",
+  info: "border-[color:var(--app-border)] bg-[color:var(--app-primary-soft)] text-[color:var(--app-primary-strong)]",
 };
 
 type InlineMessageProps = {
@@ -17,5 +17,5 @@ type InlineMessageProps = {
 };
 
 export function InlineMessage({ tone = "neutral", children, className }: InlineMessageProps) {
-  return <div className={cn("rounded-md border p-3 text-sm", INLINE_MESSAGE_TONE_CLASS[tone], className)}>{children}</div>;
+  return <div className={cn("rounded-lg border p-3 text-sm", INLINE_MESSAGE_TONE_CLASS[tone], className)}>{children}</div>;
 }

@@ -791,3 +791,18 @@
 
 ### Technische Entscheidung
 - Test-Fixture wurde auf dynamisches `new Date().toISOString()` umgestellt, damit Freshness-Assertion stabil bleibt.
+
+## 2026-02-12 - Frontend Refresh: markantere UI + shadcn-first Konsistenz
+
+### Ausgangslage
+- Die App war funktional stabil, wirkte visuell aber sehr neutral/grau und in Teilen uneinheitlich zwischen Seiten.
+- UX-Flow war solide, jedoch fehlte eine erkennbare visuelle Identität ueber Navigation, Header und Basiskomponenten hinweg.
+
+### Business-Entscheidung
+- Die gesamte Frontend-Oberflaeche soll professioneller und wiedererkennbarer wirken, ohne die bestehende Bedienlogik zu brechen.
+- Prioritaet: konsistente Interaktionen (Buttons, Inputs, Tabellen, Dialoge) und klarere visuelle Hierarchie fuer operative Workflows.
+
+### Technische Entscheidung
+- Refresh primär ueber gemeinsame shadcn-Bausteine (`Button`, `Card`, `Input`, `Select`, `Table`, `Badge`, `Dialog`, `Dropdown`, `Tabs`) plus Shell (`Topbar`, `PageHeader`, `App`) statt seitenweiser Einzelumbauten.
+- Globales Designsystem ueber `index.css`: typografische Identitaet, Farb-/Oberflaechentokens, atmosphaerischer Hintergrund und subtilere Motion.
+- Bestehende Page-Implementierungen bleiben weitgehend intakt, profitieren aber sofort vom gemeinsamen Look-and-feel und besserer UX-Konsistenz.

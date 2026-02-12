@@ -19,7 +19,7 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 min-w-[12rem] overflow-hidden rounded-md border border-gray-200 bg-white p-1 text-gray-950 shadow-md dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100",
+        "z-50 min-w-[12rem] overflow-hidden rounded-xl border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] p-1 text-[color:var(--app-text)] shadow-[0_18px_36px_-24px_color-mix(in_oklab,var(--app-primary)_72%,transparent)]",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         className,
       )}
@@ -35,7 +35,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400", className)}
+    className={cn("px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-[color:var(--app-text-muted)]", className)}
     {...props}
   />
 ));
@@ -45,7 +45,7 @@ const DropdownMenuSeparator = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Separator ref={ref} className={cn("-mx-1 my-1 h-px bg-gray-200 dark:bg-gray-800", className)} {...props} />
+  <DropdownMenuPrimitive.Separator ref={ref} className={cn("-mx-1 my-1 h-px bg-[color:var(--app-border)]", className)} {...props} />
 ));
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
@@ -56,8 +56,8 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-2 text-[16px] outline-none transition-colors sm:py-1.5 sm:text-sm",
-      "focus:bg-gray-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:focus:bg-gray-800",
+      "relative flex cursor-default select-none items-center gap-2 rounded-md px-2 py-2 text-[16px] outline-none transition-colors sm:py-1.5 sm:text-sm",
+      "focus:bg-[color:var(--app-primary-soft)] focus:text-[color:var(--app-primary-strong)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       inset && "pl-8",
       className,
     )}

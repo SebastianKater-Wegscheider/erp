@@ -16,7 +16,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/30 data-[state=open]:animate-in data-[state=closed]:animate-out dark:bg-black/70",
+      "fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out dark:bg-black/72",
       className,
     )}
     {...props}
@@ -34,13 +34,13 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         // Mobile: add side margins + allow scroll for tall dialogs; desktop remains unchanged via `sm:` overrides.
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[85dvh] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-auto rounded-lg border border-gray-200 bg-white p-4 text-gray-900 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 sm:w-full sm:p-6",
+        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-h-[85dvh] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-auto rounded-2xl border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] p-4 text-[color:var(--app-text)] shadow-[0_34px_60px_-34px_color-mix(in_oklab,var(--app-primary)_72%,transparent)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out sm:w-full sm:p-6",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogClose className="absolute right-[calc(0.5rem+env(safe-area-inset-right))] top-[calc(0.5rem+env(safe-area-inset-top))] inline-flex h-10 w-10 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-gray-700 sm:right-4 sm:top-4 sm:h-8 sm:w-8">
+      <DialogClose className="absolute right-[calc(0.5rem+env(safe-area-inset-right))] top-[calc(0.5rem+env(safe-area-inset-top))] inline-flex h-10 w-10 items-center justify-center rounded-md text-[color:var(--app-text-muted)] opacity-70 transition-all hover:bg-[color:var(--app-primary-soft)] hover:text-[color:var(--app-primary-strong)] hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--app-primary)_35%,transparent)] sm:right-4 sm:top-4 sm:h-8 sm:w-8">
         <X className="h-4 w-4" />
         <span className="sr-only">Schließen</span>
       </DialogClose>
@@ -63,7 +63,7 @@ const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
+  <DialogPrimitive.Title ref={ref} className={cn("font-display text-xl leading-none", className)} {...props} />
 ));
 DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
@@ -71,7 +71,7 @@ const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn("text-sm text-gray-500 dark:text-gray-400", className)} {...props} />
+  <DialogPrimitive.Description ref={ref} className={cn("text-sm text-[color:var(--app-text-muted)]", className)} {...props} />
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 

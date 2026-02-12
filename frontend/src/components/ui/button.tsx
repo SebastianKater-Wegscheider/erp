@@ -5,15 +5,20 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-gray-700 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold tracking-[0.01em] transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--app-primary)_38%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--app-bg)] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white",
-        secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700",
-        outline: "border border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-transparent dark:hover:bg-gray-900",
-        destructive: "bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400",
-        ghost: "hover:bg-gray-100 dark:hover:bg-gray-800",
+        default:
+          "bg-[color:var(--app-primary)] text-white shadow-[0_12px_22px_-16px_color-mix(in_oklab,var(--app-primary)_82%,transparent)] hover:bg-[color:var(--app-primary-strong)] hover:shadow-[0_14px_24px_-14px_color-mix(in_oklab,var(--app-primary)_82%,transparent)] active:translate-y-px",
+        secondary:
+          "bg-[color:var(--app-primary-soft)] text-[color:var(--app-primary-strong)] shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--app-primary)_24%,transparent)] hover:bg-[color:color-mix(in_oklab,var(--app-primary-soft)_76%,white)]",
+        outline:
+          "border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] text-[color:var(--app-text)] shadow-[0_2px_10px_-9px_color-mix(in_oklab,var(--app-primary)_45%,transparent)] hover:bg-[color:color-mix(in_oklab,var(--app-surface)_86%,var(--app-primary-soft))]",
+        destructive:
+          "bg-rose-600 text-white shadow-[0_10px_20px_-14px_rgba(190,24,93,0.85)] hover:bg-rose-700 active:translate-y-px dark:bg-rose-500 dark:hover:bg-rose-400",
+        ghost:
+          "text-[color:var(--app-text-muted)] hover:bg-[color:color-mix(in_oklab,var(--app-primary-soft)_44%,transparent)] hover:text-[color:var(--app-text)]",
       },
       size: {
         // Mobile: slightly larger tap targets; desktop remains unchanged via `sm:` overrides.

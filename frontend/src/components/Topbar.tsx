@@ -96,26 +96,29 @@ export function Topbar() {
   }, [navSections, mobileNavQuery]);
 
   return (
-    <div className="sticky top-0 z-40 border-b border-gray-200 bg-white/90 backdrop-blur dark:border-gray-800 dark:bg-gray-950/80">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3">
+    <div className="sticky top-0 z-40 border-b border-[color:color-mix(in_oklab,var(--app-border)_70%,transparent)] bg-[color:color-mix(in_oklab,var(--app-surface-elevated)_92%,transparent)] backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[1240px] items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="flex min-w-0 items-center gap-3">
           <Link
             to={NAV_PRIMARY.to}
-            className="shrink-0 font-semibold tracking-tight text-gray-900 hover:text-gray-700 dark:text-gray-100 dark:hover:text-gray-200"
+            className="group inline-flex shrink-0 items-center gap-2 rounded-lg px-1 py-0.5 text-[color:var(--app-text)] transition-colors hover:text-[color:var(--app-primary-strong)]"
           >
-            <span className="sm:hidden">KWC</span>
-            <span className="hidden sm:inline">Kater-Wegscheider Company</span>
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[color:var(--app-primary-soft)] text-[11px] font-bold uppercase tracking-wide text-[color:var(--app-primary-strong)] shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--app-primary)_22%,transparent)]">
+              KW
+            </span>
+            <span className="font-display text-[1.02rem] leading-none sm:hidden">KWC</span>
+            <span className="font-display hidden text-[1.04rem] leading-none sm:inline">Kater-Wegscheider Company</span>
           </Link>
 
           {activeItem && (
             <div className="min-w-0 md:hidden">
-              <div className="truncate text-sm text-gray-500 dark:text-gray-400">{activeItem.label}</div>
+              <div className="truncate text-sm text-[color:var(--app-text-muted)]">{activeItem.label}</div>
             </div>
           )}
 
-          <div className="hidden h-6 w-px bg-gray-200 dark:bg-gray-800 md:block" />
+          <div className="hidden h-6 w-px bg-[color:var(--app-border)] md:block" />
 
-          <div className="hidden items-center gap-1 md:flex">
+          <div className="hidden items-center gap-1 rounded-xl border border-[color:var(--app-border)] bg-[color:color-mix(in_oklab,var(--app-surface)_84%,var(--app-primary-soft))] p-1 shadow-[inset_0_1px_2px_color-mix(in_oklab,var(--app-border)_50%,transparent)] md:flex">
             <Link
               to={NAV_PRIMARY.to}
               aria-current={isActive(NAV_PRIMARY.to) ? "page" : undefined}
@@ -131,10 +134,10 @@ export function Topbar() {
                     variant="ghost"
                     size="sm"
                     className={[
-                      "h-8 px-3",
+                      "h-8 rounded-lg px-3",
                       isSectionActive(section.items)
-                        ? "bg-gray-100 text-gray-900 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-800"
-                        : "text-gray-700 dark:text-gray-300",
+                        ? "bg-[color:var(--app-surface-elevated)] text-[color:var(--app-primary-strong)] shadow-[0_7px_18px_-16px_color-mix(in_oklab,var(--app-primary)_80%,transparent)]"
+                        : "text-[color:var(--app-text-muted)] hover:text-[color:var(--app-text)]",
                     ].join(" ")}
                   >
                     {section.label}
@@ -148,8 +151,8 @@ export function Topbar() {
                       asChild
                       className={
                         isActive(item.to)
-                          ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                          : "text-gray-700 dark:text-gray-200"
+                          ? "bg-[color:var(--app-primary-soft)] font-medium text-[color:var(--app-primary-strong)]"
+                          : "text-[color:var(--app-text)]"
                       }
                     >
                       <Link to={item.to} aria-current={isActive(item.to) ? "page" : undefined}>
@@ -189,16 +192,16 @@ export function Topbar() {
               // Radix auto-focuses the first focusable element; with a search input first, iOS opens the keyboard.
               // Prevent that and let the user tap into search explicitly.
               onOpenAutoFocus={(e) => e.preventDefault()}
-              className="left-0 top-0 flex h-dvh max-h-none w-[88vw] max-w-[420px] translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-r border-gray-200 p-0 dark:border-gray-800"
+              className="left-0 top-0 flex h-dvh max-h-none w-[88vw] max-w-[420px] translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-r border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] p-0"
             >
-              <DialogHeader className="border-b border-gray-200 px-4 py-4 pr-14 pt-[calc(1rem+env(safe-area-inset-top))] dark:border-gray-800">
+              <DialogHeader className="border-b border-[color:var(--app-border)] bg-[color:color-mix(in_oklab,var(--app-surface)_80%,var(--app-primary-soft))] px-4 py-4 pr-14 pt-[calc(1rem+env(safe-area-inset-top))]">
                 <DialogTitle className="text-base sm:text-lg">Navigation</DialogTitle>
                 <DialogDescription className="sr-only">Wechseln Sie zwischen den Modulen.</DialogDescription>
               </DialogHeader>
 
               <div className="flex min-h-0 flex-1 flex-col">
                 <div ref={mobileNavScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                  <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur dark:border-gray-800 dark:bg-gray-950/80">
+                  <div className="sticky top-0 z-10 border-b border-[color:var(--app-border)] bg-[color:color-mix(in_oklab,var(--app-surface-elevated)_94%,transparent)] backdrop-blur">
                     <div className="px-4 pb-3 pt-2">
                       <Input
                         value={mobileNavQuery}
@@ -222,7 +225,7 @@ export function Topbar() {
 
                   <div className="px-2 py-3">
                     {!filteredNavSections.length && mobileNavQuery.trim() && (
-                      <div className="px-3 py-6 text-sm text-gray-500 dark:text-gray-400">Keine Treffer.</div>
+                      <div className="px-3 py-6 text-sm text-[color:var(--app-text-muted)]">Keine Treffer.</div>
                     )}
 
                     {filteredNavSections.map((section) => {
@@ -235,7 +238,7 @@ export function Topbar() {
                             type="button"
                             className={[
                               "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide",
-                              "text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-gray-200",
+                              "text-[color:var(--app-text-muted)] hover:bg-[color:var(--app-primary-soft)] hover:text-[color:var(--app-primary-strong)]",
                             ].join(" ")}
                             onClick={() =>
                               setMobileOpenSections((prev) => ({
@@ -275,7 +278,7 @@ export function Topbar() {
                   </div>
                 </div>
 
-                <div className="border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-800">
+                <div className="border-t border-[color:var(--app-border)] bg-[color:color-mix(in_oklab,var(--app-surface)_82%,var(--app-primary-soft))] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                   <div className="space-y-2">
                     <Button
                       type="button"
@@ -317,10 +320,10 @@ export function Topbar() {
 
 function cnNavPill(active: boolean) {
   return [
-    "rounded-md px-3 py-1.5 text-sm transition-colors",
+    "rounded-lg px-3 py-1.5 text-sm font-semibold transition-all",
     active
-      ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-gray-100",
+      ? "bg-[color:var(--app-surface-elevated)] text-[color:var(--app-primary-strong)] shadow-[0_7px_18px_-16px_color-mix(in_oklab,var(--app-primary)_80%,transparent)]"
+      : "text-[color:var(--app-text-muted)] hover:bg-[color:var(--app-primary-soft)] hover:text-[color:var(--app-text)]",
   ].join(" ");
 }
 
@@ -328,7 +331,7 @@ function cnMobileLink(active: boolean) {
   return [
     "block scroll-mt-24 rounded-md px-3 py-2.5 text-[16px] transition-colors sm:py-2 sm:text-sm",
     active
-      ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-      : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-200 dark:hover:bg-gray-900 dark:hover:text-gray-100",
+      ? "bg-[color:var(--app-primary-soft)] text-[color:var(--app-primary-strong)]"
+      : "text-[color:var(--app-text)] hover:bg-[color:color-mix(in_oklab,var(--app-primary-soft)_55%,transparent)] hover:text-[color:var(--app-primary-strong)]",
   ].join(" ");
 }

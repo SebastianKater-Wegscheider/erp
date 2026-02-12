@@ -64,7 +64,7 @@ const SelectTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       // Mobile: >=16px font-size to avoid iOS Safari zoom; slightly taller tap target.
-      "flex h-10 w-full items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-[16px] shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100 dark:focus:ring-gray-700 sm:h-9 sm:text-sm",
+      "flex h-10 w-full items-center justify-between rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] px-3 py-2 text-[16px] text-[color:var(--app-text)] shadow-[inset_0_1px_0_color-mix(in_oklab,var(--app-border)_30%,transparent),0_6px_16px_-14px_color-mix(in_oklab,var(--app-primary)_42%,transparent)] focus:outline-none focus:ring-2 focus:ring-[color:color-mix(in_oklab,var(--app-primary)_34%,transparent)] focus:ring-offset-2 focus:ring-offset-[color:var(--app-bg)] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9 sm:text-sm",
       className,
     )}
     onPointerDown={(event) => {
@@ -100,7 +100,7 @@ const SelectContent = React.forwardRef<
         ref={ref}
         {...props}
         className={cn(
-          "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-gray-200 bg-white text-gray-950 shadow-md dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100",
+          "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] text-[color:var(--app-text)] shadow-[0_16px_36px_-24px_color-mix(in_oklab,var(--app-primary)_72%,transparent)]",
           className,
         )}
         position={position}
@@ -146,7 +146,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-2 pl-8 pr-2 text-[16px] outline-none focus:bg-gray-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:focus:bg-gray-800 sm:py-1.5 sm:text-sm",
+      "relative flex w-full cursor-default select-none items-center rounded-md py-2 pl-8 pr-2 text-[16px] outline-none focus:bg-[color:var(--app-primary-soft)] focus:text-[color:var(--app-primary-strong)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 sm:py-1.5 sm:text-sm",
       className,
     )}
     {...props}

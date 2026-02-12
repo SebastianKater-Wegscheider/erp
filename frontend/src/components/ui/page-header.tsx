@@ -13,12 +13,16 @@ type PageHeaderProps = {
 
 export function PageHeader({ title, description, actions, className, descriptionClassName, actionsClassName }: PageHeaderProps) {
   return (
-    <div className={cn("flex flex-col gap-3 md:flex-row md:items-end md:justify-between", className)}>
+    <div className={cn("rise-in flex flex-col gap-3 md:flex-row md:items-end md:justify-between", className)}>
       <div className="min-w-0">
-        <div className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">{title}</div>
-        {description ? <div className={cn("mt-0.5 text-sm text-gray-500 dark:text-gray-400", descriptionClassName)}>{description}</div> : null}
+        <div className="font-display text-[1.45rem] leading-[1.05] text-[color:var(--app-text)] sm:text-[1.7rem]">{title}</div>
+        {description ? (
+          <div className={cn("mt-1.5 text-sm text-[color:var(--app-text-muted)]", descriptionClassName)}>
+            {description}
+          </div>
+        ) : null}
       </div>
-      {actions ? <div className={cn("flex flex-col gap-2 sm:flex-row sm:items-center", actionsClassName)}>{actions}</div> : null}
+      {actions ? <div className={cn("flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end", actionsClassName)}>{actions}</div> : null}
     </div>
   );
 }

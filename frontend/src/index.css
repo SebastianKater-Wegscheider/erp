@@ -1,15 +1,52 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body {
+:root {
+  color-scheme: light;
+
+  --app-bg: #f3eddf;
+  --app-bg-quiet: #ebe6da;
+  --app-surface: #fffdf8;
+  --app-surface-elevated: #ffffff;
+  --app-border: #d7d0c1;
+  --app-text: #1e2a23;
+  --app-text-muted: #5f6c63;
+  --app-primary: #0e766e;
+  --app-primary-strong: #0a5f58;
+  --app-primary-soft: #d8efe9;
+  --app-warm-soft: #f3e6c8;
+  --app-danger-soft: #fde8e8;
+}
+
+html.dark {
+  color-scheme: dark;
+
+  --app-bg: #0d1416;
+  --app-bg-quiet: #0a1011;
+  --app-surface: #121b1d;
+  --app-surface-elevated: #162225;
+  --app-border: #2a3a3d;
+  --app-text: #e6f0ea;
+  --app-text-muted: #9bb0a6;
+  --app-primary: #2db8aa;
+  --app-primary-strong: #58c8bb;
+  --app-primary-soft: #173837;
+  --app-warm-soft: #3a2f1f;
+  --app-danger-soft: #3a2024;
+}
+
+html,
+body {
   height: 100%;
-  /* Guard against occasional 1-2px horizontal overflow on mobile Safari. */
   overflow-x: hidden;
 }
 
 @supports (overflow: clip) {
-  html, body {
+  html,
+  body {
     overflow-x: clip;
   }
 }
@@ -25,14 +62,89 @@ html, body {
   }
 }
 
-html {
-  color-scheme: light;
-}
-
-html.dark {
-  color-scheme: dark;
-}
-
 body {
-  @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100;
+  background-color: var(--app-bg);
+  background-image:
+    radial-gradient(circle at 8% -5%, color-mix(in oklab, var(--app-primary) 16%, transparent) 0 19%, transparent 56%),
+    radial-gradient(circle at 100% 0, color-mix(in oklab, #f0be5b 22%, transparent) 0 20%, transparent 58%),
+    linear-gradient(180deg, color-mix(in oklab, var(--app-bg-quiet) 88%, white) 0%, var(--app-bg) 100%);
+  color: var(--app-text);
+  font-family: "Public Sans", "Segoe UI", sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--app-border);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: "Fraunces", "Times New Roman", serif;
+    letter-spacing: -0.012em;
+    font-variation-settings: "SOFT" 75, "WONK" 0;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: "Fraunces", "Times New Roman", serif;
+    letter-spacing: -0.012em;
+    font-variation-settings: "SOFT" 75, "WONK" 0;
+  }
+
+  .surface-panel {
+    background: color-mix(in oklab, var(--app-surface) 96%, white);
+    border: 1px solid color-mix(in oklab, var(--app-border) 90%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in oklab, var(--app-border) 34%, transparent),
+      0 12px 28px -18px color-mix(in oklab, var(--app-primary) 32%, transparent);
+  }
+
+  .surface-panel-strong {
+    background: color-mix(in oklab, var(--app-surface-elevated) 96%, white);
+    border: 1px solid color-mix(in oklab, var(--app-border) 90%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in oklab, var(--app-border) 30%, transparent),
+      0 18px 36px -22px color-mix(in oklab, var(--app-primary) 36%, transparent);
+  }
+
+  .text-muted-app {
+    color: var(--app-text-muted);
+  }
+
+  .ring-brand {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--app-primary) 22%, transparent);
+  }
+
+  .grain-overlay {
+    position: relative;
+  }
+
+  .grain-overlay::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.18;
+    background-image: radial-gradient(color-mix(in oklab, var(--app-text) 16%, transparent) 0.35px, transparent 0.35px);
+    background-size: 3px 3px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.05));
+  }
+
+  .rise-in {
+    animation: rise-in 360ms cubic-bezier(0.22, 0.88, 0.28, 1) both;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
