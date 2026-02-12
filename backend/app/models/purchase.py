@@ -74,5 +74,9 @@ class PurchaseLine(UUIDPrimaryKeyMixin, Base):
     purchase_price_net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     purchase_price_tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tax_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    market_value_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    held_privately_over_12_months: Mapped[bool | None] = mapped_column(nullable=True)
+    valuation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     purchase: Mapped[Purchase] = relationship(back_populates="lines")
+    attachments: Mapped[list["PurchaseAttachment"]] = relationship(back_populates="purchase_line")

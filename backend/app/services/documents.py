@@ -17,6 +17,8 @@ def _prefix(doc_type: DocumentType) -> str:
             return "INV"
         case DocumentType.SALES_CORRECTION:
             return "COR"
+        case DocumentType.PRIVATE_EQUITY_NOTE:
+            return "PAIV"
     return "DOC"
 
 
@@ -38,4 +40,3 @@ async def next_document_number(session: AsyncSession, *, doc_type: DocumentType,
     await session.flush()
 
     return f"{_prefix(doc_type)}-{year}-{number:06d}"
-

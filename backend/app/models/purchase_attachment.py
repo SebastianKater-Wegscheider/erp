@@ -12,6 +12,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.purchase import Purchase
+    from app.models.purchase import PurchaseLine
 
 
 class PurchaseAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -26,9 +27,16 @@ class PurchaseAttachment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    purchase_line_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("purchase_lines.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     upload_path: Mapped[str] = mapped_column(String(500), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(300), nullable=False)
     kind: Mapped[str] = mapped_column(String(40), nullable=False, default="OTHER")
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     purchase: Mapped[Purchase] = relationship(back_populates="attachments")
+    purchase_line: Mapped[PurchaseLine | None] = relationship(back_populates="attachments")

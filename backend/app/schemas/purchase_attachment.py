@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class PurchaseAttachmentCreate(BaseModel):
     upload_path: str = Field(min_length=1, max_length=500)
+    purchase_line_id: UUID | None = None
     original_filename: str | None = Field(default=None, max_length=300)
     kind: str = Field(default="OTHER", min_length=1, max_length=40)
     note: str | None = Field(default=None, max_length=1000)
@@ -55,6 +56,7 @@ class PurchaseAttachmentOut(BaseModel):
 
     id: UUID
     purchase_id: UUID
+    purchase_line_id: UUID | None
     upload_path: str
     original_filename: str
     kind: str

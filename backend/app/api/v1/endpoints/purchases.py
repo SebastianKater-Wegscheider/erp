@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.security import require_basic_auth
 from app.schemas.mileage import MileageOut
 from app.models.purchase import Purchase
+from app.models.purchase import PurchaseLine
 from app.models.purchase_attachment import PurchaseAttachment
 from app.schemas.purchase_attachment import (
     PurchaseAttachmentBatchCreate,
@@ -111,9 +112,28 @@ async def add_purchase_attachments(
     if await session.get(Purchase, purchase_id) is None:
         raise HTTPException(status_code=404, detail="Not found")
 
+    line_ids = {a.purchase_line_id for a in data.attachments if a.purchase_line_id is not None}
+    valid_line_ids: set[uuid.UUID] = set()
+    if line_ids:
+        valid_line_ids = set(
+            (
+                await session.execute(
+                    select(PurchaseLine.id).where(PurchaseLine.purchase_id == purchase_id, PurchaseLine.id.in_(line_ids))
+                )
+            ).scalars().all()
+        )
+
+    for attachment in data.attachments:
+        kind = str(attachment.kind or "OTHER").strip().upper()
+        if kind == "MARKET_COMP" and attachment.purchase_line_id is None:
+            raise HTTPException(status_code=409, detail="MARKET_COMP attachments require purchase_line_id")
+        if attachment.purchase_line_id is not None and attachment.purchase_line_id not in valid_line_ids:
+            raise HTTPException(status_code=409, detail="purchase_line_id does not belong to this purchase")
+
     rows = [
         PurchaseAttachment(
             purchase_id=purchase_id,
+            purchase_line_id=attachment.purchase_line_id,
             upload_path=attachment.upload_path.lstrip("/"),
             original_filename=str(attachment.original_filename or "").strip() or attachment.upload_path.split("/")[-1],
             kind=str(attachment.kind or "OTHER").strip().upper() or "OTHER",

@@ -38,11 +38,13 @@ class InventoryQueue(StrEnum):
 class PurchaseKind(StrEnum):
     PRIVATE_DIFF = "PRIVATE_DIFF"
     COMMERCIAL_REGULAR = "COMMERCIAL_REGULAR"
+    PRIVATE_EQUITY = "PRIVATE_EQUITY"
 
 
 class PaymentSource(StrEnum):
     CASH = "CASH"
     BANK = "BANK"
+    PRIVATE_EQUITY = "PRIVATE_EQUITY"
 
 
 class OrderChannel(StrEnum):
@@ -90,6 +92,7 @@ class DocumentType(StrEnum):
     PURCHASE_CREDIT_NOTE = "PURCHASE_CREDIT_NOTE"
     SALES_INVOICE = "SALES_INVOICE"
     SALES_CORRECTION = "SALES_CORRECTION"
+    PRIVATE_EQUITY_NOTE = "PRIVATE_EQUITY_NOTE"
 
 
 class ReturnAction(StrEnum):
