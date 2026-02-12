@@ -7,6 +7,7 @@ import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from "react-l
 import { useApi } from "../lib/api";
 import { formatDateEuFromIso } from "../lib/dates";
 import { formatEur } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -14,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PaginationControls } from "../components/ui/pagination-controls";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
@@ -176,6 +178,7 @@ export function MileagePage() {
   const [purchasePickerOpen, setPurchasePickerOpen] = useState(false);
   const [purchaseQ, setPurchaseQ] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const purchaseRefs = useQuery({
     queryKey: ["purchase-refs"],
@@ -240,6 +243,7 @@ export function MileagePage() {
   }, [list.data, purchaseRefById, search]);
 
   const totalCount = list.data?.length ?? 0;
+  const pagedRows = useMemo(() => paginateItems(rows, page), [rows, page]);
 
   useEffect(() => {
     if (!routePreview) return;
@@ -251,6 +255,14 @@ export function MileagePage() {
     setRoutePreview(null);
     setRouteError(null);
   }, [start, destination]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  useEffect(() => {
+    if (page !== pagedRows.page) setPage(pagedRows.page);
+  }, [page, pagedRows.page]);
 
   function resetForm() {
     setEditingLogId(null);
@@ -404,7 +416,7 @@ export function MileagePage() {
           )}
 
           <div className="md:hidden space-y-2">
-            {rows.map((m) => {
+            {pagedRows.items.map((m) => {
               const kmLabel = kmLabelFromMeters(m.distance_meters);
               const linkedPurchases = (m.purchase_ids ?? [])
                 .map((id) => purchaseRefById.get(id))
@@ -477,7 +489,7 @@ export function MileagePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((m) => (
+                {pagedRows.items.map((m) => (
                   <TableRow key={m.id} className={TABLE_ROW_COMPACT_CLASS}>
                     <TableCell className="whitespace-nowrap">{formatDateEuFromIso(m.log_date)}</TableCell>
                     <TableCell>
@@ -525,6 +537,14 @@ export function MileagePage() {
               </TableBody>
             </Table>
           </div>
+
+          <PaginationControls
+            page={pagedRows.page}
+            totalPages={pagedRows.totalPages}
+            totalItems={pagedRows.totalItems}
+            pageSize={pagedRows.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 

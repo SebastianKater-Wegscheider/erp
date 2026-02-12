@@ -1,11 +1,12 @@
 import { Plus, RefreshCw } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatDateEuFromIso } from "../lib/dates";
 import { useTaxProfile } from "../lib/taxProfile";
 import { formatEur, parseEurToCents } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -17,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
+import { PaginationControls } from "../components/ui/pagination-controls";
 
 type AllocationOut = {
   id: string;
@@ -46,6 +48,7 @@ export function CostAllocationsPage() {
   const [paymentSource, setPaymentSource] = useState("CASH");
   const [lines, setLines] = useState<Line[]>([]);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const sumCents = useMemo(() => {
     let sum = 0;
@@ -97,6 +100,15 @@ export function CostAllocationsPage() {
   }, [list.data, search]);
 
   const totalCount = list.data?.length ?? 0;
+  const pagedRows = useMemo(() => paginateItems(rows, page), [rows, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  useEffect(() => {
+    if (page !== pagedRows.page) setPage(pagedRows.page);
+  }, [page, pagedRows.page]);
 
   function openForm() {
     create.reset();
@@ -155,7 +167,7 @@ export function CostAllocationsPage() {
           )}
 
           <div className="md:hidden space-y-2">
-            {rows.map((a) => (
+            {pagedRows.items.map((a) => (
               <div
                 key={a.id}
                 className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
@@ -192,7 +204,7 @@ export function CostAllocationsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((a) => (
+                {pagedRows.items.map((a) => (
                   <TableRow key={a.id} className={TABLE_ROW_COMPACT_CLASS}>
                     <TableCell className="whitespace-nowrap">{formatDateEuFromIso(a.allocation_date)}</TableCell>
                     <TableCell>{a.description}</TableCell>
@@ -212,6 +224,14 @@ export function CostAllocationsPage() {
               </TableBody>
             </Table>
           </div>
+
+          <PaginationControls
+            page={pagedRows.page}
+            totalPages={pagedRows.totalPages}
+            totalItems={pagedRows.totalItems}
+            pageSize={pagedRows.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 

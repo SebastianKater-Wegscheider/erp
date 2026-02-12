@@ -1,9 +1,10 @@
 import { Check, PackageCheck, PackageOpen, Plus, RefreshCw, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatEur, parseEurToCents } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -11,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PaginationControls } from "../components/ui/pagination-controls";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
@@ -119,6 +121,7 @@ export function FBAShipmentsPage() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [searchInventory, setSearchInventory] = useState("");
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
 
   const [receiveShipmentId, setReceiveShipmentId] = useState<string | null>(null);
   const [receiveStateByItemId, setReceiveStateByItemId] = useState<Record<string, ReceiveState>>({});
@@ -150,10 +153,20 @@ export function FBAShipmentsPage() {
     if (!q) return all;
     return all.filter((s) => `${s.name} ${s.carrier ?? ""} ${s.tracking_number ?? ""}`.toLowerCase().includes(q));
   }, [shipments.data, searchShipment]);
+  const totalShipmentCount = shipments.data?.length ?? 0;
+  const pagedShipments = useMemo(() => paginateItems(listRows, page), [listRows, page]);
 
   const shipmentById = useMemo(() => new Map((shipments.data ?? []).map((s) => [s.id, s])), [shipments.data]);
   const editingShipment = editingId ? shipmentById.get(editingId) ?? null : null;
   const receivingShipment = receiveShipmentId ? shipmentById.get(receiveShipmentId) ?? null : null;
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchShipment]);
+
+  useEffect(() => {
+    if (page !== pagedShipments.page) setPage(pagedShipments.page);
+  }, [page, pagedShipments.page]);
 
   const inventoryRows = availableInventory.data ?? [];
   const selectedInventoryRows = useMemo(() => {
@@ -300,7 +313,9 @@ export function FBAShipmentsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Sendungen</CardTitle>
-          <CardDescription>{shipments.isPending ? "Lade…" : `${listRows.length} Einträge`}</CardDescription>
+          <CardDescription>
+            {shipments.isPending ? "Lade…" : `${listRows.length}${listRows.length !== totalShipmentCount ? ` / ${totalShipmentCount}` : ""} Einträge`}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <SearchField
@@ -316,7 +331,7 @@ export function FBAShipmentsPage() {
           )}
 
           <div className="md:hidden space-y-2">
-            {listRows.map((s) => (
+            {pagedShipments.items.map((s) => (
               <div
                 key={s.id}
                 className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
@@ -392,7 +407,7 @@ export function FBAShipmentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {listRows.map((s) => (
+                {pagedShipments.items.map((s) => (
                   <TableRow key={s.id} className={TABLE_ROW_COMPACT_CLASS}>
                     <TableCell>
                       <div className="font-medium">{s.name}</div>
@@ -446,6 +461,14 @@ export function FBAShipmentsPage() {
               </TableBody>
             </Table>
           </div>
+
+          <PaginationControls
+            page={pagedShipments.page}
+            totalPages={pagedShipments.totalPages}
+            totalItems={pagedShipments.totalItems}
+            pageSize={pagedShipments.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 

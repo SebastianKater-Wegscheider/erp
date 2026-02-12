@@ -13,6 +13,7 @@ import {
   formatSellThroughRange,
 } from "../lib/amazon";
 import { formatEur } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { resolveReferenceImageSrc } from "../lib/referenceImages";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -22,6 +23,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PaginationControls } from "../components/ui/pagination-controls";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
@@ -381,6 +383,7 @@ export function InventoryPage() {
     return "ALL";
   });
   const [queue, setQueue] = useState<InventoryQueue>(() => normalizeInventoryQueue(searchParams.get("queue")));
+  const [page, setPage] = useState(1);
 
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [editStorageLocation, setEditStorageLocation] = useState("");
@@ -505,8 +508,17 @@ export function InventoryPage() {
   }, [master.data]);
 
   const rows = inv.data ?? [];
+  const pagedRows = useMemo(() => paginateItems(rows, page), [rows, page]);
   const today = new Date();
-  const rowItemIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  const rowItemIds = useMemo(() => pagedRows.items.map((row) => row.id), [pagedRows.items]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [q, status, queue]);
+
+  useEffect(() => {
+    if (page !== pagedRows.page) setPage(pagedRows.page);
+  }, [page, pagedRows.page]);
 
   const rowImages = useQuery({
     queryKey: ["inventory-row-images", rowItemIds.join(",")],
@@ -790,7 +802,7 @@ export function InventoryPage() {
     uploadImages.mutate({ itemId: editing.id, files });
   }
 
-  const tablePreviewItem = tablePreviewItemId ? rows.find((row) => row.id === tablePreviewItemId) ?? null : null;
+  const tablePreviewItem = tablePreviewItemId ? pagedRows.items.find((row) => row.id === tablePreviewItemId) ?? null : null;
   const tablePreviewMasterProduct = tablePreviewItem
     ? mpById.get(tablePreviewItem.master_product_id) ?? null
     : null;
@@ -917,7 +929,7 @@ export function InventoryPage() {
               ))}
 
             {!inv.isPending &&
-              rows.map((it) => {
+              pagedRows.items.map((it) => {
                 const mp = mpById.get(it.master_product_id);
                 const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
                 const days =
@@ -1254,7 +1266,7 @@ export function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((it) => {
+                  {pagedRows.items.map((it) => {
                     const mp = mpById.get(it.master_product_id);
                     const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
                     const days =
@@ -1460,7 +1472,7 @@ export function InventoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((it) => {
+                  {pagedRows.items.map((it) => {
                     const mp = mpById.get(it.master_product_id);
                     const acquired = it.acquired_date ? new Date(it.acquired_date) : null;
                     const days =
@@ -1648,6 +1660,14 @@ export function InventoryPage() {
               </Table>
             )}
           </div>
+
+          <PaginationControls
+            page={pagedRows.page}
+            totalPages={pagedRows.totalPages}
+            totalItems={pagedRows.totalItems}
+            pageSize={pagedRows.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 

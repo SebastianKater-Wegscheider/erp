@@ -17,6 +17,7 @@ import { useSearchParams } from "react-router-dom";
 import { useApi } from "../lib/api";
 import { computeUsedBest, estimateSellThroughFromBsr, formatSellThroughRange } from "../lib/amazon";
 import { formatEur, parseEurToCents } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { amazonListingUrl, resolveReferenceImageSrc } from "../lib/referenceImages";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -26,6 +27,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PaginationControls } from "../components/ui/pagination-controls";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { SearchField } from "../components/ui/search-field";
@@ -770,6 +772,7 @@ export function MasterProductsPage() {
   const [amazonMaxNew, setAmazonMaxNew] = useState("");
   const [amazonMaxLikeNew, setAmazonMaxLikeNew] = useState("");
   const [expanded, setExpanded] = useState<Record<string, true>>({});
+  const [page, setPage] = useState(1);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
@@ -1046,6 +1049,7 @@ export function MasterProductsPage() {
     topPotentialOnly,
     viewMode,
   ]);
+  const pagedRows = useMemo(() => paginateItems(rows, page), [rows, page]);
 
   function isExpanded(id: string): boolean {
     return !!expanded[id];
@@ -1074,6 +1078,25 @@ export function MasterProductsPage() {
     (viewMode === "amazon" && parsedMaxNew !== null ? 1 : 0) +
     (viewMode === "amazon" && parsedMaxLikeNew !== null ? 1 : 0);
   const hasActiveFilters = activeFilterCount > 0;
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    amazonBlockedOnly,
+    amazonMaxLikeNew,
+    amazonMaxNew,
+    inStockOnly,
+    kindFilter,
+    missingAsinOnly,
+    search,
+    sortBy,
+    topPotentialOnly,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    if (page !== pagedRows.page) setPage(pagedRows.page);
+  }, [page, pagedRows.page]);
 
   return (
     <div className="space-y-4">
@@ -1294,7 +1317,7 @@ export function MasterProductsPage() {
               ))}
 
             {!list.isPending &&
-              rows.map((m) => {
+              pagedRows.items.map((m) => {
                 const targetSignal = resellerTargetSignal(m);
                 const rowTone = viewMode === "amazon" ? resellerTargetRowClass(targetSignal.tier) : "";
 
@@ -1686,7 +1709,7 @@ export function MasterProductsPage() {
                   ))}
 
                 {!list.isPending &&
-                  rows.map((m) => {
+                  pagedRows.items.map((m) => {
                     const catalogMeta = [m.manufacturer, m.model, m.genre, m.release_year ? String(m.release_year) : null]
                       .map((value) => (value ?? "").trim())
                       .filter(Boolean)
@@ -2042,6 +2065,14 @@ export function MasterProductsPage() {
               </TableBody>
             </Table>
           </div>
+
+          <PaginationControls
+            page={pagedRows.page}
+            totalPages={pagedRows.totalPages}
+            totalItems={pagedRows.totalItems}
+            pageSize={pagedRows.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 

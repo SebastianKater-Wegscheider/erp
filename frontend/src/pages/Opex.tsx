@@ -1,11 +1,12 @@
 import { Plus, RefreshCw } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatDateEuFromIso } from "../lib/dates";
 import { useTaxProfile } from "../lib/taxProfile";
 import { formatEur, parseEurToCents } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -17,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { SearchField } from "../components/ui/search-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
+import { PaginationControls } from "../components/ui/pagination-controls";
 
 type OpexOut = {
   id: string;
@@ -64,6 +66,7 @@ export function OpexPage() {
   const [paymentSource, setPaymentSource] = useState("CASH");
   const [receiptUploadPath, setReceiptUploadPath] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -112,6 +115,15 @@ export function OpexPage() {
   }, [list.data, search]);
 
   const totalCount = list.data?.length ?? 0;
+  const pagedRows = useMemo(() => paginateItems(rows, page), [rows, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  useEffect(() => {
+    if (page !== pagedRows.page) setPage(pagedRows.page);
+  }, [page, pagedRows.page]);
 
   function openForm() {
     create.reset();
@@ -172,7 +184,7 @@ export function OpexPage() {
           )}
 
           <div className="md:hidden space-y-2">
-            {rows.map((e) => {
+            {pagedRows.items.map((e) => {
               const cat = optionLabel(CATEGORY_OPTIONS, e.category);
               const pay = optionLabel(PAYMENT_SOURCE_OPTIONS, e.payment_source);
               const receiptName = e.receipt_upload_path ? e.receipt_upload_path.split("/").pop() : null;
@@ -231,7 +243,7 @@ export function OpexPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((e) => {
+                {pagedRows.items.map((e) => {
                   const cat = optionLabel(CATEGORY_OPTIONS, e.category);
                   const pay = optionLabel(PAYMENT_SOURCE_OPTIONS, e.payment_source);
                   return (
@@ -274,6 +286,14 @@ export function OpexPage() {
               </TableBody>
             </Table>
           </div>
+
+          <PaginationControls
+            page={pagedRows.page}
+            totalPages={pagedRows.totalPages}
+            totalItems={pagedRows.totalItems}
+            pageSize={pagedRows.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 

@@ -7,6 +7,7 @@ import { useApi } from "../lib/api";
 import { useTaxProfile } from "../lib/taxProfile";
 import { AmazonFeeProfile, estimateFbaPayout, estimateMargin, estimateMarketPriceForInventoryCondition } from "../lib/amazon";
 import { formatEur, parseEurToCents } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -14,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PaginationControls } from "../components/ui/pagination-controls";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
@@ -692,6 +694,7 @@ export function PurchasesPage() {
   const [quickCreatePlatformMode, setQuickCreatePlatformMode] = useState<"PRESET" | "CUSTOM">("PRESET");
   const [quickCreateRegion, setQuickCreateRegion] = useState("EU");
   const [quickCreateVariant, setQuickCreateVariant] = useState("");
+  const [page, setPage] = useState(1);
 
   const purchaseType = kind === "PRIVATE_DIFF" ? "DIFF" : "REGULAR";
   const purchaseDateValid = /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate);
@@ -1065,11 +1068,18 @@ export function PurchasesPage() {
         ? quickCreatePlatform.trim()
         : PLATFORM_NONE;
 
+  const purchaseRows = list.data ?? [];
+  const pagedPurchases = useMemo(() => paginateItems(purchaseRows, page), [purchaseRows, page]);
+
   useEffect(() => {
     if (kind !== "PRIVATE_DIFF" && formTab === "ATTACHMENTS") {
       setFormTab("BASICS");
     }
   }, [kind, formTab]);
+
+  useEffect(() => {
+    if (page !== pagedPurchases.page) setPage(pagedPurchases.page);
+  }, [page, pagedPurchases.page]);
 
   useEffect(() => {
     if (editingPurchaseId) return;
@@ -1296,7 +1306,7 @@ export function PurchasesPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>Historie</CardTitle>
             <CardDescription>
-              {list.isPending ? "Lade…" : `${(list.data ?? []).length} Einkäufe`}
+              {list.isPending ? "Lade…" : `${purchaseRows.length} Einkäufe`}
             </CardDescription>
           </div>
         </CardHeader>
@@ -1335,7 +1345,7 @@ export function PurchasesPage() {
               ))}
 
             {!list.isPending &&
-              (list.data ?? []).map((p) => {
+              pagedPurchases.items.map((p) => {
                 const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
                 const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
                 const sourcePlatformInfo = canonicalSourcePlatform(p.source_platform);
@@ -1431,7 +1441,7 @@ export function PurchasesPage() {
                 );
               })}
 
-            {!list.isPending && !list.data?.length && (
+            {!list.isPending && !purchaseRows.length && (
               <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
                 Keine Daten.
               </div>
@@ -1452,7 +1462,7 @@ export function PurchasesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(list.data ?? []).map((p) => (
+                {pagedPurchases.items.map((p) => (
                   <TableRow key={p.id} className={TABLE_ROW_COMPACT_CLASS}>
                     {(() => {
                       const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
@@ -1535,7 +1545,7 @@ export function PurchasesPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {!list.data?.length && (
+                {!purchaseRows.length && (
                   <TableRow>
                     <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
                       Keine Daten.
@@ -1545,6 +1555,14 @@ export function PurchasesPage() {
               </TableBody>
             </Table>
           </div>
+
+          <PaginationControls
+            page={pagedPurchases.page}
+            totalPages={pagedPurchases.totalPages}
+            totalItems={pagedPurchases.totalItems}
+            pageSize={pagedPurchases.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 

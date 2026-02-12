@@ -1,9 +1,10 @@
 import { Plus, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useApi } from "../lib/api";
 import { formatEur, parseEurToCents } from "../lib/money";
+import { paginateItems } from "../lib/pagination";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -11,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { InlineMessage } from "../components/ui/inline-message";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { PaginationControls } from "../components/ui/pagination-controls";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
@@ -116,6 +118,7 @@ export function SalesPage() {
   const [selectedLines, setSelectedLines] = useState<Array<{ inventory_item_id: string; sale_gross: string }>>([]);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [page, setPage] = useState(1);
 
   const inv = useQuery({
     queryKey: ["inventory-available", searchInv],
@@ -136,6 +139,12 @@ export function SalesPage() {
     return (orders.data ?? []).find((o) => o.id === editingOrderId) ?? null;
   }, [orders.data, editingOrderId]);
   const editingIsFinalized = editingOrder?.status === "FINALIZED";
+  const orderRows = orders.data ?? [];
+  const pagedOrders = useMemo(() => paginateItems(orderRows, page), [orderRows, page]);
+
+  useEffect(() => {
+    if (page !== pagedOrders.page) setPage(pagedOrders.page);
+  }, [page, pagedOrders.page]);
 
   const create = useMutation({
     mutationFn: () =>
@@ -342,7 +351,7 @@ export function SalesPage() {
           <div className="flex flex-col gap-1">
             <CardTitle>Aufträge</CardTitle>
             <CardDescription>
-              {orders.isPending ? "Lade…" : `${(orders.data ?? []).length} Aufträge`}
+              {orders.isPending ? "Lade…" : `${orderRows.length} Aufträge`}
             </CardDescription>
           </div>
         </CardHeader>
@@ -380,7 +389,7 @@ export function SalesPage() {
               ))}
 
             {!orders.isPending &&
-              (orders.data ?? []).map((o) => {
+              pagedOrders.items.map((o) => {
                 const gross = o.shipping_gross_cents + o.lines.reduce((s, l) => s + l.sale_gross_cents, 0);
                 const statusVariant = o.status === "FINALIZED" ? "success" : o.status === "DRAFT" ? "secondary" : "warning";
                 return (
@@ -630,7 +639,7 @@ export function SalesPage() {
                 );
               })}
 
-            {!orders.isPending && !orders.data?.length && (
+            {!orders.isPending && !orderRows.length && (
               <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
                 Keine Aufträge.
               </div>
@@ -650,7 +659,7 @@ export function SalesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(orders.data ?? []).map((o) => {
+                {pagedOrders.items.map((o) => {
                   const gross = o.shipping_gross_cents + o.lines.reduce((s, l) => s + l.sale_gross_cents, 0);
                   return (
                     <TableRow key={o.id} className={TABLE_ROW_COMPACT_CLASS}>
@@ -872,7 +881,7 @@ export function SalesPage() {
                     </TableRow>
                   );
                 })}
-                {!orders.data?.length && (
+                {!orderRows.length && (
                   <TableRow>
                     <TableCell colSpan={6} className="text-sm text-gray-500 dark:text-gray-400">
                       Keine Aufträge.
@@ -882,6 +891,14 @@ export function SalesPage() {
               </TableBody>
             </Table>
           </div>
+
+          <PaginationControls
+            page={pagedOrders.page}
+            totalPages={pagedOrders.totalPages}
+            totalItems={pagedOrders.totalItems}
+            pageSize={pagedOrders.pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 
