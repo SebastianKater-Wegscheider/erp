@@ -2,7 +2,7 @@
 <html lang="de">
   <head>
     <meta charset="utf-8" />
-    <title>Gutschrift {{ document_number }}</title>
+    <title>{% if is_private_equity %}PAIV Eigenbeleg{% else %}Gutschrift{% endif %} {{ document_number }}</title>
   </head>
   <body class="purchase">
     <header class="letterhead">
@@ -19,7 +19,7 @@
 
     <div class="letter-grid">
       <div class="recipient">
-        <div class="small muted">Verkäufer</div>
+        <div class="small muted">{% if is_private_equity %}Einbringender{% else %}Verkäufer{% endif %}</div>
         <div class="recipient-name">{{ counterparty_name }}</div>
         <div class="recipient-address preline">{{ counterparty_address or "" }}</div>
 
@@ -62,9 +62,19 @@
       </div>
     </div>
 
-    <div class="subject">Gutschrift (Eigenbeleg) - Ankauf</div>
+    <div class="subject">
+      {% if is_private_equity %}
+        Eigenbeleg Private Sacheinlage (PAIV)
+      {% else %}
+        Gutschrift (Eigenbeleg) - Ankauf
+      {% endif %}
+    </div>
     <div class="subline">
-      Ankauf von Gebrauchtwaren von einer Privatperson. Die Nachweise zum Ankauf sind unten dokumentiert.
+      {% if is_private_equity %}
+        Einlage bestehender Privatgueter in das Betriebsvermoegen. Die Bewertung und Nachweise sind unten dokumentiert.
+      {% else %}
+        Ankauf von Gebrauchtwaren von einer Privatperson. Die Nachweise zum Ankauf sind unten dokumentiert.
+      {% endif %}
     </div>
 
     <table class="items">
@@ -74,7 +84,12 @@
           <th>Artikel</th>
           <th>SN/IMEI</th>
           <th>Zustand</th>
-          <th class="right col-money">EK (EUR)</th>
+          {% if is_private_equity %}
+            <th class="right col-money">Marktwert (EUR)</th>
+            <th class="right col-money">Einlagewert (EUR)</th>
+          {% else %}
+            <th class="right col-money">EK (EUR)</th>
+          {% endif %}
         </tr>
       </thead>
       <tbody>
@@ -89,7 +104,12 @@
             </td>
             <td class="mono">{{ line.serial_number or "" }}</td>
             <td>{{ line.condition }}</td>
-            <td class="right col-money">{{ line.purchase_price_eur }}</td>
+            {% if is_private_equity %}
+              <td class="right col-money">{{ line.market_value_eur or "—" }}</td>
+              <td class="right col-money">{{ line.purchase_price_eur }}</td>
+            {% else %}
+              <td class="right col-money">{{ line.purchase_price_eur }}</td>
+            {% endif %}
           </tr>
         {% endfor %}
       </tbody>
@@ -123,7 +143,22 @@
           <td>Notizen</td>
           <td>{{ purchase_notes or "" }}</td>
         </tr>
+        {% if is_private_equity %}
+          <tr>
+            <td>Bewertungshinweis</td>
+            <td>Ermittelt auf Basis von durchschnittlichen Marktpreisen (siehe Anhang).</td>
+          </tr>
+        {% endif %}
       </table>
+
+      {% if is_private_equity and compliance_warnings and compliance_warnings|length > 0 %}
+        <div class="evidence-files-title">Compliance-Hinweise</div>
+        <ul>
+          {% for warning in compliance_warnings %}
+            <li>{{ warning }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
 
       <div class="evidence-files-title">Hochgeladene Dateien</div>
       {% if purchase_attachments and purchase_attachments|length > 0 %}
