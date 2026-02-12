@@ -70,6 +70,9 @@ type PurchaseOut = {
     condition: string;
     purchase_type: string;
     purchase_price_cents: number;
+    market_value_cents?: number | null;
+    held_privately_over_12_months?: boolean | null;
+    valuation_reason?: string | null;
     shipping_allocated_cents: number;
     buyer_protection_fee_allocated_cents: number;
   }>;
@@ -78,6 +81,7 @@ type PurchaseOut = {
 type PurchaseAttachmentOut = {
   id: string;
   purchase_id: string;
+  purchase_line_id?: string | null;
   upload_path: string;
   original_filename: string;
   kind: string;
@@ -107,6 +111,9 @@ type Line = {
   master_product_id: string;
   condition: string;
   purchase_price: string;
+  market_value: string;
+  held_privately_over_12_months: boolean;
+  valuation_reason: string;
 };
 
 type StagedAttachment = {
@@ -116,6 +123,7 @@ type StagedAttachment = {
   file_size: number;
   mime_type: string;
   kind: string;
+  purchase_line_id?: string;
   note: string;
   status: "queued" | "uploading" | "uploaded" | "error";
   upload_path?: string;
@@ -124,12 +132,14 @@ type StagedAttachment = {
 
 const PURCHASE_KIND_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "PRIVATE_DIFF", label: "Privat (Differenz)" },
+  { value: "PRIVATE_EQUITY", label: "Private Sacheinlage (PAIV)" },
   { value: "COMMERCIAL_REGULAR", label: "Gewerblich (Regulär)" },
 ];
 
 const PAYMENT_SOURCE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "CASH", label: "Bar" },
   { value: "BANK", label: "Bank" },
+  { value: "PRIVATE_EQUITY", label: "Privateinlage" },
 ];
 
 const CONDITION_OPTIONS: Array<{ value: string; label: string }> = [
@@ -198,6 +208,7 @@ const SOURCE_PLATFORM_OPTIONS: SourcePlatformOption[] = [
 
 const PURCHASE_ATTACHMENT_KIND_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "LISTING", label: "Anzeige" },
+  { value: "MARKET_COMP", label: "Marktvergleich" },
   { value: "CHAT", label: "Konversation" },
   { value: "PAYMENT", label: "Zahlung" },
   { value: "DELIVERY", label: "Versand" },
@@ -277,8 +288,18 @@ function parseMoneyInputToCents(input: string): number | null {
   }
 }
 
+function linePurchaseCents(line: Line, isPrivateEquity: boolean): number | null {
+  const explicit = parseMoneyInputToCents(line.purchase_price);
+  if (explicit !== null) return explicit;
+  if (!isPrivateEquity) return null;
+  const market = parseMoneyInputToCents(line.market_value);
+  if (market === null) return null;
+  return Math.floor((market * 85) / 100);
+}
+
 function inferAttachmentKind(file: File): string {
   const normalizedName = file.name.toLowerCase();
+  if (normalizedName.includes("vergleich") || normalizedName.includes("market-comp") || normalizedName.includes("comp")) return "MARKET_COMP";
   if (normalizedName.includes("chat")) return "CHAT";
   if (normalizedName.includes("zahl") || normalizedName.includes("payment") || normalizedName.includes("paypal")) return "PAYMENT";
   if (normalizedName.includes("versand") || normalizedName.includes("dhl") || normalizedName.includes("hermes")) return "DELIVERY";
@@ -696,17 +717,20 @@ export function PurchasesPage() {
   const [quickCreateVariant, setQuickCreateVariant] = useState("");
   const [page, setPage] = useState(1);
 
-  const purchaseType = kind === "PRIVATE_DIFF" ? "DIFF" : "REGULAR";
+  const isPrivateDiff = kind === "PRIVATE_DIFF";
+  const isPrivateEquity = kind === "PRIVATE_EQUITY";
+  const isPrivateKind = isPrivateDiff || isPrivateEquity;
+  const purchaseType = isPrivateKind ? "DIFF" : "REGULAR";
   const purchaseDateValid = /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate);
 
   const totalCentsParsed = useMemo(() => parseMoneyInputToCents(totalAmount), [totalAmount]);
   const shippingCostCentsParsed = useMemo(
-    () => (kind === "PRIVATE_DIFF" ? parseMoneyInputToCents(shippingCost) : 0),
-    [kind, shippingCost],
+    () => (isPrivateDiff ? parseMoneyInputToCents(shippingCost) : 0),
+    [isPrivateDiff, shippingCost],
   );
   const buyerProtectionFeeCentsParsed = useMemo(
-    () => (kind === "PRIVATE_DIFF" ? parseMoneyInputToCents(buyerProtectionFee) : 0),
-    [kind, buyerProtectionFee],
+    () => (isPrivateDiff ? parseMoneyInputToCents(buyerProtectionFee) : 0),
+    [isPrivateDiff, buyerProtectionFee],
   );
 
   const totalCents = totalCentsParsed ?? 0;
@@ -723,17 +747,18 @@ export function PurchasesPage() {
   const sumLinesCents = useMemo(() => {
     let sum = 0;
     for (const l of lines) {
-      try {
-        sum += parseEurToCents(l.purchase_price);
-      } catch {
+      const cents = linePurchaseCents(l, isPrivateEquity);
+      if (cents === null) {
         return null;
       }
+      sum += cents;
     }
     return sum;
-  }, [lines]);
+  }, [isPrivateEquity, lines]);
 
   const splitOk = sumLinesCents !== null && sumLinesCents === totalCents;
   const allLinesHaveProduct = lines.every((l) => !!l.master_product_id.trim());
+  const paivLinesValid = !isPrivateEquity || lines.every((l) => parseMoneyInputToCents(l.market_value) !== null);
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -809,6 +834,7 @@ export function PurchasesPage() {
       file_size: file.size,
       mime_type: file.type,
       kind: inferAttachmentKind(file),
+      purchase_line_id: undefined,
       note: "",
       status: "queued" as const,
     }));
@@ -823,8 +849,13 @@ export function PurchasesPage() {
     setIsLinkingStagedAttachments(true);
     setStagedAttachmentError(null);
     try {
+      const invalidMarketComp = ready.find((item) => item.kind === "MARKET_COMP" && !item.purchase_line_id);
+      if (invalidMarketComp) {
+        throw new Error("MARKET_COMP benötigt eine zugeordnete Position.");
+      }
       const payload = ready.map((item) => ({
         upload_path: item.upload_path!,
+        purchase_line_id: item.purchase_line_id ?? null,
         original_filename: item.file_name,
         kind: item.kind,
         note: item.note.trim() ? item.note.trim() : null,
@@ -879,30 +910,33 @@ export function PurchasesPage() {
         purchase_date: purchaseDate,
         counterparty_name: counterpartyName,
         counterparty_address: counterpartyAddress || null,
-        counterparty_birthdate: kind === "PRIVATE_DIFF" ? counterpartyBirthdate || null : null,
+        counterparty_birthdate: isPrivateKind ? counterpartyBirthdate || null : null,
         counterparty_id_number:
-          kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
-        source_platform: kind === "PRIVATE_DIFF" ? (sourcePlatform.trim() ? sourcePlatform.trim() : null) : null,
-        listing_url: kind === "PRIVATE_DIFF" ? (listingUrl.trim() ? listingUrl.trim() : null) : null,
-        notes: kind === "PRIVATE_DIFF" ? (notes.trim() ? notes.trim() : null) : null,
+          isPrivateKind ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
+        source_platform: isPrivateDiff ? (sourcePlatform.trim() ? sourcePlatform.trim() : null) : null,
+        listing_url: isPrivateDiff ? (listingUrl.trim() ? listingUrl.trim() : null) : null,
+        notes: isPrivateKind ? (notes.trim() ? notes.trim() : null) : null,
         total_amount_cents: totalCents,
-        shipping_cost_cents: kind === "PRIVATE_DIFF" ? shippingCostCents : 0,
-        buyer_protection_fee_cents: kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0,
+        shipping_cost_cents: isPrivateDiff ? shippingCostCents : 0,
+        buyer_protection_fee_cents: isPrivateDiff ? buyerProtectionFeeCents : 0,
         tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? (vatEnabled ? Number(taxRateBp) : 0) : 0,
-        payment_source: paymentSource,
+        payment_source: isPrivateEquity ? "PRIVATE_EQUITY" : paymentSource,
         external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
         receipt_upload_path: kind === "COMMERCIAL_REGULAR" ? receiptUploadPath : null,
         lines: lines.map((l) => ({
           master_product_id: l.master_product_id,
           condition: l.condition,
           purchase_type: purchaseType,
-          purchase_price_cents: parseEurToCents(l.purchase_price),
+          purchase_price_cents: parseMoneyInputToCents(l.purchase_price),
+          market_value_cents: isPrivateEquity ? parseMoneyInputToCents(l.market_value) : null,
+          held_privately_over_12_months: isPrivateEquity ? l.held_privately_over_12_months : null,
+          valuation_reason: isPrivateEquity ? (l.valuation_reason.trim() ? l.valuation_reason.trim() : null) : null,
         })),
       };
       return api.request<PurchaseOut>("/purchases", { method: "POST", json: payload });
     },
     onSuccess: async (created) => {
-      if (kind === "PRIVATE_DIFF") {
+      if (isPrivateDiff) {
         try {
           await linkStagedAttachmentsToPurchase(created.id);
         } catch (error) {
@@ -913,6 +947,12 @@ export function PurchasesPage() {
           await qc.invalidateQueries({ queryKey: ["purchases"] });
           return;
         }
+      } else if (isPrivateEquity && stagedReadyCount > 0) {
+        setStagedAttachmentError("Bitte Einkauf erneut öffnen und MARKET_COMP-Dateien einer Position zuordnen.");
+        startEdit(created);
+        setFormTab("ATTACHMENTS");
+        await qc.invalidateQueries({ queryKey: ["purchases"] });
+        return;
       }
       try {
         await syncPurchaseMileageForPurchase(created.id);
@@ -943,17 +983,17 @@ export function PurchasesPage() {
         purchase_date: purchaseDate,
         counterparty_name: counterpartyName,
         counterparty_address: counterpartyAddress || null,
-        counterparty_birthdate: kind === "PRIVATE_DIFF" ? counterpartyBirthdate || null : null,
+        counterparty_birthdate: isPrivateKind ? counterpartyBirthdate || null : null,
         counterparty_id_number:
-          kind === "PRIVATE_DIFF" ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
-        source_platform: kind === "PRIVATE_DIFF" ? (sourcePlatform.trim() ? sourcePlatform.trim() : null) : null,
-        listing_url: kind === "PRIVATE_DIFF" ? (listingUrl.trim() ? listingUrl.trim() : null) : null,
-        notes: kind === "PRIVATE_DIFF" ? (notes.trim() ? notes.trim() : null) : null,
+          isPrivateKind ? (counterpartyIdNumber.trim() ? counterpartyIdNumber.trim() : null) : null,
+        source_platform: isPrivateDiff ? (sourcePlatform.trim() ? sourcePlatform.trim() : null) : null,
+        listing_url: isPrivateDiff ? (listingUrl.trim() ? listingUrl.trim() : null) : null,
+        notes: isPrivateKind ? (notes.trim() ? notes.trim() : null) : null,
         total_amount_cents: totalCents,
-        shipping_cost_cents: kind === "PRIVATE_DIFF" ? shippingCostCents : 0,
-        buyer_protection_fee_cents: kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0,
+        shipping_cost_cents: isPrivateDiff ? shippingCostCents : 0,
+        buyer_protection_fee_cents: isPrivateDiff ? buyerProtectionFeeCents : 0,
         tax_rate_bp: kind === "COMMERCIAL_REGULAR" ? (vatEnabled ? Number(taxRateBp) : 0) : 0,
-        payment_source: paymentSource,
+        payment_source: isPrivateEquity ? "PRIVATE_EQUITY" : paymentSource,
         external_invoice_number: kind === "COMMERCIAL_REGULAR" ? externalInvoiceNumber : null,
         receipt_upload_path: kind === "COMMERCIAL_REGULAR" ? receiptUploadPath : null,
         lines: lines.map((l) => ({
@@ -961,13 +1001,16 @@ export function PurchasesPage() {
           master_product_id: l.master_product_id,
           condition: l.condition,
           purchase_type: purchaseType,
-          purchase_price_cents: parseEurToCents(l.purchase_price),
+          purchase_price_cents: parseMoneyInputToCents(l.purchase_price),
+          market_value_cents: isPrivateEquity ? parseMoneyInputToCents(l.market_value) : null,
+          held_privately_over_12_months: isPrivateEquity ? l.held_privately_over_12_months : null,
+          valuation_reason: isPrivateEquity ? (l.valuation_reason.trim() ? l.valuation_reason.trim() : null) : null,
         })),
       };
       return api.request<PurchaseOut>(`/purchases/${editingPurchaseId}`, { method: "PUT", json: payload });
     },
     onSuccess: async (updatedPurchase) => {
-      if (kind === "PRIVATE_DIFF") {
+      if (isPrivateKind) {
         try {
           await linkStagedAttachmentsToPurchase(updatedPurchase.id);
         } catch (error) {
@@ -1046,8 +1089,9 @@ export function PurchasesPage() {
     allLinesHaveProduct &&
     splitOk &&
     totalCentsParsed !== null &&
-    (kind !== "PRIVATE_DIFF" || extraCostsValid) &&
-    (kind === "PRIVATE_DIFF" || (externalInvoiceNumber.trim() && receiptUploadPath.trim())) &&
+    (!isPrivateDiff || extraCostsValid) &&
+    (kind !== "COMMERCIAL_REGULAR" || (externalInvoiceNumber.trim() && receiptUploadPath.trim())) &&
+    paivLinesValid &&
     mileageInputValid;
 
   const platformOptions = useMemo(() => {
@@ -1072,10 +1116,10 @@ export function PurchasesPage() {
   const pagedPurchases = useMemo(() => paginateItems(purchaseRows, page), [purchaseRows, page]);
 
   useEffect(() => {
-    if (kind !== "PRIVATE_DIFF" && formTab === "ATTACHMENTS") {
+    if (!isPrivateKind && formTab === "ATTACHMENTS") {
       setFormTab("BASICS");
     }
-  }, [kind, formTab]);
+  }, [formTab, isPrivateKind]);
 
   useEffect(() => {
     if (page !== pagedPurchases.page) setPage(pagedPurchases.page);
@@ -1111,6 +1155,45 @@ export function PurchasesPage() {
   const stagedUploadingCount = stagedAttachments.filter((item) => item.status === "uploading").length;
   const stagedQueuedCount = stagedAttachments.filter((item) => item.status === "queued").length;
   const stagedErrorCount = stagedAttachments.filter((item) => item.status === "error").length;
+  const paivComplianceWarnings = useMemo(() => {
+    if (!isPrivateEquity) return [] as string[];
+    const marketCompByLine = new Map<string, number>();
+    for (const attachment of purchaseAttachments.data ?? []) {
+      if (attachment.kind !== "MARKET_COMP" || !attachment.purchase_line_id) continue;
+      marketCompByLine.set(attachment.purchase_line_id, (marketCompByLine.get(attachment.purchase_line_id) ?? 0) + 1);
+    }
+    for (const attachment of stagedAttachments) {
+      if (attachment.kind !== "MARKET_COMP" || !attachment.purchase_line_id || attachment.status !== "uploaded") continue;
+      marketCompByLine.set(attachment.purchase_line_id, (marketCompByLine.get(attachment.purchase_line_id) ?? 0) + 1);
+    }
+    const warnings: string[] = [];
+    for (const line of lines) {
+      const title = masterById.get(line.master_product_id)?.title ?? "Unbekannt";
+      const lineId = line.purchase_line_id ?? line.ui_id;
+      const count = marketCompByLine.get(lineId) ?? 0;
+      if (count < 3) warnings.push(`${title}: nur ${count} Marktvergleich(e) verknüpft.`);
+      if (!line.held_privately_over_12_months) warnings.push(`${title}: 12-Monats-Besitz nicht bestätigt.`);
+    }
+    return warnings;
+  }, [isPrivateEquity, lines, masterById, purchaseAttachments.data, stagedAttachments]);
+  const lineSelectOptions = useMemo(
+    () =>
+      lines
+        .filter((line) => !!line.purchase_line_id)
+        .map((line) => ({
+          value: line.purchase_line_id!,
+          label: masterById.get(line.master_product_id)?.title ?? line.purchase_line_id!,
+        })),
+    [lines, masterById],
+  );
+
+  useEffect(() => {
+    if (isPrivateEquity) {
+      setPaymentSource("PRIVATE_EQUITY");
+    } else if (paymentSource === "PRIVATE_EQUITY") {
+      setPaymentSource("CASH");
+    }
+  }, [isPrivateEquity, paymentSource]);
 
   function openQuickCreate(lineId: string, seedTitle: string) {
     const lastSelected = [...lines]
@@ -1203,6 +1286,9 @@ export function PurchasesPage() {
         master_product_id: pl.master_product_id,
         condition: pl.condition,
         purchase_price: formatEur(pl.purchase_price_cents),
+        market_value: formatEur(pl.market_value_cents ?? 0),
+        held_privately_over_12_months: !!pl.held_privately_over_12_months,
+        valuation_reason: pl.valuation_reason ?? "",
       })),
     );
     create.reset();
@@ -1402,7 +1488,7 @@ export function PurchasesPage() {
                         >
                           PDF
                         </Button>
-                      ) : p.kind === "PRIVATE_DIFF" ? (
+                      ) : p.kind === "PRIVATE_DIFF" || p.kind === "PRIVATE_EQUITY" ? (
                         <Button
                           variant="outline"
                           className="w-full sm:flex-1"
@@ -1508,7 +1594,7 @@ export function PurchasesPage() {
                                 </DialogFooter>
                               </DialogContent>
                             </Dialog>
-                          ) : p.kind === "PRIVATE_DIFF" ? (
+                          ) : p.kind === "PRIVATE_DIFF" || p.kind === "PRIVATE_EQUITY" ? (
                             <Button size="sm" variant="outline" className="min-w-[9.5rem]" onClick={() => generatePdf.mutate(p.id)} disabled={generatePdf.isPending}>
                               Eigenbeleg erstellen
                             </Button>
@@ -1587,7 +1673,7 @@ export function PurchasesPage() {
                 <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto sm:w-auto">
                   <TabsTrigger value="BASICS">Eckdaten</TabsTrigger>
                   <TabsTrigger value="POSITIONS">Positionen</TabsTrigger>
-                  <TabsTrigger value="ATTACHMENTS" disabled={kind !== "PRIVATE_DIFF"}>
+                  <TabsTrigger value="ATTACHMENTS" disabled={!isPrivateKind}>
                     Nachweise
                   </TabsTrigger>
                 </TabsList>
@@ -1626,18 +1712,26 @@ export function PurchasesPage() {
                     </div>
                     <div className="space-y-2">
                       <Label>Zahlungsquelle</Label>
-                      <Select value={paymentSource} onValueChange={setPaymentSource}>
+                      <Select value={paymentSource} onValueChange={setPaymentSource} disabled={isPrivateEquity}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {PAYMENT_SOURCE_OPTIONS.map((p) => (
+                          {(isPrivateEquity
+                            ? PAYMENT_SOURCE_OPTIONS.filter((p) => p.value === "PRIVATE_EQUITY")
+                            : PAYMENT_SOURCE_OPTIONS.filter((p) => p.value !== "PRIVATE_EQUITY")
+                          ).map((p) => (
                             <SelectItem key={p.value} value={p.value}>
                               {p.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
+                      {isPrivateEquity && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          PAIV ist cash-neutral; die Zahlungsquelle ist fix auf Privateinlage gesetzt.
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1720,7 +1814,7 @@ export function PurchasesPage() {
                     )}
                   </div>
 
-                  {kind === "PRIVATE_DIFF" && (
+                  {isPrivateDiff && (
                     <>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
@@ -1875,7 +1969,15 @@ export function PurchasesPage() {
                       onClick={() =>
                         setLines((s) => [
                           ...s,
-                          { ui_id: newLineId(), master_product_id: "", condition: "GOOD", purchase_price: "0,00" },
+                          {
+                            ui_id: newLineId(),
+                            master_product_id: "",
+                            condition: "GOOD",
+                            purchase_price: "0,00",
+                            market_value: "0,00",
+                            held_privately_over_12_months: false,
+                            valuation_reason: "",
+                          },
                         ])
                       }
                     >
@@ -1909,22 +2011,23 @@ export function PurchasesPage() {
                         <TableHead>Produkt</TableHead>
                         <TableHead>Zustand</TableHead>
                         <TableHead className="text-right">Amazon</TableHead>
-                        <TableHead className="text-right">EK (EUR)</TableHead>
+                        <TableHead className="text-right">{isPrivateEquity ? "Einlagewert (EUR)" : "EK (EUR)"}</TableHead>
+                        {isPrivateEquity && <TableHead>PAIV</TableHead>}
                         <TableHead className="text-right"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {(() => {
-                        const weights = lines.map((l) => parseMoneyInputToCents(l.purchase_price) ?? 0);
-                        const shipAlloc = allocateProportional(kind === "PRIVATE_DIFF" ? shippingCostCents : 0, weights);
-                        const buyerAlloc = allocateProportional(kind === "PRIVATE_DIFF" ? buyerProtectionFeeCents : 0, weights);
+                        const weights = lines.map((l) => linePurchaseCents(l, isPrivateEquity) ?? 0);
+                        const shipAlloc = allocateProportional(isPrivateDiff ? shippingCostCents : 0, weights);
+                        const buyerAlloc = allocateProportional(isPrivateDiff ? buyerProtectionFeeCents : 0, weights);
                         const feeTitle = `FBA Fees: referral ${(feeProfileValue.referral_fee_bp / 100).toFixed(2)}% + fulfillment ${formatEur(feeProfileValue.fulfillment_fee_cents)} € + inbound ${formatEur(feeProfileValue.inbound_shipping_cents)} €`;
 
                         return lines.map((l, idx) => {
                           const mp = l.master_product_id ? masterById.get(l.master_product_id) ?? null : null;
                           const market = estimateMarketPriceForInventoryCondition(mp, l.condition);
                           const payout = estimateFbaPayout(market.cents, feeProfileValue);
-                          const purchaseCents = parseMoneyInputToCents(l.purchase_price);
+                          const purchaseCents = linePurchaseCents(l, isPrivateEquity);
                           const costBasis =
                             typeof purchaseCents === "number" ? purchaseCents + (shipAlloc[idx] ?? 0) + (buyerAlloc[idx] ?? 0) : null;
                           const margin = estimateMargin(payout.payout_cents, costBasis);
@@ -1978,14 +2081,71 @@ export function PurchasesPage() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-right">
-                                <Input
-                                  className="text-right"
-                                  value={l.purchase_price}
-                                  onChange={(e) =>
-                                    setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, purchase_price: e.target.value } : x)))
-                                  }
-                                />
+                                <div className="space-y-2">
+                                  <Input
+                                    className="text-right"
+                                    value={l.purchase_price}
+                                    onChange={(e) =>
+                                      setLines((s) => s.map((x) => (x.ui_id === l.ui_id ? { ...x, purchase_price: e.target.value } : x)))
+                                    }
+                                  />
+                                  {isPrivateEquity && (
+                                    <Input
+                                      className="text-right"
+                                      placeholder="Marktwert (EUR)"
+                                      value={l.market_value}
+                                      onChange={(e) =>
+                                        setLines((s) =>
+                                          s.map((x) => {
+                                            if (x.ui_id !== l.ui_id) return x;
+                                            const parsedCurrentPurchase = parseMoneyInputToCents(x.purchase_price);
+                                            const parsedMarket = parseMoneyInputToCents(e.target.value);
+                                            const autoContribution =
+                                              parsedMarket !== null ? formatEur(Math.floor((parsedMarket * 85) / 100)) : x.purchase_price;
+                                            return {
+                                              ...x,
+                                              market_value: e.target.value,
+                                              purchase_price:
+                                                parsedCurrentPurchase === null || parsedCurrentPurchase === 0
+                                                  ? autoContribution
+                                                  : x.purchase_price,
+                                            };
+                                          }),
+                                        )
+                                      }
+                                    />
+                                  )}
+                                </div>
                               </TableCell>
+                              {isPrivateEquity && (
+                                <TableCell>
+                                  <div className="space-y-2">
+                                    <label className="flex items-center gap-2 text-xs">
+                                      <input
+                                        type="checkbox"
+                                        checked={l.held_privately_over_12_months}
+                                        onChange={(e) =>
+                                          setLines((s) =>
+                                            s.map((x) =>
+                                              x.ui_id === l.ui_id ? { ...x, held_privately_over_12_months: e.target.checked } : x,
+                                            ),
+                                          )
+                                        }
+                                      />
+                                      {"\u003e"}12 Monate Privatbesitz
+                                    </label>
+                                    <Input
+                                      placeholder="Begründung Korrektur (optional)"
+                                      value={l.valuation_reason}
+                                      onChange={(e) =>
+                                        setLines((s) =>
+                                          s.map((x) => (x.ui_id === l.ui_id ? { ...x, valuation_reason: e.target.value } : x)),
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </TableCell>
+                              )}
                               <TableCell className="text-right">
                                 <Button variant="ghost" onClick={() => setLines((s) => s.filter((x) => x.ui_id !== l.ui_id))}>
                                   Entfernen
@@ -1997,7 +2157,7 @@ export function PurchasesPage() {
                       })()}
                       {!lines.length && (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
+                          <TableCell colSpan={isPrivateEquity ? 6 : 5} className="text-sm text-gray-500 dark:text-gray-400">
                             Noch keine Positionen.
                           </TableCell>
                         </TableRow>
@@ -2009,7 +2169,7 @@ export function PurchasesPage() {
                     <Button type="button" variant="outline" onClick={() => setFormTab("BASICS")}>
                       Zurück zu Eckdaten
                     </Button>
-                    {kind === "PRIVATE_DIFF" && (
+                    {isPrivateKind && (
                       <Button type="button" variant="outline" onClick={() => setFormTab("ATTACHMENTS")}>
                         Weiter zu Nachweisen
                       </Button>
@@ -2024,7 +2184,7 @@ export function PurchasesPage() {
                       Dateien hochladen, Typ mappen und gesammelt am Einkauf verknuepfen.
                     </div>
                   </div>
-                  {kind !== "PRIVATE_DIFF" ? (
+                  {!isPrivateKind ? (
                     <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
                       Nachweise sind nur fuer Privatankaeufe vorgesehen.
                     </div>
@@ -2070,6 +2230,13 @@ export function PurchasesPage() {
                           <div className="text-lg font-semibold">{stagedErrorCount}</div>
                         </div>
                       </div>
+                      {isPrivateEquity && !!paivComplianceWarnings.length && (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                          {paivComplianceWarnings.map((warning) => (
+                            <div key={warning}>{warning}</div>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div className="flex items-end gap-2">
@@ -2109,6 +2276,7 @@ export function PurchasesPage() {
                               <TableHead>Datei</TableHead>
                               <TableHead>Status</TableHead>
                               <TableHead>Typ</TableHead>
+                              {isPrivateEquity && <TableHead>Position</TableHead>}
                               <TableHead>Notiz</TableHead>
                               <TableHead className="text-right">Aktion</TableHead>
                             </TableRow>
@@ -2136,7 +2304,15 @@ export function PurchasesPage() {
                                     value={item.kind}
                                     onValueChange={(value) =>
                                       setStagedAttachments((prev) =>
-                                        prev.map((row) => (row.local_id === item.local_id ? { ...row, kind: value } : row)),
+                                        prev.map((row) =>
+                                          row.local_id === item.local_id
+                                            ? {
+                                                ...row,
+                                                kind: value,
+                                                purchase_line_id: value === "MARKET_COMP" ? row.purchase_line_id : undefined,
+                                              }
+                                            : row,
+                                        ),
                                       )
                                     }
                                   >
@@ -2152,6 +2328,35 @@ export function PurchasesPage() {
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
+                                {isPrivateEquity && (
+                                  <TableCell>
+                                    {item.kind === "MARKET_COMP" ? (
+                                      <Select
+                                        value={item.purchase_line_id ?? ""}
+                                        onValueChange={(value) =>
+                                          setStagedAttachments((prev) =>
+                                            prev.map((row) =>
+                                              row.local_id === item.local_id ? { ...row, purchase_line_id: value || undefined } : row,
+                                            ),
+                                          )
+                                        }
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder={editingPurchaseId ? "Position wählen" : "Erst speichern"} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {lineSelectOptions.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                                    )}
+                                  </TableCell>
+                                )}
                                 <TableCell>
                                   <Input
                                     value={item.note}
@@ -2201,6 +2406,7 @@ export function PurchasesPage() {
                             <TableRow>
                               <TableHead>Typ</TableHead>
                               <TableHead>Datei</TableHead>
+                              {isPrivateEquity && <TableHead>Position</TableHead>}
                               <TableHead>Notiz</TableHead>
                               <TableHead className="text-right">Aktion</TableHead>
                             </TableRow>
@@ -2210,6 +2416,14 @@ export function PurchasesPage() {
                               <TableRow key={attachment.id} className={TABLE_ROW_COMPACT_CLASS}>
                                 <TableCell>{optionLabel(PURCHASE_ATTACHMENT_KIND_OPTIONS, attachment.kind)}</TableCell>
                                 <TableCell className="font-mono text-xs">{attachment.original_filename}</TableCell>
+                                {isPrivateEquity && (
+                                  <TableCell className="text-xs text-gray-600 dark:text-gray-300">
+                                    {attachment.purchase_line_id
+                                      ? lineSelectOptions.find((opt) => opt.value === attachment.purchase_line_id)?.label ??
+                                        attachment.purchase_line_id
+                                      : "—"}
+                                  </TableCell>
+                                )}
                                 <TableCell>{attachment.note ?? "—"}</TableCell>
                                 <TableCell className="text-right">
                                   <div className="inline-flex items-center justify-end gap-2">
@@ -2240,7 +2454,7 @@ export function PurchasesPage() {
                             ))}
                             {!purchaseAttachments.isPending && !purchaseAttachments.data?.length && (
                               <TableRow>
-                                <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                                <TableCell colSpan={isPrivateEquity ? 5 : 4} className="text-sm text-gray-500 dark:text-gray-400">
                                   Noch keine verknüpften Anhänge.
                                 </TableCell>
                               </TableRow>
@@ -2270,9 +2484,19 @@ export function PurchasesPage() {
                     {editingPurchaseId ? "Speichern" : "Erstellen"} ist blockiert, bis die Summen übereinstimmen.
                   </div>
                 )}
-                {kind === "PRIVATE_DIFF" && !extraCostsValid && (
+                {isPrivateDiff && !extraCostsValid && (
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     Versand- und Käuferschutzbetrag müssen gültige, nicht-negative EUR-Werte sein.
+                  </div>
+                )}
+                {isPrivateEquity && !paivLinesValid && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Für PAIV ist je Position ein gültiger Marktwert erforderlich.
+                  </div>
+                )}
+                {isPrivateEquity && !!paivComplianceWarnings.length && (
+                  <div className="text-xs text-amber-700 dark:text-amber-300">
+                    PAIV-Hinweise vorhanden ({paivComplianceWarnings.length}); Speichern bleibt erlaubt.
                   </div>
                 )}
                 {splitOk && !allLinesHaveProduct && (
