@@ -134,3 +134,14 @@
   - nur moeglich, wenn verknuepfte Inventory-Items `AVAILABLE` und nicht in Sales/Kostenallokationen/Bildern referenziert sind.
   - bereinigt verknuepfte Ledger- und Mileage-Links; primary Mileage-Log wird entfernt.
 - Frontend erhaelt pro Einkauf einen klaren "Loeschen"-Action-Button mit Confirm-Dialog und Query-Invalidation.
+
+## 2026-02-12 - UI-Update: Einkauf-Loeschen nur ueber Mehrfachauswahl
+
+### Ausgangslage
+- Ein direkter roter "Loeschen"-Button pro Zeile wurde als zu dominant wahrgenommen.
+
+### Entscheidung
+- Loeschen wird auf einen ruhigeren Batch-Flow umgestellt:
+  - Auswahl per Checkbox (Zeile/Karte, plus "Seite auswaehlen").
+  - Eine zentrale Aktion "Ausgewaehlte loeschen" mit Confirm.
+- Dadurch sinkt das Risiko von versehentlichen Einzel-Loeschungen und die Oberflaeche bleibt ruhiger.
