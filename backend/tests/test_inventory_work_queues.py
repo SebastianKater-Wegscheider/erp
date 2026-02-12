@@ -264,7 +264,7 @@ async def test_company_dashboard_returns_work_queue_counts(db_session: AsyncSess
         mp_never = await _create_master_product(db_session, suffix="dash-never", asin="B00DASH005")
         mp_old = await _create_master_product(db_session, suffix="dash-old", asin=None)
 
-        item_photos_missing = await _create_inventory_item(
+        await _create_inventory_item(
             db_session,
             master_product=mp_photos_missing,
             status=InventoryStatus.AVAILABLE,

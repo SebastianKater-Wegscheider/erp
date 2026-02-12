@@ -596,7 +596,7 @@ async def scrape_master_product_once(
 
     try:
         data = await fetch_scraper_json(settings=settings, asin=asin)
-    except ScraperBusyError as e:
+    except ScraperBusyError:
         raise
     except Exception as e:
         error = f"{type(e).__name__}: {e}"

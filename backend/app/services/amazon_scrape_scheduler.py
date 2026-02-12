@@ -4,7 +4,6 @@ import asyncio
 import os
 import random
 import socket
-import uuid
 import logging
 from datetime import timedelta
 
