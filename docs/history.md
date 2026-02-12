@@ -824,3 +824,18 @@
 - Frontend-Purchase-Form entfernt den Custom-Platform-Input und verwendet nur feste Plattformoptionen; Historie rendert Logo-Badges statt Freitext.
 - Mileage API erhaelt ein Update-Endpoint (`PUT /mileage/{id}`); Frontend erweitert den Fahrtenbuch-Formflow um Edit-Mode.
 - Für Routing/Map wird eine OpenStreetMap-basierte Loesung genutzt (Nominatim Geocoding + OSRM Route + Leaflet-Route-Visualisierung) mit Toggle fuer Hin-/Rueckfahrt und automatischer km-Uebernahme.
+
+## 2026-02-12 - Standard-Pagination fuer alle Hauptlisten (20 pro Seite)
+
+### Ausgangslage
+- Mehrere Seiten rendern Historien/Listen aktuell ohne Pagination (nur Suche/Filter), wodurch lange Listen in Mobile/Desktop schnell unhandlich werden.
+- Verhalten ist zwischen Seiten inkonsistent (teils harte API-Limits, teils unlimitierte Listen, teils nur visuelle Skeletons).
+
+### Business-Entscheidung
+- Fuer alle zentralen Listen-Views gilt ein einheitlicher Default von 20 Eintraegen pro Seite.
+- Nutzer sollen auf allen Kernseiten dieselbe Navigation haben (vor/zurueck + Seitenangabe), damit die Bedienung vorhersehbar bleibt.
+
+### Technische Entscheidung
+- Shared Pagination-Helfer + UI-Control im Frontend (page-size konstant 20) werden zentral eingefuehrt.
+- Die Listen-Views (`MasterProducts`, `Inventory`, `FBAShipments`, `Purchases`, `Sales`, `CostAllocations`, `Opex`, `Mileage`) nutzen dieselbe Pagination-Logik.
+- Bei Filter-/Suchwechsel wird auf Seite 1 zurueckgesetzt; Seitennummer wird bei Datenaenderung auf gueltige Grenzen geklemmt.
