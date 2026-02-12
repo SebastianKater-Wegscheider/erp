@@ -1,4 +1,4 @@
-import { Plus, RefreshCw, Route } from "lucide-react";
+import { Plus, RefreshCw, Route, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -772,17 +772,36 @@ export function PurchasesPage() {
       startEdit(purchase);
     },
   });
-  const deletePurchase = useMutation({
-    mutationFn: (purchaseId: string) => api.request<void>(`/purchases/${purchaseId}`, { method: "DELETE" }),
-    onSuccess: async (_out, purchaseId) => {
-      if (editingPurchaseId === purchaseId) {
+  const deletePurchases = useMutation({
+    mutationFn: async (purchaseIds: string[]) => {
+      let deleted = 0;
+      const failures: string[] = [];
+      for (const purchaseId of purchaseIds) {
+        try {
+          await api.request<void>(`/purchases/${purchaseId}`, { method: "DELETE" });
+          deleted += 1;
+        } catch (error) {
+          failures.push(`${purchaseId}: ${String((error as Error)?.message ?? "Unbekannter Fehler")}`);
+        }
+      }
+      if (failures.length) {
+        throw new Error(
+          `Nur ${deleted}/${purchaseIds.length} Einkauf/Einkäufe gelöscht. ${failures[0]}`,
+        );
+      }
+    },
+    onSuccess: async (_out, purchaseIds) => {
+      if (editingPurchaseId && purchaseIds.includes(editingPurchaseId)) {
         cancelEdit();
         setFormOpen(false);
       }
+      setSelectedPurchaseIds((prev) => prev.filter((id) => !purchaseIds.includes(id)));
       await qc.invalidateQueries({ queryKey: ["purchases"] });
       await qc.invalidateQueries({ queryKey: ["mileage"] });
-      await qc.invalidateQueries({ queryKey: ["purchase-mileage", purchaseId] });
-      await qc.invalidateQueries({ queryKey: ["purchase-attachments", purchaseId] });
+      for (const purchaseId of purchaseIds) {
+        await qc.invalidateQueries({ queryKey: ["purchase-mileage", purchaseId] });
+        await qc.invalidateQueries({ queryKey: ["purchase-attachments", purchaseId] });
+      }
     },
   });
 
@@ -832,6 +851,7 @@ export function PurchasesPage() {
   const [quickCreateRegion, setQuickCreateRegion] = useState("EU");
   const [quickCreateVariant, setQuickCreateVariant] = useState("");
   const [page, setPage] = useState(1);
+  const [selectedPurchaseIds, setSelectedPurchaseIds] = useState<string[]>([]);
 
   const isPrivateDiff = kind === "PRIVATE_DIFF";
   const isPrivateEquity = kind === "PRIVATE_EQUITY";
@@ -1280,6 +1300,11 @@ export function PurchasesPage() {
         : PLATFORM_NONE;
 
   const purchaseRows = list.data ?? [];
+  const pagedPurchases = useMemo(() => paginateItems(purchaseRows, page), [purchaseRows, page]);
+  const selectedPurchaseIdSet = useMemo(() => new Set(selectedPurchaseIds), [selectedPurchaseIds]);
+  const selectedPurchaseCount = selectedPurchaseIds.length;
+  const pagedPurchaseIds = useMemo(() => pagedPurchases.items.map((purchase) => purchase.id), [pagedPurchases.items]);
+  const allCurrentPageSelected = pagedPurchaseIds.length > 0 && pagedPurchaseIds.every((id) => selectedPurchaseIdSet.has(id));
   const mileageLinkedPurchaseIds = useMemo(() => {
     const ids = new Set<string>();
     for (const log of mileageLinks.data ?? []) {
@@ -1290,7 +1315,6 @@ export function PurchasesPage() {
     return ids;
   }, [mileageLinks.data]);
   const mileageLinksReady = mileageLinks.isSuccess;
-  const pagedPurchases = useMemo(() => paginateItems(purchaseRows, page), [purchaseRows, page]);
 
   useEffect(() => {
     if (!isPrivateKind && formTab === "ATTACHMENTS") {
@@ -1320,6 +1344,11 @@ export function PurchasesPage() {
   useEffect(() => {
     if (page !== pagedPurchases.page) setPage(pagedPurchases.page);
   }, [page, pagedPurchases.page]);
+
+  useEffect(() => {
+    const availableIds = new Set(purchaseRows.map((purchase) => purchase.id));
+    setSelectedPurchaseIds((prev) => prev.filter((id) => availableIds.has(id)));
+  }, [purchaseRows]);
 
   useEffect(() => {
     if (editingPurchaseId) return;
@@ -1552,13 +1581,30 @@ export function PurchasesPage() {
     setFormOpen(false);
   }
 
-  function requestDeletePurchase(purchase: PurchaseOut): void {
-    const label = `${formatDateEuFromIso(purchase.purchase_date)} · ${purchase.counterparty_name}`;
+  function togglePurchaseSelection(purchaseId: string): void {
+    setSelectedPurchaseIds((prev) => (prev.includes(purchaseId) ? prev.filter((id) => id !== purchaseId) : [...prev, purchaseId]));
+  }
+
+  function toggleCurrentPageSelection(nextChecked: boolean): void {
+    setSelectedPurchaseIds((prev) => {
+      const prevSet = new Set(prev);
+      if (nextChecked) {
+        for (const purchaseId of pagedPurchaseIds) prevSet.add(purchaseId);
+      } else {
+        for (const purchaseId of pagedPurchaseIds) prevSet.delete(purchaseId);
+      }
+      return Array.from(prevSet);
+    });
+  }
+
+  function requestDeleteSelectedPurchases(): void {
+    if (!selectedPurchaseCount) return;
     const confirmed = window.confirm(
-      `Einkauf "${label}" wirklich löschen?\n\nDer Vorgang ist dauerhaft. Löschen ist nur möglich, wenn die zugehörigen Lagerpositionen noch verfügbar sind.`,
+      `${selectedPurchaseCount} ausgewählte Einkauf/Einkäufe wirklich löschen?\n\nDer Vorgang ist dauerhaft. Löschen ist nur möglich, wenn die zugehörigen Lagerpositionen noch verfügbar sind.`,
     );
     if (!confirmed) return;
-    deletePurchase.mutate(purchase.id);
+    const selectedIds = [...selectedPurchaseIds];
+    deletePurchases.mutate(selectedIds);
   }
 
   async function handleStageFileInput(fileList: FileList | null): Promise<void> {
@@ -1610,11 +1656,46 @@ export function PurchasesPage() {
 
       <Card>
         <CardHeader className="space-y-2">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Historie</CardTitle>
-            <CardDescription>
-              {list.isPending ? "Lade…" : `${purchaseRows.length} Einkäufe`}
-            </CardDescription>
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-col gap-1">
+              <CardTitle>Historie</CardTitle>
+              <CardDescription>
+                {list.isPending ? "Lade…" : `${purchaseRows.length} Einkäufe`}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center justify-start gap-2 rounded-lg border border-gray-200 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-900/40">
+              <div className="px-1 text-xs text-gray-600 dark:text-gray-300">
+                {selectedPurchaseCount ? `${selectedPurchaseCount} ausgewählt` : "Keine Auswahl"}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => toggleCurrentPageSelection(!allCurrentPageSelected)}
+                disabled={!pagedPurchaseIds.length || deletePurchases.isPending}
+              >
+                {allCurrentPageSelected ? "Seite abwählen" : "Seite auswählen"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedPurchaseIds([])}
+                disabled={!selectedPurchaseCount || deletePurchases.isPending}
+              >
+                Auswahl aufheben
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={requestDeleteSelectedPurchases}
+                disabled={!selectedPurchaseCount || deletePurchases.isPending}
+              >
+                <Trash2 className="h-4 w-4" />
+                {deletePurchases.isPending ? "Lösche…" : "Ausgewählte löschen"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -1624,13 +1705,13 @@ export function PurchasesPage() {
               {(list.error as Error).message}
             </InlineMessage>
           )}
-          {(generatePdf.isError || reopenPurchase.isError || deletePurchase.isError) && (
+          {(generatePdf.isError || reopenPurchase.isError || deletePurchases.isError) && (
             <InlineMessage tone="error">
               {String(
                 (
                   (generatePdf.error as Error) ??
                   (reopenPurchase.error as Error) ??
-                  (deletePurchase.error as Error)
+                  (deletePurchases.error as Error)
                 )?.message ?? "Unbekannter Fehler",
               )}
             </InlineMessage>
@@ -1662,6 +1743,7 @@ export function PurchasesPage() {
                 const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
                 const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
                 const sourcePlatformInfo = canonicalSourcePlatform(p.source_platform);
+                const rowSelected = selectedPurchaseIdSet.has(p.id);
                 return (
                   <div
                     key={p.id}
@@ -1669,6 +1751,17 @@ export function PurchasesPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
+                        <label className="mb-2 inline-flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={rowSelected}
+                            onChange={() => togglePurchaseSelection(p.id)}
+                            disabled={deletePurchases.isPending}
+                            aria-label={`Einkauf ${p.counterparty_name} auswählen`}
+                            className="h-4 w-4 rounded border-gray-300 text-teal-700 focus:ring-teal-600 dark:border-gray-700"
+                          />
+                          Auswählen
+                        </label>
                         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                           {formatDateEuFromIso(p.purchase_date)}
                         </div>
@@ -1738,7 +1831,7 @@ export function PurchasesPage() {
                           variant="secondary"
                           className="w-full sm:flex-1"
                           onClick={() => startEdit(p)}
-                          disabled={create.isPending || update.isPending || deletePurchase.isPending}
+                          disabled={create.isPending || update.isPending || deletePurchases.isPending}
                         >
                           Bearbeiten
                         </Button>
@@ -1747,20 +1840,11 @@ export function PurchasesPage() {
                           variant="secondary"
                           className="w-full sm:flex-1"
                           onClick={() => reopenPurchase.mutate(p.id)}
-                          disabled={reopenPurchase.isPending || create.isPending || update.isPending || deletePurchase.isPending}
+                          disabled={reopenPurchase.isPending || create.isPending || update.isPending || deletePurchases.isPending}
                         >
                           Zur Bearbeitung öffnen
                         </Button>
                       )}
-
-                      <Button
-                        variant="destructive"
-                        className="w-full sm:flex-1"
-                        onClick={() => requestDeletePurchase(p)}
-                        disabled={deletePurchase.isPending || create.isPending || update.isPending || reopenPurchase.isPending}
-                      >
-                        Löschen
-                      </Button>
                     </div>
                   </div>
                 );
@@ -1777,6 +1861,16 @@ export function PurchasesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={allCurrentPageSelected}
+                      onChange={(e) => toggleCurrentPageSelection(e.target.checked)}
+                      disabled={deletePurchases.isPending}
+                      aria-label="Aktuelle Seite auswählen"
+                      className="h-4 w-4 rounded border-gray-300 text-teal-700 focus:ring-teal-600 dark:border-gray-700"
+                    />
+                  </TableHead>
                   <TableHead>Datum</TableHead>
                   <TableHead>Art</TableHead>
                   <TableHead>Verkäufer</TableHead>
@@ -1789,6 +1883,16 @@ export function PurchasesPage() {
               <TableBody>
                 {pagedPurchases.items.map((p) => (
                   <TableRow key={p.id} className={TABLE_ROW_COMPACT_CLASS}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedPurchaseIdSet.has(p.id)}
+                        onChange={() => togglePurchaseSelection(p.id)}
+                        disabled={deletePurchases.isPending}
+                        aria-label={`Einkauf ${p.counterparty_name} auswählen`}
+                        className="h-4 w-4 rounded border-gray-300 text-teal-700 focus:ring-teal-600 dark:border-gray-700"
+                      />
+                    </TableCell>
                     {(() => {
                       const extraCosts = (p.shipping_cost_cents ?? 0) + (p.buyer_protection_fee_cents ?? 0);
                       const totalPaid = (p.total_amount_cents ?? 0) + extraCosts;
@@ -1854,7 +1958,7 @@ export function PurchasesPage() {
                               variant="secondary"
                               className="min-w-[7.5rem]"
                               onClick={() => startEdit(p)}
-                              disabled={create.isPending || update.isPending || deletePurchase.isPending}
+                              disabled={create.isPending || update.isPending || deletePurchases.isPending}
                             >
                               Bearbeiten
                             </Button>
@@ -1865,20 +1969,11 @@ export function PurchasesPage() {
                               variant="secondary"
                               className="min-w-[11.5rem]"
                               onClick={() => reopenPurchase.mutate(p.id)}
-                              disabled={reopenPurchase.isPending || create.isPending || update.isPending || deletePurchase.isPending}
+                              disabled={reopenPurchase.isPending || create.isPending || update.isPending || deletePurchases.isPending}
                             >
                               Zur Bearbeitung öffnen
                             </Button>
                           )}
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="min-w-[7.5rem]"
-                            onClick={() => requestDeletePurchase(p)}
-                            disabled={deletePurchase.isPending || create.isPending || update.isPending || reopenPurchase.isPending}
-                          >
-                            Löschen
-                          </Button>
                         </div>
                       </div>
                     </TableCell>
@@ -1886,7 +1981,7 @@ export function PurchasesPage() {
                 ))}
                 {!purchaseRows.length && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-sm text-gray-500 dark:text-gray-400">
+                    <TableCell colSpan={8} className="text-sm text-gray-500 dark:text-gray-400">
                       Keine Daten.
                     </TableCell>
                   </TableRow>

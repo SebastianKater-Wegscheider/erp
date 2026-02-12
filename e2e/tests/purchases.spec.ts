@@ -51,8 +51,9 @@ test("create purchase via UI persists successfully", async ({ page, request }) =
       /\/api\/v1\/purchases\/[^/]+$/.test(response.url()) &&
       response.status() === 204,
   );
+  await sellerRow.getByLabel(`Einkauf ${sellerName} auswählen`).check();
   page.once("dialog", (dialogEvent) => void dialogEvent.accept());
-  await sellerRow.getByRole("button", { name: "Löschen" }).first().click();
+  await page.getByRole("button", { name: "Ausgewählte löschen" }).click();
   await deleteResponse;
   await expect(page.getByRole("row").filter({ hasText: sellerName })).toHaveCount(0);
 });
