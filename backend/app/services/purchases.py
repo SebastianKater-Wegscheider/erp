@@ -416,7 +416,7 @@ async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCr
                     "held_privately_over_12_months": pl.held_privately_over_12_months,
                     "valuation_reason": pl.valuation_reason,
                 }
-                for pl in purchase.lines
+                for pl, _item, _weight in created_line_items
             ],
         },
     )
