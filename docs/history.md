@@ -19,6 +19,18 @@
 - WeasyPrint-Font-Verfuegbarkeit kann je Deployment variieren; deshalb bleibt ein robuster Fallback-Stack aktiv.
 - Staerkere visuelle Flaechen (Panels/Farbtoene) muessen druckfreundlich bleiben; Farben werden bewusst gedeckt gewaehlt.
 
+## 2026-02-12 - PDF-Druckbild: weisser Seitenhintergrund statt globaler Flaechentoene
+
+### Ausgangslage
+- Nach der Design-Angleichung wirkte die gesamte PDF-Seite durch warme Hintergrundtoene zu stark eingefaerbt.
+
+### Business-Entscheidung
+- Die Grundflaeche von PDF-Belegen bleibt rein weiss fuer maximale Drucktauglichkeit und formale Anmutung.
+- Hintergrundfarben bleiben nur fuer klar markierte Highlight-Elemente (z. B. Tags, Tabellenkopf, Summen-Highlights) erlaubt.
+
+### Technische Entscheidung
+- `--pdf-bg` und `--pdf-surface` werden auf Weiss gesetzt; Zebra-Hintergruende in Positionstabellen entfallen.
+
 ## 2026-02-11 - Incident-Hardening: Scraper-Limits + Slow-Mode + Health-Monitoring
 
 ### Ausgangslage
