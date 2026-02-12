@@ -839,3 +839,17 @@
 - Shared Pagination-Helfer + UI-Control im Frontend (page-size konstant 20) werden zentral eingefuehrt.
 - Die Listen-Views (`MasterProducts`, `Inventory`, `FBAShipments`, `Purchases`, `Sales`, `CostAllocations`, `Opex`, `Mileage`) nutzen dieselbe Pagination-Logik.
 - Bei Filter-/Suchwechsel wird auf Seite 1 zurueckgesetzt; Seitennummer wird bei Datenaenderung auf gueltige Grenzen geklemmt.
+
+## 2026-02-12 - Mileage Route-Mode ohne Dropdown (Scroll-Jump vermeiden)
+
+### Ausgangslage
+- Im Fahrtenbuch trat beim Oeffnen des Route-Mode-Dropdowns (Einfach vs Hin-/Rueckfahrt) weiterhin ein Viewport-Sprung nach oben auf.
+- Der Effekt ist besonders stoerend im langen Formularkontext.
+
+### Business-Entscheidung
+- Fuer genau diesen Binär-Entscheid wird kein Dropdown mehr verwendet, sondern ein direkter Umschalter.
+- Ziel ist ein stabiler Flow ohne Scroll-Spruenge bei gleicher Funktionalitaet.
+
+### Technische Entscheidung
+- Der `Select` fuer Route-Mode in `Mileage` wird durch zwei Toggle-Buttons ersetzt (`Einfach` / `Hin- und Rueckfahrt`).
+- Bestehende Distanzlogik bleibt unveraendert; nur das Bedienelement wird getauscht.
