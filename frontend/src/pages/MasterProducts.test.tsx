@@ -9,6 +9,8 @@ const { requestMock } = vi.hoisted(() => ({
   requestMock: vi.fn(),
 }));
 
+const NOW_ISO = new Date().toISOString();
+
 vi.mock("../lib/api", () => ({
   useApi: () => ({ request: requestMock }),
 }));
@@ -45,7 +47,7 @@ const PRODUCTS: MockMasterProduct[] = [
     ean: "1111111111111",
     asin: "B000TEST11",
     manufacturer: "Sony",
-    amazon_last_success_at: "2026-02-11T00:00:00.000Z",
+    amazon_last_success_at: NOW_ISO,
     amazon_rank_specific: 400,
     amazon_offers_count_used_priced_total: 1,
     amazon_price_used_good_cents: 4234,
@@ -61,7 +63,7 @@ const PRODUCTS: MockMasterProduct[] = [
     ean: "3333333333333",
     asin: "B000TEST33",
     manufacturer: "Ubisoft",
-    amazon_last_success_at: "2026-02-11T00:00:00.000Z",
+    amazon_last_success_at: NOW_ISO,
     amazon_rank_specific: 90000,
     amazon_offers_count_used_priced_total: 14,
     amazon_price_used_good_cents: 1999,

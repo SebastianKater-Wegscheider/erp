@@ -779,3 +779,15 @@
 - Ein zentrales Potenzial-Scoring im Frontend kombiniert BSR-Klasse und Preis-Signal (inkl. 40-EUR-Schwelle) in eine kompakte Einstufung.
 - Desktop-Tabellenspalten im Amazon-View werden auf "Potenzial + BSR + Verkaufspreis" umgebaut; Health-Infos (fresh/stale/blocked) bleiben sekundar.
 - Mobile-Karten erhalten denselben Potenzial-Ausweis, damit die Priorisierung auf kleinen Displays ohne Detail-Expand funktioniert.
+
+## 2026-02-12 - MasterProducts Tests: Freshness-Fixture zeitstabil
+
+### Ausgangslage
+- Der Test `shows Amazon health in Amazon Status mode...` nutzte einen statischen `amazon_last_success_at` Zeitstempel.
+- Mit fortschreitendem Datum fiel die Erwartung `fresh` deterministisch auf `stale` um.
+
+### Business-Entscheidung
+- UI-Regressionstests sollen nur Layout-/Verhaltensänderungen spiegeln, nicht vom aktuellen Kalendertag abhängen.
+
+### Technische Entscheidung
+- Test-Fixture wurde auf dynamisches `new Date().toISOString()` umgestellt, damit Freshness-Assertion stabil bleibt.
