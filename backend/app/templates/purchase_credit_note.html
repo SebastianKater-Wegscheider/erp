@@ -62,6 +62,7 @@
       </div>
     </div>
 
+    <div class="subject-tag">Ankauf</div>
     <div class="subject">Gutschrift (Eigenbeleg) - Ankauf</div>
     <div class="subline">
       Ankauf von Gebrauchtwaren von einer Privatperson. Die Nachweise zum Ankauf sind unten dokumentiert.
@@ -83,7 +84,7 @@
             <td class="col-pos">{{ loop.index }}</td>
             <td>
               <div><strong>{{ line.title }}</strong></div>
-              <div class="muted small">
+              <div class="line-meta">
                 {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
               </div>
             </td>

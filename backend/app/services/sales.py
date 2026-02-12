@@ -302,6 +302,7 @@ async def generate_sales_invoice_pdf(
             "company_address": settings.company_address,
             "company_email": settings.company_email,
             "company_vat_id": settings.company_vat_id,
+            "company_logo_path": settings.company_logo_path,
             "company_small_business_notice": settings.company_small_business_notice,
             "buyer_name": order.buyer_name,
             "buyer_address": order.buyer_address,

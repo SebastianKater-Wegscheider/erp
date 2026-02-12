@@ -245,6 +245,11 @@ async def generate_sales_correction_pdf(
     has_diff_lines = any(r.purchase_type == PurchaseType.DIFF for r in mp_rows)
     has_regular_lines = any(r.purchase_type == PurchaseType.REGULAR for r in mp_rows)
     for r in mp_rows:
+        action_value = r.action.value
+        action_label = {
+            "RESTOCK": "Wiedereinlagerung",
+            "WRITE_OFF": "Abschreibung",
+        }.get(action_value, action_value)
         lines_ctx.append(
             {
                 "title": r.title,
@@ -252,7 +257,9 @@ async def generate_sales_correction_pdf(
                 "region": r.region,
                 "variant": r.variant,
                 "purchase_type": r.purchase_type.value,
-                "action": r.action.value,
+                "action": action_value,
+                "action_label": action_label,
+                "action_class": f"line-action-{action_value.lower().replace('_', '-')}",
                 "gross_eur": format_eur(-r.refund_gross_cents),
                 "net_eur": None if r.purchase_type == PurchaseType.DIFF else format_eur(-r.refund_net_cents),
                 "tax_eur": None if r.purchase_type == PurchaseType.DIFF else format_eur(-r.refund_tax_cents),
@@ -286,6 +293,7 @@ async def generate_sales_correction_pdf(
             "company_address": settings.company_address,
             "company_email": settings.company_email,
             "company_vat_id": settings.company_vat_id,
+            "company_logo_path": settings.company_logo_path,
             "company_small_business_notice": settings.company_small_business_notice,
             "buyer_name": order.buyer_name,
             "buyer_address": order.buyer_address,
@@ -294,6 +302,7 @@ async def generate_sales_correction_pdf(
             "has_diff_lines": has_diff_lines,
             "has_regular_lines": has_regular_lines,
             "shipping_refund_gross_cents": int(correction.shipping_refund_gross_cents),
+            "shipping_refund_gross_eur": format_eur(-int(correction.shipping_refund_gross_cents)),
             "shipping_refund_regular_gross_cents": int(correction.shipping_refund_regular_gross_cents),
             "shipping_refund_regular_gross_eur": format_eur(-int(correction.shipping_refund_regular_gross_cents)),
             "shipping_refund_regular_net_eur": format_eur(-int(correction.shipping_refund_regular_net_cents)),

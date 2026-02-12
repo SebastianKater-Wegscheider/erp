@@ -13,6 +13,7 @@
         <div class="lh-address preline">{{ company_address }}</div>
       </div>
       <div class="lh-right">
+        {% if company_logo_path %}<img class="lh-logo" src="{{ company_logo_path }}" alt="Logo" />{% endif %}
         {% if company_email %}<div>{{ company_email }}</div>{% endif %}
         {% if company_vat_id %}<div>UID: {{ company_vat_id }}</div>{% endif %}
       </div>
@@ -55,6 +56,7 @@
       </div>
     </div>
 
+    <div class="subject-tag">Verkauf</div>
     <div class="subject">Rechnung</div>
     <div class="subline">
       Vielen Dank für Ihren Einkauf. Nachfolgend erhalten Sie die Rechnung zu Ihrem Auftrag.
@@ -78,7 +80,7 @@
               <td class="col-pos">{{ loop.index }}</td>
               <td>
                 <div><strong>{{ line.title }}</strong></div>
-                <div class="muted small">
+                <div class="line-meta">
                   {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
                   {% if line.purchase_type == "DIFF" and not company_small_business_notice %} · Differenzbesteuerung{% endif %}
                 </div>
@@ -169,7 +171,7 @@
               <td class="col-pos">{{ loop.index }}</td>
               <td>
                 <div><strong>{{ line.title }}</strong></div>
-                <div class="muted small">
+                <div class="line-meta">
                   {{ line.platform }} · {{ line.region }}{% if line.variant %} · {{ line.variant }}{% endif %}
                   {% if line.purchase_type == "DIFF" and not company_small_business_notice %} · Differenzbesteuerung{% endif %}
                 </div>
