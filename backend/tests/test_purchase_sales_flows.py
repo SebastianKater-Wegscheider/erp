@@ -93,6 +93,33 @@ async def _create_private_purchase(
     return await create_purchase(session, actor=ACTOR, data=payload)
 
 
+async def _create_private_equity_purchase(
+    session: AsyncSession,
+    *,
+    purchase_date: date,
+    lines: list[tuple[uuid.UUID, int, int | None]],
+) -> Purchase:
+    payload = PurchaseCreate(
+        kind=PurchaseKind.PRIVATE_EQUITY,
+        purchase_date=purchase_date,
+        counterparty_name="Inhaber",
+        total_amount_cents=sum(value if value is not None else int((market * 85) // 100) for _, market, value in lines),
+        payment_source=PaymentSource.CASH,
+        lines=[
+            PurchaseLineCreate(
+                master_product_id=mp_id,
+                condition=InventoryCondition.GOOD,
+                purchase_type=PurchaseType.DIFF,
+                market_value_cents=market,
+                purchase_price_cents=value,
+                held_privately_over_12_months=False,
+            )
+            for mp_id, market, value in lines
+        ],
+    )
+    return await create_purchase(session, actor=ACTOR, data=payload)
+
+
 @pytest.mark.asyncio
 async def test_create_purchase_private_diff_creates_inventory_and_ledger(db_session: AsyncSession) -> None:
     purchase_date = date(2026, 2, 8)
@@ -127,6 +154,92 @@ async def test_create_purchase_private_diff_creates_inventory_and_ledger(db_sess
     ).scalar_one()
     assert ledger.amount_cents == -1_500
     assert ledger.entry_date == purchase_date
+
+
+@pytest.mark.asyncio
+async def test_create_purchase_private_equity_auto_valuation_and_no_ledger(db_session: AsyncSession) -> None:
+    purchase_date = date(2026, 2, 10)
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, suffix="PE1")
+        purchase = await _create_private_equity_purchase(
+            db_session,
+            purchase_date=purchase_date,
+            lines=[(mp.id, 2_000, None)],
+        )
+
+    row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    assert row.kind == PurchaseKind.PRIVATE_EQUITY
+    assert row.payment_source == PaymentSource.PRIVATE_EQUITY
+    assert row.document_number is not None and row.document_number.startswith("PAIV-2026-")
+    assert row.lines[0].purchase_price_cents == 1_700
+    assert row.lines[0].market_value_cents == 2_000
+
+    inv = (
+        await db_session.execute(select(InventoryItem).where(InventoryItem.purchase_line_id == row.lines[0].id))
+    ).scalar_one()
+    assert inv.purchase_type == PurchaseType.DIFF
+    assert inv.purchase_price_cents == 1_700
+
+    ledger_rows = (
+        await db_session.execute(
+            select(LedgerEntry).where(LedgerEntry.entity_type == "purchase", LedgerEntry.entity_id == row.id)
+        )
+    ).scalars().all()
+    assert ledger_rows == []
+
+
+@pytest.mark.asyncio
+async def test_update_private_equity_valuation_fields(db_session: AsyncSession) -> None:
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, suffix="PE2")
+        purchase = await _create_private_equity_purchase(
+            db_session,
+            purchase_date=date(2026, 2, 10),
+            lines=[(mp.id, 2_000, None)],
+        )
+    purchase_id = purchase.id
+
+    row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    line = row.lines[0]
+    await db_session.rollback()
+
+    async with db_session.begin():
+        updated = await update_purchase(
+            db_session,
+            actor=ACTOR,
+            purchase_id=purchase_id,
+            data=PurchaseUpdate(
+                kind=PurchaseKind.PRIVATE_EQUITY,
+                purchase_date=date(2026, 2, 11),
+                counterparty_name="Inhaber",
+                total_amount_cents=1_600,
+                payment_source=PaymentSource.BANK,
+                lines=[
+                    PurchaseLineUpsert(
+                        id=line.id,
+                        master_product_id=line.master_product_id,
+                        condition=line.condition,
+                        purchase_type=line.purchase_type,
+                        purchase_price_cents=1_600,
+                        market_value_cents=1_900,
+                        held_privately_over_12_months=True,
+                        valuation_reason="Konservativer Abschlag",
+                    )
+                ],
+            ),
+        )
+
+    assert updated.payment_source == PaymentSource.PRIVATE_EQUITY
+    updated_row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    assert updated_row.lines[0].market_value_cents == 1_900
+    assert updated_row.lines[0].held_privately_over_12_months is True
+    assert updated_row.lines[0].valuation_reason == "Konservativer Abschlag"
 
 
 @pytest.mark.asyncio
@@ -855,6 +968,32 @@ async def test_purchase_credit_note_pdf_includes_image_attachments_in_context(mo
     assert a["original_filename"] == "evidence.png"
     assert a["is_image"] is True
     assert str(a["file_uri"]).startswith("file:")
+
+
+@pytest.mark.asyncio
+async def test_private_equity_pdf_includes_compliance_warnings(monkeypatch, db_session: AsyncSession) -> None:
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, suffix="PE-PDF")
+        purchase = await _create_private_equity_purchase(
+            db_session,
+            purchase_date=date(2026, 2, 12),
+            lines=[(mp.id, 2_000, 1_700)],
+        )
+
+    captured: dict[str, object] = {}
+
+    def fake_render_pdf(*, context: dict, **_kwargs) -> None:
+        captured.update(context)
+
+    monkeypatch.setattr("app.services.purchases.render_pdf", fake_render_pdf)
+
+    async with db_session.begin():
+        await generate_purchase_credit_note_pdf(db_session, actor=ACTOR, purchase_id=purchase.id)
+
+    assert captured.get("is_private_equity") is True
+    warnings = captured.get("compliance_warnings")
+    assert isinstance(warnings, list)
+    assert len(warnings) >= 2
 
 
 @pytest.mark.asyncio
