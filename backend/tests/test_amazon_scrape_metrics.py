@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.amazon_scrape import AmazonProductMetricsLatest, AmazonScrapeBestPrice, AmazonScrapeRun, AmazonScrapeSalesRank
 from app.models.master_product import MasterProduct, master_product_sku_from_id
 from app.services.amazon_scrape_metrics import (
     BUCKET_COLLECTIBLE,
     BUCKET_NEW,
+    _store_reference_image_locally,
     BUCKET_USED_GOOD,
     BUCKET_USED_LIKE_NEW,
     BUCKET_USED_VERY_GOOD,
@@ -344,6 +348,95 @@ async def test_persist_scrape_result_keeps_rank_and_offers_on_empty_success_payl
     assert latest.offers_count_total == 2
     assert latest.offers_count_priced_total == 2
     assert latest.offers_count_used_priced_total == 1
+
+
+@pytest.mark.asyncio
+async def test_store_reference_image_locally_retries_then_succeeds(monkeypatch) -> None:
+    settings = get_settings()
+    master_product_id = uuid.uuid4()
+
+    class _Response:
+        headers = {"content-type": "image/jpeg"}
+        content = b"test-image-bytes"
+
+        def raise_for_status(self) -> None:
+            return
+
+    calls: list[int] = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, _url: str):
+            calls.append(1)
+            if len(calls) == 1:
+                raise httpx.ReadTimeout("timeout")
+            return _Response()
+
+    async def _fast_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.httpx.AsyncClient", _Client)
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.asyncio.sleep", _fast_sleep)
+
+    rel_path = await _store_reference_image_locally(
+        settings=settings,
+        master_product_id=master_product_id,
+        image_url="https://images-eu.ssl-images-amazon.com/images/P/B000FC2BTQ.01.LZZZZZZZ.jpg",
+    )
+
+    assert len(calls) == 2
+    assert rel_path is not None
+    file_path = settings.app_storage_dir / rel_path
+    assert file_path.exists()
+    assert file_path.read_bytes() == b"test-image-bytes"
+
+
+@pytest.mark.asyncio
+async def test_store_reference_image_locally_logs_failure_after_retries(monkeypatch, caplog) -> None:
+    settings = get_settings()
+    master_product_id = uuid.uuid4()
+
+    calls: list[int] = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, _url: str):
+            calls.append(1)
+            raise httpx.ReadTimeout("timeout")
+
+    async def _fast_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.httpx.AsyncClient", _Client)
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.asyncio.sleep", _fast_sleep)
+
+    with caplog.at_level(logging.WARNING):
+        rel_path = await _store_reference_image_locally(
+            settings=settings,
+            master_product_id=master_product_id,
+            image_url="https://images-eu.ssl-images-amazon.com/images/P/B000FC2BTQ.01.LZZZZZZZ.jpg",
+        )
+
+    assert rel_path is None
+    assert len(calls) == 3
+    assert "Reference image download failed; retrying" in caplog.text
+    assert "Reference image download failed" in caplog.text
 
 
 @pytest.mark.asyncio

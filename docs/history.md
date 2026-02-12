@@ -749,3 +749,18 @@
 - Snapshot-Update fuer BSR erfolgt nur noch, wenn im neuen Payload tatsaechlich ein Rank-Wert vorhanden ist.
 - Snapshot-Update fuer Offer-Counts erfolgt nur noch bei nicht-leerer Offer-Liste.
 - Regressionstest deckt den Ablauf "gueltiger Scrape -> leerer Success-Scrape" ab und stellt sicher, dass BSR/Offer-Counts erhalten bleiben.
+
+## 2026-02-12 - Amazon Referenzbilder: Retry + sichtbares Fehler-Logging
+
+### Ausgangslage
+- Bei instabiler Netzwerk-/DNS-Lage konnten Bilddownloads im Scrape-Persist silently fehlschlagen.
+- Folge war fehlende `reference_image_url`, obwohl Scrapes erfolgreich liefen.
+
+### Business-Entscheidung
+- Bilddownload-Fehler muessen sichtbar werden (Logs) und bei transienten Fehlern automatisch erneut versucht werden.
+- Bestehende Produktdaten sollen bei temporären Netzproblemen robust weiter aufgebaut werden, ohne manuelles Nacharbeiten pro ASIN.
+
+### Technische Entscheidung
+- Lokaler Referenzbild-Download nutzt nun bis zu 3 Versuche bei transienten HTTP/Netzwerkfehlern (u. a. Timeout/429/5xx).
+- Bei nicht-retrybaren Fehlern, nicht-Bild-Responses oder leerem Body werden strukturierte Warnings mit Produkt-/URL-Kontext geloggt.
+- Persist-Pfad loggt explizit, wenn Bildspeicherung final scheitert.

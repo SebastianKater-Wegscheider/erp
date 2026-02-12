@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import uuid
 from dataclasses import dataclass
@@ -22,6 +23,9 @@ from app.models.amazon_scrape import (
     AmazonScrapeSalesRank,
 )
 from app.models.master_product import MasterProduct
+
+
+logger = logging.getLogger(__name__)
 
 
 class ScraperBusyError(RuntimeError):
@@ -54,6 +58,9 @@ USED_BUCKETS: tuple[ConditionBucket, ...] = (
     BUCKET_USED_GOOD,
     BUCKET_USED_ACCEPTABLE,
 )
+
+REFERENCE_IMAGE_FETCH_MAX_ATTEMPTS = 3
+REFERENCE_IMAGE_FETCH_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
 def utcnow() -> datetime:
@@ -331,6 +338,17 @@ def _guess_image_extension(*, image_url: str, content_type: str | None) -> str:
     return ".jpg"
 
 
+def _is_retryable_image_fetch_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.RequestError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        if response is None:
+            return False
+        return int(response.status_code) in REFERENCE_IMAGE_FETCH_RETRYABLE_STATUS_CODES
+    return False
+
+
 async def _store_reference_image_locally(
     *,
     settings: Settings,
@@ -338,18 +356,54 @@ async def _store_reference_image_locally(
     image_url: str,
 ) -> str | None:
     timeout = httpx.Timeout(timeout=min(30, int(settings.amazon_scraper_timeout_seconds)))
-    try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(image_url)
-        response.raise_for_status()
-    except Exception:
+    response: httpx.Response | None = None
+    for attempt in range(1, REFERENCE_IMAGE_FETCH_MAX_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                response = await client.get(image_url)
+            response.raise_for_status()
+            break
+        except Exception as exc:
+            can_retry = attempt < REFERENCE_IMAGE_FETCH_MAX_ATTEMPTS and _is_retryable_image_fetch_error(exc)
+            log_payload = {
+                "master_product_id": str(master_product_id),
+                "image_url": image_url,
+                "attempt": attempt,
+                "max_attempts": REFERENCE_IMAGE_FETCH_MAX_ATTEMPTS,
+            }
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+                log_payload["status_code"] = int(exc.response.status_code)
+            if can_retry:
+                logger.warning("Reference image download failed; retrying", extra=log_payload)
+                await asyncio.sleep(0.4 * attempt)
+                continue
+            log_payload["error"] = f"{type(exc).__name__}: {exc}"
+            logger.warning("Reference image download failed", extra=log_payload)
+            return None
+
+    if response is None:
         return None
 
     content_type = response.headers.get("content-type")
     if content_type and not content_type.lower().startswith("image/"):
+        logger.warning(
+            "Reference image response is not an image",
+            extra={
+                "master_product_id": str(master_product_id),
+                "image_url": image_url,
+                "content_type": content_type,
+            },
+        )
         return None
     image_bytes = response.content
     if not image_bytes:
+        logger.warning(
+            "Reference image download returned empty body",
+            extra={
+                "master_product_id": str(master_product_id),
+                "image_url": image_url,
+            },
+        )
         return None
 
     ext = _guess_image_extension(image_url=image_url, content_type=content_type)
@@ -513,6 +567,15 @@ async def persist_scrape_result(
                     )
                     if local_image_path is not None:
                         mp.reference_image_url = local_image_path
+                    else:
+                        logger.warning(
+                            "Reference image persistence failed",
+                            extra={
+                                "master_product_id": str(master_product_id),
+                                "asin": mp.asin,
+                                "image_url": image_url,
+                            },
+                        )
     else:
         # failure or blocked: keep last_success_at intact, schedule retry externally
         latest.consecutive_failures = max(0, int(latest.consecutive_failures or 0)) + 1
