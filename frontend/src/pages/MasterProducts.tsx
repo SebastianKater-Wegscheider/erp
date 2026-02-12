@@ -39,7 +39,7 @@ import {
 
 type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
 type MasterProductsViewMode = "catalog" | "amazon";
-type MasterProductsSortKey = "BSR_OVERALL_ASC" | "TITLE_ASC" | "AMAZON_FRESH_DESC";
+type MasterProductsSortKey = "TARGET_POTENTIAL_DESC" | "BSR_OVERALL_ASC" | "TITLE_ASC" | "AMAZON_FRESH_DESC";
 
 type MasterProduct = {
   id: string;
@@ -138,6 +138,7 @@ const EMPTY_FORM: MasterProductFormState = {
 };
 
 const MASTER_PRODUCTS_VIEW_KEY = "master-products:view";
+const RESALE_PRICE_GOOD_CENTS = 4_000;
 
 function kindLabel(kind: MasterProductKind): string {
   return KIND_OPTIONS.find((k) => k.value === kind)?.label ?? kind;
@@ -193,7 +194,176 @@ function overallBsrRank(m: MasterProduct): number {
   return Number.POSITIVE_INFINITY;
 }
 
+type ResellerTargetTier = "TOP" | "STRONG" | "WATCH" | "LOW" | "UNKNOWN";
+
+type ResellerTargetSignal = {
+  tier: ResellerTargetTier;
+  score: number;
+  bsrRank: number | null;
+  bsrCategory: string;
+  salesPriceCents: number | null;
+  salesPriceLabel: string;
+  priceMeetsGoal: boolean;
+  summary: string;
+};
+
+function resellerSalesPriceSignal(m: MasterProduct): { cents: number | null; label: string } {
+  const used = computeUsedBest(m);
+  if (used.cents !== null) return { cents: used.cents, label: `Used best (${used.label})` };
+  if (typeof m.amazon_buybox_total_cents === "number") return { cents: m.amazon_buybox_total_cents, label: "Buybox" };
+  if (typeof m.amazon_price_new_cents === "number") return { cents: m.amazon_price_new_cents, label: "Neu" };
+  return { cents: null, label: "—" };
+}
+
+function resellerBsrScore(rank: number | null): number {
+  if (rank === null) return -1;
+  if (rank <= 2_500) return 5;
+  if (rank <= 10_000) return 4;
+  if (rank <= 30_000) return 3;
+  if (rank <= 80_000) return 2;
+  if (rank <= 150_000) return 1;
+  return 0;
+}
+
+function resellerPriceScore(cents: number | null): number {
+  if (cents === null) return -1;
+  if (cents >= 6_000) return 4;
+  if (cents >= RESALE_PRICE_GOOD_CENTS) return 3;
+  if (cents >= 2_500) return 2;
+  if (cents >= 1_500) return 1;
+  return 0;
+}
+
+function resellerTargetTierLabel(tier: ResellerTargetTier): string {
+  switch (tier) {
+    case "TOP":
+      return "Top Target";
+    case "STRONG":
+      return "Stark";
+    case "WATCH":
+      return "Watchlist";
+    case "LOW":
+      return "Niedrig";
+    case "UNKNOWN":
+    default:
+      return "Unklar";
+  }
+}
+
+function resellerTargetTierVariant(tier: ResellerTargetTier) {
+  switch (tier) {
+    case "TOP":
+      return "success" as const;
+    case "STRONG":
+      return "secondary" as const;
+    case "WATCH":
+      return "warning" as const;
+    case "LOW":
+    case "UNKNOWN":
+    default:
+      return "outline" as const;
+  }
+}
+
+function resellerTargetRowClass(tier: ResellerTargetTier): string {
+  switch (tier) {
+    case "TOP":
+      return "bg-emerald-50/45 dark:bg-emerald-950/12";
+    case "STRONG":
+      return "bg-amber-50/45 dark:bg-amber-950/12";
+    default:
+      return "";
+  }
+}
+
+function resellerTargetPriceClass(cents: number | null): string {
+  if (cents === null) {
+    return "border-gray-200 bg-white text-gray-500 dark:border-gray-800 dark:bg-gray-950/30 dark:text-gray-400";
+  }
+  if (cents >= RESALE_PRICE_GOOD_CENTS) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200";
+  }
+  if (cents >= 2_500) {
+    return "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200";
+  }
+  return "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-gray-950/30 dark:text-gray-300";
+}
+
+function resellerTargetSignal(m: MasterProduct): ResellerTargetSignal {
+  const bsrRank =
+    typeof m.amazon_rank_overall === "number" && m.amazon_rank_overall > 0
+      ? m.amazon_rank_overall
+      : typeof m.amazon_rank_specific === "number" && m.amazon_rank_specific > 0
+        ? m.amazon_rank_specific
+        : null;
+  const bsrCategory = (m.amazon_rank_overall_category ?? m.amazon_rank_specific_category ?? "—").trim() || "—";
+  const salesPrice = resellerSalesPriceSignal(m);
+  const priceMeetsGoal = typeof salesPrice.cents === "number" && salesPrice.cents >= RESALE_PRICE_GOOD_CENTS;
+
+  let tier: ResellerTargetTier = "UNKNOWN";
+  if (bsrRank !== null && salesPrice.cents !== null) {
+    if (bsrRank <= 10_000 && salesPrice.cents >= RESALE_PRICE_GOOD_CENTS) tier = "TOP";
+    else if (
+      (bsrRank <= 30_000 && salesPrice.cents >= RESALE_PRICE_GOOD_CENTS) ||
+      (bsrRank <= 10_000 && salesPrice.cents >= 2_500)
+    ) {
+      tier = "STRONG";
+    } else if (
+      (bsrRank <= 80_000 && salesPrice.cents >= 2_500) ||
+      (bsrRank <= 30_000 && salesPrice.cents >= 1_500)
+    ) {
+      tier = "WATCH";
+    } else {
+      tier = "LOW";
+    }
+  }
+
+  let summary = "Daten unvollstaendig.";
+  if (tier === "TOP") summary = "Niedriger BSR + Preisziel erreicht (>= 40 EUR).";
+  if (tier === "STRONG") summary = "Solide Nachfrage-/Preis-Kombination fuer Reselling.";
+  if (tier === "WATCH") summary = "Interessant, aber Nachfrage oder Preis noch mittel.";
+  if (tier === "LOW") summary = "Aktuell schwaches Demand-/Preis-Profil.";
+
+  const bsrScore = resellerBsrScore(bsrRank);
+  const priceScore = resellerPriceScore(salesPrice.cents);
+  let score = bsrScore < 0 || priceScore < 0 ? -100 : bsrScore * 20 + priceScore * 5;
+  if (m.amazon_blocked_last) score -= 12;
+  else if (isAmazonStale(m)) score -= 4;
+
+  return {
+    tier,
+    score,
+    bsrRank,
+    bsrCategory,
+    salesPriceCents: salesPrice.cents,
+    salesPriceLabel: salesPrice.label,
+    priceMeetsGoal,
+    summary,
+  };
+}
+
+function isTopResellerTarget(m: MasterProduct): boolean {
+  const signal = resellerTargetSignal(m);
+  return (signal.tier === "TOP" || signal.tier === "STRONG") && signal.priceMeetsGoal;
+}
+
 function compareMasterProducts(a: MasterProduct, b: MasterProduct, sortBy: MasterProductsSortKey): number {
+  if (sortBy === "TARGET_POTENTIAL_DESC") {
+    const sa = resellerTargetSignal(a);
+    const sb = resellerTargetSignal(b);
+    if (sb.score !== sa.score) return sb.score - sa.score;
+
+    const rankA = sa.bsrRank ?? Number.POSITIVE_INFINITY;
+    const rankB = sb.bsrRank ?? Number.POSITIVE_INFINITY;
+    if (rankA !== rankB) return rankA - rankB;
+
+    const priceA = sa.salesPriceCents ?? Number.NEGATIVE_INFINITY;
+    const priceB = sb.salesPriceCents ?? Number.NEGATIVE_INFINITY;
+    if (priceB !== priceA) return priceB - priceA;
+
+    return a.title.localeCompare(b.title, "de-DE", { sensitivity: "base" });
+  }
+
   if (sortBy === "TITLE_ASC") {
     return a.title.localeCompare(b.title, "de-DE", { sensitivity: "base" });
   }
@@ -590,10 +760,13 @@ export function MasterProductsPage() {
   const [filtersOpen, setFiltersOpen] = useState(() => searchParams.get("missing") === "asin");
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<MasterProductKind | "ALL">("ALL");
-  const [sortBy, setSortBy] = useState<MasterProductsSortKey>("BSR_OVERALL_ASC");
+  const [sortBy, setSortBy] = useState<MasterProductsSortKey>(() =>
+    viewParam === "amazon" ? "TARGET_POTENTIAL_DESC" : "BSR_OVERALL_ASC",
+  );
   const [inStockOnly, setInStockOnly] = useState(false);
   const [amazonStaleOnly, setAmazonStaleOnly] = useState(false);
   const [amazonBlockedOnly, setAmazonBlockedOnly] = useState(false);
+  const [topPotentialOnly, setTopPotentialOnly] = useState(false);
   const [amazonMaxNew, setAmazonMaxNew] = useState("");
   const [amazonMaxLikeNew, setAmazonMaxLikeNew] = useState("");
   const [expanded, setExpanded] = useState<Record<string, true>>({});
@@ -820,10 +993,11 @@ export function MasterProductsPage() {
   function resetAllFilters() {
     setSearch("");
     setKindFilter("ALL");
-    setSortBy("BSR_OVERALL_ASC");
+    setSortBy(viewMode === "amazon" ? "TARGET_POTENTIAL_DESC" : "BSR_OVERALL_ASC");
     setInStockOnly(false);
     setAmazonStaleOnly(false);
     setAmazonBlockedOnly(false);
+    setTopPotentialOnly(false);
     setAmazonMaxNew("");
     setAmazonMaxLikeNew("");
     setFiltersOpen(false);
@@ -839,6 +1013,7 @@ export function MasterProductsPage() {
     if (missingAsinOnly) all = all.filter((m) => !m.asin?.trim());
     if (viewMode === "amazon" && amazonStaleOnly) all = all.filter((m) => isAmazonStale(m));
     if (viewMode === "amazon" && amazonBlockedOnly) all = all.filter((m) => !!m.amazon_blocked_last);
+    if (viewMode === "amazon" && topPotentialOnly) all = all.filter((m) => isTopResellerTarget(m));
 
     const maxNew = tryParseEurCents(amazonMaxNew);
     if (viewMode === "amazon" && maxNew !== null) {
@@ -858,7 +1033,19 @@ export function MasterProductsPage() {
       );
     }
     return [...all].sort((a, b) => compareMasterProducts(a, b, sortBy));
-  }, [amazonBlockedOnly, amazonMaxLikeNew, amazonMaxNew, amazonStaleOnly, kindFilter, list.data, missingAsinOnly, search, sortBy]);
+  }, [
+    amazonBlockedOnly,
+    amazonMaxLikeNew,
+    amazonMaxNew,
+    amazonStaleOnly,
+    kindFilter,
+    list.data,
+    missingAsinOnly,
+    search,
+    sortBy,
+    topPotentialOnly,
+    viewMode,
+  ]);
 
   function isExpanded(id: string): boolean {
     return !!expanded[id];
@@ -883,6 +1070,7 @@ export function MasterProductsPage() {
     (missingAsinOnly ? 1 : 0) +
     (viewMode === "amazon" && amazonStaleOnly ? 1 : 0) +
     (viewMode === "amazon" && amazonBlockedOnly ? 1 : 0) +
+    (viewMode === "amazon" && topPotentialOnly ? 1 : 0) +
     (viewMode === "amazon" && parsedMaxNew !== null ? 1 : 0) +
     (viewMode === "amazon" && parsedMaxLikeNew !== null ? 1 : 0);
   const hasActiveFilters = activeFilterCount > 0;
@@ -969,6 +1157,7 @@ export function MasterProductsPage() {
                     <SelectValue placeholder="Sortierung" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="TARGET_POTENTIAL_DESC">Target-Potenzial (Reseller)</SelectItem>
                     <SelectItem value="BSR_OVERALL_ASC">BSR Gesamt (Bestseller zuerst)</SelectItem>
                     <SelectItem value="TITLE_ASC">Titel A–Z</SelectItem>
                     <SelectItem value="AMAZON_FRESH_DESC">Amazon zuletzt aktualisiert</SelectItem>
@@ -983,6 +1172,17 @@ export function MasterProductsPage() {
                 >
                   Auf Lager
                 </Button>
+
+                {viewMode === "amazon" ? (
+                  <Button
+                    type="button"
+                    variant={topPotentialOnly ? "secondary" : "outline"}
+                    onClick={() => setTopPotentialOnly((v) => !v)}
+                    title="Top Targets: BSR + Verkaufspreis mit Fokus auf >= 40 EUR"
+                  >
+                    Top Targets 40+
+                  </Button>
+                ) : null}
 
                 <Button
                   type="button"
@@ -1039,6 +1239,14 @@ export function MasterProductsPage() {
                         >
                           Blocked
                         </Button>
+                        <Button
+                          type="button"
+                          variant={topPotentialOnly ? "secondary" : "outline"}
+                          onClick={() => setTopPotentialOnly((v) => !v)}
+                          title="Top Targets: BSR + Verkaufspreis mit Fokus auf >= 40 EUR"
+                        >
+                          Top Targets 40+
+                        </Button>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <Input
@@ -1086,26 +1294,31 @@ export function MasterProductsPage() {
               ))}
 
             {!list.isPending &&
-              rows.map((m) => (
-                <div
-                  key={m.id}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      openEdit(m);
-                    }
-                  }}
-                  onClick={() => openEdit(m)}
-                  className={[
-                    "cursor-pointer rounded-md border border-gray-200 bg-white p-3 shadow-sm transition-colors",
-                    "hover:bg-gray-50 active:bg-gray-100",
-                    "dark:border-gray-800 dark:bg-gray-900 dark:hover:bg-gray-800/60 dark:active:bg-gray-800/80",
-                  ].join(" ")}
-                >
-                  <div className="flex items-start gap-3">
-                    <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
+              rows.map((m) => {
+                const targetSignal = resellerTargetSignal(m);
+                const rowTone = viewMode === "amazon" ? resellerTargetRowClass(targetSignal.tier) : "";
+
+                return (
+                  <div
+                    key={m.id}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openEdit(m);
+                      }
+                    }}
+                    onClick={() => openEdit(m)}
+                    className={[
+                      "cursor-pointer rounded-md border border-gray-200 bg-white p-3 shadow-sm transition-colors",
+                      "hover:bg-gray-50 active:bg-gray-100",
+                      "dark:border-gray-800 dark:bg-gray-900 dark:hover:bg-gray-800/60 dark:active:bg-gray-800/80",
+                      rowTone,
+                    ].join(" ")}
+                  >
+                    <div className="flex items-start gap-3">
+                      <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
@@ -1202,7 +1415,7 @@ export function MasterProductsPage() {
                       ) : null}
 
                       {viewMode === "amazon" && m.asin ? (
-                        <div className="mt-2 space-y-1.5">
+                        <div className="mt-2 space-y-2">
                           <div
                             className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400"
                             onClick={(e) => e.stopPropagation()}
@@ -1233,20 +1446,40 @@ export function MasterProductsPage() {
                               Löschen
                             </button>
                           </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
-                            {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
-                            {m.amazon_last_success_at ? (
-                              <span className="text-xs text-gray-500 dark:text-gray-400" title={m.amazon_last_success_at}>
-                                {new Date(m.amazon_last_success_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+                          <div className="rounded-lg border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-emerald-50/80 p-2.5 dark:border-amber-900/60 dark:from-amber-950/20 dark:via-gray-950 dark:to-emerald-950/20">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Badge variant={resellerTargetTierVariant(targetSignal.tier)}>{resellerTargetTierLabel(targetSignal.tier)}</Badge>
+                              <Badge variant={targetSignal.priceMeetsGoal ? "success" : "outline"}>
+                                {targetSignal.priceMeetsGoal ? ">= 40 EUR" : "< 40 EUR"}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                              <div className="rounded-md border border-gray-200/80 bg-white/70 px-2 py-1 dark:border-gray-800 dark:bg-gray-950/40">
+                                <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">BSR Gesamt</div>
+                                <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                  {targetSignal.bsrRank !== null ? `#${targetSignal.bsrRank}` : "—"}
+                                </div>
+                              </div>
+                              <div className="rounded-md border border-gray-200/80 bg-white/70 px-2 py-1 text-right dark:border-gray-800 dark:bg-gray-950/40">
+                                <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Verkaufspreis</div>
+                                <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                  {fmtMaybeEur(targetSignal.salesPriceCents)}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">{targetSignal.summary}</div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                              {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
+                              {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
+                              <span className="text-gray-500 dark:text-gray-400">
+                                {m.amazon_last_success_at
+                                  ? new Date(m.amazon_last_success_at).toLocaleString("de-DE", {
+                                      dateStyle: "short",
+                                      timeStyle: "short",
+                                    })
+                                  : "noch nie"}
                               </span>
-                            ) : (
-                              <span className="text-xs text-gray-500 dark:text-gray-400">noch nie</span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                            BSR Gesamt {Number.isFinite(overallBsrRank(m)) ? `#${overallBsrRank(m)}` : "—"} · Used best{" "}
-                            {fmtMaybeEur(computeUsedBest(m).cents)}
+                            </div>
                           </div>
 
                           {isExpanded(m.id) ? (
@@ -1355,8 +1588,9 @@ export function MasterProductsPage() {
 
                     </div>
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
 
             {!list.isPending && !rows.length && (
               <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-300">
@@ -1399,9 +1633,9 @@ export function MasterProductsPage() {
                     </>
                   ) : (
                     <>
-                      <TableHead>Amazon Status</TableHead>
+                      <TableHead>Potenzial</TableHead>
                       <TableHead className="text-right">BSR</TableHead>
-                      <TableHead className="text-right">Used best</TableHead>
+                      <TableHead className="text-right">Verkaufspreis</TableHead>
                       <TableHead className="text-right">
                         <span className="sr-only">Details</span>
                       </TableHead>
@@ -1457,10 +1691,12 @@ export function MasterProductsPage() {
                       .map((value) => (value ?? "").trim())
                       .filter(Boolean)
                       .join(" · ");
+                    const targetSignal = resellerTargetSignal(m);
+                    const rowTone = viewMode === "amazon" ? resellerTargetRowClass(targetSignal.tier) : "";
 
                     return (
                       <Fragment key={m.id}>
-                      <TableRow className={TABLE_ROW_COMPACT_CLASS}>
+                      <TableRow className={[TABLE_ROW_COMPACT_CLASS, rowTone].join(" ")}>
                         <TableCell>
                           <div className="flex items-start gap-3">
                             <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
@@ -1558,24 +1794,39 @@ export function MasterProductsPage() {
                               {!m.asin ? (
                                 <span className="text-gray-500 dark:text-gray-400">—</span>
                               ) : (
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
-                                  {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
-                                  {m.amazon_last_success_at ? (
-                                    <span className="text-[11px] text-gray-500 dark:text-gray-400" title={m.amazon_last_success_at}>
-                                      {new Date(m.amazon_last_success_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[11px] text-gray-500 dark:text-gray-400">noch nie</span>
-                                  )}
+                                <div className="rounded-lg border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-emerald-50/80 px-2.5 py-2 dark:border-amber-900/60 dark:from-amber-950/20 dark:via-gray-950 dark:to-emerald-950/20">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant={resellerTargetTierVariant(targetSignal.tier)} className="text-[11px]">
+                                      {resellerTargetTierLabel(targetSignal.tier)}
+                                    </Badge>
+                                    <Badge variant={targetSignal.priceMeetsGoal ? "success" : "outline"} className="text-[11px]">
+                                      {targetSignal.priceMeetsGoal ? ">= 40 EUR" : "< 40 EUR"}
+                                    </Badge>
+                                  </div>
+                                  <div className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">{targetSignal.summary}</div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                    {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
+                                    {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
+                                  </div>
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell className="text-right text-sm font-semibold tabular-nums">
-                              {Number.isFinite(overallBsrRank(m)) ? `#${overallBsrRank(m)}` : "—"}
+                            <TableCell className="text-right text-sm">
+                              <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                {targetSignal.bsrRank !== null ? `#${targetSignal.bsrRank}` : "—"}
+                              </div>
+                              <div className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">{targetSignal.bsrCategory}</div>
                             </TableCell>
-                            <TableCell className="text-right text-sm font-semibold tabular-nums">
-                              {fmtMaybeEur(computeUsedBest(m).cents)}
+                            <TableCell className="text-right text-sm">
+                              <div
+                                className={[
+                                  "ml-auto inline-flex min-w-[7rem] items-center justify-end rounded-md border px-2 py-1 font-semibold tabular-nums",
+                                  resellerTargetPriceClass(targetSignal.salesPriceCents),
+                                ].join(" ")}
+                              >
+                                {fmtMaybeEur(targetSignal.salesPriceCents)}
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{targetSignal.salesPriceLabel}</div>
                             </TableCell>
                             <TableCell className={TABLE_ACTION_CELL_CLASS}>
                               <div className={`${TABLE_ACTION_GROUP_CLASS} items-end`}>

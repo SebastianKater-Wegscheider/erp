@@ -764,3 +764,18 @@
 - Lokaler Referenzbild-Download nutzt nun bis zu 3 Versuche bei transienten HTTP/Netzwerkfehlern (u. a. Timeout/429/5xx).
 - Bei nicht-retrybaren Fehlern, nicht-Bild-Responses oder leerem Body werden strukturierte Warnings mit Produkt-/URL-Kontext geloggt.
 - Persist-Pfad loggt explizit, wenn Bildspeicherung final scheitert.
+
+## 2026-02-12 - Produktstamm Amazon-View: Reseller-Targeting ueber BSR + 40-EUR-Preisniveau
+
+### Ausgangslage
+- Die Amazon-Tabelle zeigte BSR und Used-best getrennt, aber ohne klare Priorisierung fuer "welches Produkt zuerst sourcen?".
+- Fuer Reselling war nicht sofort ersichtlich, welche Kandidaten gleichzeitig gute Nachfrage (niedriger BSR) und attraktives Preisniveau haben.
+
+### Business-Entscheidung
+- Die Tabelle wird auf einen klaren Scanflow fuer Sourcing ausgerichtet: zuerst Potenzial, dann Nachfrage (BSR), dann monetaeres Niveau.
+- Ein sichtbares Preis-Signal fuer `>= 40 EUR` wird als positive Schwelle verankert, damit hochwertige Targets schneller erkannt werden.
+
+### Technische Entscheidung
+- Ein zentrales Potenzial-Scoring im Frontend kombiniert BSR-Klasse und Preis-Signal (inkl. 40-EUR-Schwelle) in eine kompakte Einstufung.
+- Desktop-Tabellenspalten im Amazon-View werden auf "Potenzial + BSR + Verkaufspreis" umgebaut; Health-Infos (fresh/stale/blocked) bleiben sekundar.
+- Mobile-Karten erhalten denselben Potenzial-Ausweis, damit die Priorisierung auf kleinen Displays ohne Detail-Expand funktioniert.

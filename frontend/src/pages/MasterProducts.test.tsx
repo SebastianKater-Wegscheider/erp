@@ -48,7 +48,23 @@ const PRODUCTS: MockMasterProduct[] = [
     amazon_last_success_at: "2026-02-11T00:00:00.000Z",
     amazon_rank_specific: 400,
     amazon_offers_count_used_priced_total: 1,
-    amazon_price_used_good_cents: 1234,
+    amazon_price_used_good_cents: 4234,
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000333",
+    sku: "SKU-333",
+    kind: "GAME",
+    title: "Low Potential Product",
+    platform: "PS4",
+    region: "EU",
+    variant: "Standard",
+    ean: "3333333333333",
+    asin: "B000TEST33",
+    manufacturer: "Ubisoft",
+    amazon_last_success_at: "2026-02-11T00:00:00.000Z",
+    amazon_rank_specific: 90000,
+    amazon_offers_count_used_priced_total: 14,
+    amazon_price_used_good_cents: 1999,
   },
   {
     id: "00000000-0000-0000-0000-000000000222",
@@ -129,7 +145,7 @@ it("keeps UUID out of row body and has no UUID copy action", async () => {
   expect(screen.queryByText("UUID kopieren")).toBeNull();
 });
 
-it("hides EAN chips in Amazon mode and shows BSR/Used-best inline", async () => {
+it("hides EAN chips in Amazon mode and shows BSR/price target cues", async () => {
   renderPage("/master-products?view=catalog");
 
   await screen.findAllByText("With ASIN Product");
@@ -137,9 +153,25 @@ it("hides EAN chips in Amazon mode and shows BSR/Used-best inline", async () => 
 
   fireEvent.click(screen.getByRole("button", { name: "Amazon Status" }));
   expect(await screen.findAllByText(/BSR Gesamt/i)).not.toHaveLength(0);
-  expect(screen.queryAllByText(/Used best/i).length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/Verkaufspreis/i).length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/>= 40 EUR/i).length).toBeGreaterThan(0);
   expect(screen.queryAllByText(/EAN:/)).toHaveLength(0);
   expect(screen.queryAllByText(/ASIN:/)).toHaveLength(0);
+});
+
+it("filters Amazon view to top reseller targets", async () => {
+  renderPage("/master-products?view=amazon");
+
+  await screen.findAllByText("With ASIN Product");
+  await screen.findAllByText("Low Potential Product");
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Top Targets 40+" })[0]);
+
+  await waitFor(() => {
+    expect(screen.queryByText("Low Potential Product")).toBeNull();
+    expect(screen.queryByText("No ASIN Product")).toBeNull();
+  });
+  expect(screen.queryAllByText("With ASIN Product").length).toBeGreaterThan(0);
 });
 
 it("uses in-stock quick filter via backend query param", async () => {
