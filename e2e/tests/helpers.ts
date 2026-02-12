@@ -8,6 +8,13 @@ function basicAuthHeader(username: string, password: string): string {
   return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
 }
 
+function authJsonHeaders(): Record<string, string> {
+  return {
+    Authorization: basicAuthHeader(E2E_USER, E2E_PASS),
+    "Content-Type": "application/json",
+  };
+}
+
 export async function loginViaUi(page: Page): Promise<void> {
   await page.goto("/");
   await page.evaluate(() => {
@@ -34,10 +41,7 @@ export async function createMasterProductViaApi(
 ): Promise<string> {
   const { title, platform = "Nintendo Switch", region = "EU" } = options;
   const response = await request.post(`${E2E_API_BASE_URL}/master-products`, {
-    headers: {
-      Authorization: basicAuthHeader(E2E_USER, E2E_PASS),
-      "Content-Type": "application/json",
-    },
+    headers: authJsonHeaders(),
     data: {
       kind: "GAME",
       title,
@@ -48,6 +52,43 @@ export async function createMasterProductViaApi(
   });
 
   expect(response.ok(), `master-product create failed (${response.status()})`).toBeTruthy();
+  const json = (await response.json()) as { id: string };
+  expect(json.id).toBeTruthy();
+  return json.id;
+}
+
+export async function createMileageViaApi(
+  request: APIRequestContext,
+  options: {
+    purchaseIds: string[];
+    logDate?: string;
+    startLocation?: string;
+    destination?: string;
+    km?: string;
+    purpose?: "BUYING" | "POST" | "MATERIAL" | "OTHER";
+  },
+): Promise<string> {
+  const {
+    purchaseIds,
+    logDate = "2026-02-12",
+    startLocation = "Lager",
+    destination = "Verkaeufer",
+    km = "8.5",
+    purpose = "BUYING",
+  } = options;
+  const response = await request.post(`${E2E_API_BASE_URL}/mileage`, {
+    headers: authJsonHeaders(),
+    data: {
+      log_date: logDate,
+      start_location: startLocation,
+      destination,
+      purpose,
+      km,
+      purchase_ids: purchaseIds,
+    },
+  });
+
+  expect(response.ok(), `mileage create failed (${response.status()})`).toBeTruthy();
   const json = (await response.json()) as { id: string };
   expect(json.id).toBeTruthy();
   return json.id;

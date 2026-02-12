@@ -406,8 +406,15 @@ function kmFromMetersString(distanceMeters: number): string {
   return (distanceMeters / 1000).toFixed(2);
 }
 
-function needsMileageReminder(purchase: PurchaseOut): boolean {
-  return purchase.payment_source === "CASH" && !purchase.primary_mileage_log_id;
+function needsMileageReminder(
+  purchase: PurchaseOut,
+  linkedPurchaseIds: Set<string>,
+  mileageLinksReady: boolean,
+): boolean {
+  if (purchase.payment_source !== "CASH") return false;
+  if (purchase.primary_mileage_log_id) return false;
+  if (!mileageLinksReady) return false;
+  return !linkedPurchaseIds.has(purchase.id);
 }
 
 function kmLabelFromMeters(distanceMeters: number): string {
@@ -746,6 +753,10 @@ export function PurchasesPage() {
   const list = useQuery({
     queryKey: ["purchases"],
     queryFn: () => api.request<PurchaseOut[]>("/purchases"),
+  });
+  const mileageLinks = useQuery({
+    queryKey: ["mileage"],
+    queryFn: () => api.request<MileageOut[]>("/mileage"),
   });
 
   const generatePdf = useMutation({
@@ -1109,6 +1120,7 @@ export function PurchasesPage() {
       resetFormDraft();
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
+      await qc.invalidateQueries({ queryKey: ["mileage"] });
     },
   });
 
@@ -1175,6 +1187,7 @@ export function PurchasesPage() {
       resetFormDraft();
       setFormOpen(false);
       await qc.invalidateQueries({ queryKey: ["purchases"] });
+      await qc.invalidateQueries({ queryKey: ["mileage"] });
     },
   });
 
@@ -1254,6 +1267,16 @@ export function PurchasesPage() {
         : PLATFORM_NONE;
 
   const purchaseRows = list.data ?? [];
+  const mileageLinkedPurchaseIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const log of mileageLinks.data ?? []) {
+      for (const purchaseId of log.purchase_ids ?? []) {
+        ids.add(purchaseId);
+      }
+    }
+    return ids;
+  }, [mileageLinks.data]);
+  const mileageLinksReady = mileageLinks.isSuccess;
   const pagedPurchases = useMemo(() => paginateItems(purchaseRows, page), [purchaseRows, page]);
 
   useEffect(() => {
@@ -1628,7 +1651,7 @@ export function PurchasesPage() {
                               {p.document_number}
                             </Badge>
                           ) : null}
-                          {needsMileageReminder(p) ? (
+                          {needsMileageReminder(p, mileageLinkedPurchaseIds, mileageLinksReady) ? (
                             <Badge variant="warning">Bar ohne Fahrt</Badge>
                           ) : null}
                         </div>
@@ -1739,7 +1762,7 @@ export function PurchasesPage() {
                           <TableCell>{optionLabel(PURCHASE_KIND_OPTIONS, p.kind)}</TableCell>
                           <TableCell>
                             <div>{p.counterparty_name}</div>
-                            {needsMileageReminder(p) ? (
+                            {needsMileageReminder(p, mileageLinkedPurchaseIds, mileageLinksReady) ? (
                               <div className="mt-1">
                                 <Badge variant="warning">Bar ohne Fahrt</Badge>
                               </div>
