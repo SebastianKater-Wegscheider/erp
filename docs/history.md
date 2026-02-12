@@ -806,3 +806,21 @@
 - Refresh primär ueber gemeinsame shadcn-Bausteine (`Button`, `Card`, `Input`, `Select`, `Table`, `Badge`, `Dialog`, `Dropdown`, `Tabs`) plus Shell (`Topbar`, `PageHeader`, `App`) statt seitenweiser Einzelumbauten.
 - Globales Designsystem ueber `index.css`: typografische Identitaet, Farb-/Oberflaechentokens, atmosphaerischer Hintergrund und subtilere Motion.
 - Bestehende Page-Implementierungen bleiben weitgehend intakt, profitieren aber sofort vom gemeinsamen Look-and-feel und besserer UX-Konsistenz.
+
+## 2026-02-12 - Einkaufsplattformen kanonisch + Fahrtenbuch editierbar mit OSM-Routenhilfe
+
+### Ausgangslage
+- Quelle/Plattform in Einkaeufen erlaubt weiterhin Freitext und erzeugt in der Praxis Dubletten (`kleinanzeigen` vs `Kleinanzeigen`), was Reporting und Filterung verwassert.
+- In der Historie ist Plattformtext visuell redundant; gewuenscht ist eine kompaktere, icon-zentrierte Darstellung.
+- Fahrtenbuch-Eintraege sind nur neu anlegbar, nicht editierbar. Distanz wird manuell gepflegt statt aus Route berechnet.
+
+### Business-Entscheidung
+- Plattformauswahl im Einkauf wird auf feste, kanonische Optionen gefuehrt (kein Freitext-Flow mehr im UI), damit Datenqualitaet und Auswertbarkeit steigen.
+- Plattformen sollen in der Historie primar ueber erkennbare Logos/Icons dargestellt werden.
+- Fahrtenbuch bekommt einen vollwertigen Bearbeitungsflow und eine offene Karten-/Routing-Hilfe mit Distanzberechnung inkl. optionaler Rueckfahrt.
+
+### Technische Entscheidung
+- Bekannte Plattform-Aliase werden serverseitig auf kanonische Labels normalisiert; unbekannte Werte bleiben aus Kompatibilitaetsgruenden zunaechst erhalten.
+- Frontend-Purchase-Form entfernt den Custom-Platform-Input und verwendet nur feste Plattformoptionen; Historie rendert Logo-Badges statt Freitext.
+- Mileage API erhaelt ein Update-Endpoint (`PUT /mileage/{id}`); Frontend erweitert den Fahrtenbuch-Formflow um Edit-Mode.
+- Für Routing/Map wird eine OpenStreetMap-basierte Loesung genutzt (Nominatim Geocoding + OSRM Route + Leaflet-Route-Visualisierung) mit Toggle fuer Hin-/Rueckfahrt und automatischer km-Uebernahme.
