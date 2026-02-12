@@ -67,6 +67,23 @@ Wenn ein Konvolut gekauft wird, kann die Aufteilung auf einzelne Artikel über *
 - die Summe der Einzel‑EK dem tatsächlich bezahlten Gesamtbetrag entspricht,
 - die Methode **plausibel, konsistent und dokumentiert** ist (z.B. Liste/Notiz/Quelle als Upload).
 
+## PAIV (Private Sacheinlagen / Private Equity)
+
+- Neuer Einkaufstyp: `Purchase.kind = PRIVATE_EQUITY` fuer die Ueberfuehrung von Privatvermoegen ins Betriebsvermoegen.
+- Ziel ist **cash-neutrale** Inventarisierung mit dokumentiertem Teilwert:
+  - kein Zahlungsfluss
+  - kein Eintrag in `ledger_entries` (Cash-Ledger bleibt unveraendert)
+- Bewertungsdaten werden pro Position erfasst:
+  - `PurchaseLine.market_value_cents` (Marktwert)
+  - `PurchaseLine.purchase_price_cents` (Einlagewert/Kostenbasis; falls nicht gesetzt, Default `floor(market_value * 0.85)`)
+  - `PurchaseLine.held_privately_over_12_months`
+  - `PurchaseLine.valuation_reason` (optional bei spaeteren Korrekturen)
+- Vergleichsnachweise erfolgen ueber `purchase_attachments` mit `kind=MARKET_COMP` und positionsbezogener Referenz (`purchase_line_id`).
+- Der PAIV-Eigenbeleg wird manuell erzeugt und verwendet eine eigene Dokumentnummernserie (`PAIV-...`).
+- Fuer die Buchhaltung gibt es einen separaten Export im Month-Close:
+  - `csv/private_equity_bookings.csv`
+  - Soll/Haben-Logik: `Wareneingang 0%/19%` gegen `Privateinlagen`.
+
 ## Bekannte Einschränkungen
 
 - Aktuell wird für die Marge **fix 20%** angenommen. Wenn ermäßigte Sätze relevant werden, muss das auf Positionsebene modelliert werden.
