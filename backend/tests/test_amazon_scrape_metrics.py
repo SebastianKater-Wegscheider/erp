@@ -15,12 +15,14 @@ from app.models.master_product import MasterProduct, master_product_sku_from_id
 from app.services.amazon_scrape_metrics import (
     BUCKET_COLLECTIBLE,
     BUCKET_NEW,
+    ScraperBusyError,
     _store_reference_image_locally,
     BUCKET_USED_GOOD,
     BUCKET_USED_LIKE_NEW,
     BUCKET_USED_VERY_GOOD,
     bucket_from_offer,
     compute_best_prices,
+    fetch_scraper_json,
     parse_money_to_cents,
     persist_scrape_result,
 )
@@ -55,6 +57,101 @@ async def test_compute_best_prices_selects_min_total() -> None:
     best = compute_best_prices(offers)
     assert best[BUCKET_NEW].total_cents == 1000
     assert best[BUCKET_USED_LIKE_NEW].total_cents == 1000
+
+
+@pytest.mark.asyncio
+async def test_fetch_scraper_json_retries_transport_error_then_succeeds(monkeypatch) -> None:
+    settings = get_settings()
+    calls: list[int] = []
+
+    async def _fast_sleep(_seconds: float) -> None:
+        return None
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, _url: str, *, params: dict[str, str]):
+            calls.append(1)
+            req = httpx.Request("GET", "http://scraper.local/api/scrape", params=params)
+            if len(calls) == 1:
+                raise httpx.ConnectError("connect failed", request=req)
+            return httpx.Response(200, request=req, json={"asin": params["asin"], "blocked": False, "offers": []})
+
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.httpx.AsyncClient", _Client)
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.asyncio.sleep", _fast_sleep)
+
+    out = await fetch_scraper_json(settings=settings, asin="B000FC2BTQ")
+    assert out["asin"] == "B000FC2BTQ"
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_scraper_json_retries_retryable_5xx_then_succeeds(monkeypatch) -> None:
+    settings = get_settings()
+    calls: list[int] = []
+
+    async def _fast_sleep(_seconds: float) -> None:
+        return None
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, _url: str, *, params: dict[str, str]):
+            calls.append(1)
+            req = httpx.Request("GET", "http://scraper.local/api/scrape", params=params)
+            if len(calls) == 1:
+                return httpx.Response(500, request=req, text="upstream failed")
+            return httpx.Response(200, request=req, json={"asin": params["asin"], "blocked": False, "offers": []})
+
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.httpx.AsyncClient", _Client)
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.asyncio.sleep", _fast_sleep)
+
+    out = await fetch_scraper_json(settings=settings, asin="B000FC2BTQ")
+    assert out["asin"] == "B000FC2BTQ"
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_scraper_json_raises_busy_without_retry(monkeypatch) -> None:
+    settings = get_settings()
+    calls: list[int] = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def get(self, _url: str, *, params: dict[str, str]):
+            calls.append(1)
+            req = httpx.Request("GET", "http://scraper.local/api/scrape", params=params)
+            return httpx.Response(429, request=req, headers={"retry-after": "12"})
+
+    monkeypatch.setattr("app.services.amazon_scrape_metrics.httpx.AsyncClient", _Client)
+
+    with pytest.raises(ScraperBusyError) as exc:
+        await fetch_scraper_json(settings=settings, asin="B000FC2BTQ")
+
+    assert exc.value.retry_after_seconds == 12
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio
@@ -351,8 +448,8 @@ async def test_persist_scrape_result_keeps_rank_and_offers_on_empty_success_payl
 
 
 @pytest.mark.asyncio
-async def test_store_reference_image_locally_retries_then_succeeds(monkeypatch) -> None:
-    settings = get_settings()
+async def test_store_reference_image_locally_retries_then_succeeds(monkeypatch, tmp_path) -> None:
+    settings = get_settings().model_copy(update={"app_storage_dir": tmp_path})
     master_product_id = uuid.uuid4()
 
     class _Response:
@@ -400,8 +497,8 @@ async def test_store_reference_image_locally_retries_then_succeeds(monkeypatch) 
 
 
 @pytest.mark.asyncio
-async def test_store_reference_image_locally_logs_failure_after_retries(monkeypatch, caplog) -> None:
-    settings = get_settings()
+async def test_store_reference_image_locally_logs_failure_after_retries(monkeypatch, caplog, tmp_path) -> None:
+    settings = get_settings().model_copy(update={"app_storage_dir": tmp_path})
     master_product_id = uuid.uuid4()
 
     calls: list[int] = []

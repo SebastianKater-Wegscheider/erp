@@ -61,6 +61,8 @@ USED_BUCKETS: tuple[ConditionBucket, ...] = (
 
 REFERENCE_IMAGE_FETCH_MAX_ATTEMPTS = 3
 REFERENCE_IMAGE_FETCH_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({408, 425, 429, 500, 502, 503, 504})
+SCRAPER_FETCH_MAX_ATTEMPTS = 3
+SCRAPER_FETCH_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({408, 425, 500, 502, 503, 504})
 
 
 def utcnow() -> datetime:
@@ -181,22 +183,42 @@ class BestPrice:
 
 async def fetch_scraper_json(*, settings: Settings, asin: str) -> dict[str, Any]:
     timeout = httpx.Timeout(timeout=settings.amazon_scraper_timeout_seconds)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        url = f"{settings.amazon_scraper_base_url.rstrip('/')}/api/scrape"
-        r = await client.get(url, params={"asin": asin})
-        if r.status_code == 429:
-            retry_after_raw = r.headers.get("retry-after")
-            retry_after: int | None = None
-            if isinstance(retry_after_raw, str):
-                retry_after_raw = retry_after_raw.strip()
-                if retry_after_raw.isdigit():
-                    retry_after = max(1, int(retry_after_raw))
-            raise ScraperBusyError("Scraper busy (429)", retry_after_seconds=retry_after)
-        r.raise_for_status()
-        data = r.json()
-        if not isinstance(data, dict):
-            raise RuntimeError("Unexpected scraper response shape")
-        return data
+    url = f"{settings.amazon_scraper_base_url.rstrip('/')}/api/scrape"
+    for attempt in range(1, SCRAPER_FETCH_MAX_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.get(url, params={"asin": asin})
+            if r.status_code == 429:
+                retry_after_raw = r.headers.get("retry-after")
+                retry_after: int | None = None
+                if isinstance(retry_after_raw, str):
+                    retry_after_raw = retry_after_raw.strip()
+                    if retry_after_raw.isdigit():
+                        retry_after = max(1, int(retry_after_raw))
+                raise ScraperBusyError("Scraper busy (429)", retry_after_seconds=retry_after)
+            r.raise_for_status()
+            data = r.json()
+            if not isinstance(data, dict):
+                raise RuntimeError("Unexpected scraper response shape")
+            return data
+        except ScraperBusyError:
+            raise
+        except Exception as exc:
+            can_retry = attempt < SCRAPER_FETCH_MAX_ATTEMPTS and _is_retryable_scraper_fetch_error(exc)
+            log_payload: dict[str, Any] = {
+                "asin": asin,
+                "attempt": attempt,
+                "max_attempts": SCRAPER_FETCH_MAX_ATTEMPTS,
+            }
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+                log_payload["status_code"] = int(exc.response.status_code)
+            if can_retry:
+                logger.warning("Amazon scraper request failed; retrying", extra=log_payload)
+                await asyncio.sleep(0.4 * attempt)
+                continue
+            raise
+
+    raise RuntimeError("Amazon scraper request failed without a terminal error")
 
 
 def compute_best_prices(offers: Any) -> dict[ConditionBucket, BestPrice]:
@@ -346,6 +368,17 @@ def _is_retryable_image_fetch_error(exc: Exception) -> bool:
         if response is None:
             return False
         return int(response.status_code) in REFERENCE_IMAGE_FETCH_RETRYABLE_STATUS_CODES
+    return False
+
+
+def _is_retryable_scraper_fetch_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.RequestError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        if response is None:
+            return False
+        return int(response.status_code) in SCRAPER_FETCH_RETRYABLE_STATUS_CODES
     return False
 
 

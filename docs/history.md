@@ -145,3 +145,29 @@
   - Auswahl per Checkbox (Zeile/Karte, plus "Seite auswaehlen").
   - Eine zentrale Aktion "Ausgewaehlte loeschen" mit Confirm.
 - Dadurch sinkt das Risiko von versehentlichen Einzel-Loeschungen und die Oberflaeche bleibt ruhiger.
+
+## 2026-02-12 - Amazon-Scraper Zuverlaessigkeit: transienten Netzwerkfehler abfedern
+
+### Ausgangslage
+- Operativ zeigte der Scraper unregelmaessige Ausfaelle trotz laufendem Scheduler-Lock.
+- Fehlerbild in den Runs war primaer transient: `ConnectError` und einzelne HTTP `500` vom Upstream-Scraper-Service.
+
+### Business-Entscheidung
+- Einzelne kurzfristige Netz-/Upstream-Fehler sollen nicht sofort als fachlicher Scrape-Fehlschlag persistiert werden.
+- 429/BUSY bleibt weiterhin ein explizites Signal fuer Laststeuerung und wird nicht lokal "wegretried".
+
+### Technische Entscheidungen
+- `fetch_scraper_json()` bekommt gezielte Retries (3 Versuche) fuer:
+  - Transportfehler (`httpx.RequestError`)
+  - retrybare HTTP-Statuscodes (`408`, `425`, `500`, `502`, `503`, `504`)
+- Backoff ist kurz und linear (`0.4s * attempt`), damit Tick-Durchsatz erhalten bleibt.
+- Fuer `429` wird wie bisher sofort `ScraperBusyError` geworfen (kein lokaler Retry).
+- Unit-Tests wurden fuer alle drei Faelle ergaenzt:
+  - Transportfehler -> spaeterer Erfolg
+  - retrybarer 5xx -> spaeterer Erfolg
+  - 429 -> Busy ohne Retry
+- Bestehende Bild-Download-Tests wurden auf `tmp_path` entkoppelt, damit CI/Lokal nicht von `/data`-Rechten abhaengt.
+
+### Beobachtung nach Check
+- Status waehrend Diagnose: `enabled=true`, `total_with_asin=83`, `blocked_last=0`; `stale` sank im Live-Lauf bis auf `0`.
+- Drei manuelle Trigger auf zuvor stale Produkte liefen erfolgreich durch (`ok=true`, `blocked=false`, `error=null`).
