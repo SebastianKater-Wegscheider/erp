@@ -45,6 +45,39 @@ type CompanyDashboardOut = {
   inventory_old_stock_90d_count: number;
   negative_profit_orders_30d_count: number;
   master_products_missing_asin_count: number;
+  amazon_inventory: {
+    computed_at: string;
+    in_stock_units_total: number;
+    in_stock_units_priced: number;
+    in_stock_market_gross_cents: number;
+    in_stock_fba_payout_cents: number;
+    in_stock_margin_cents: number;
+    in_stock_units_missing_asin: number;
+    in_stock_units_fresh: number;
+    in_stock_units_stale_or_blocked: number;
+    in_stock_units_blocked: number;
+    positive_margin_units: number;
+    negative_margin_units: number;
+    top_opportunities: Array<{
+      master_product_id: string;
+      sku: string;
+      title: string;
+      platform: string;
+      region: string;
+      variant: string;
+      units_total: number;
+      units_priced: number;
+      market_gross_cents_total: number;
+      fba_payout_cents_total: number;
+      margin_cents_total: number;
+      amazon_last_success_at?: string | null;
+      amazon_blocked_last?: boolean | null;
+      amazon_rank_overall?: number | null;
+      amazon_rank_specific?: number | null;
+      amazon_offers_count_total?: number | null;
+      amazon_offers_count_used_priced_total?: number | null;
+    }>;
+  };
 
   top_products_30d: Array<ProductAgg>;
   worst_products_30d: Array<ProductAgg>;
@@ -176,6 +209,11 @@ export function DashboardPage() {
               : ("secondary" as const),
     }));
   }, [data?.inventory_status_counts]);
+
+  const amazonTopOpportunities = useMemo(
+    () => data?.amazon_inventory?.top_opportunities ?? [],
+    [data?.amazon_inventory?.top_opportunities],
+  );
 
   return (
     <div className="space-y-4">
@@ -465,6 +503,95 @@ export function DashboardPage() {
               <ExternalLinkButton href="https://sellercentral.amazon.de/" label="Seller Central öffnen" />
               <ExternalLinkButton href="https://sellercentral.amazon.de/orders-v3" label="Bestellungen" />
               <ExternalLinkButton href="https://sellercentral.amazon.de/inventory/" label="Inventar" />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Amazon Intelligence</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {data ? (
+                <>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Sell Value (net)</div>
+                    <div className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                      {formatEur(data.amazon_inventory.in_stock_fba_payout_cents)} €
+                    </div>
+                    <div
+                      className={[
+                        "text-xs",
+                        data.amazon_inventory.in_stock_margin_cents < 0
+                          ? "text-red-700 dark:text-red-300"
+                          : "text-emerald-700 dark:text-emerald-300",
+                      ].join(" ")}
+                    >
+                      Brutto {formatEur(data.amazon_inventory.in_stock_market_gross_cents)} € · Marge{" "}
+                      {formatEur(data.amazon_inventory.in_stock_margin_cents)} €
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    Bepreist {data.amazon_inventory.in_stock_units_priced}/{data.amazon_inventory.in_stock_units_total} · Fresh{" "}
+                    {data.amazon_inventory.in_stock_units_fresh} · Stale/blocked {data.amazon_inventory.in_stock_units_stale_or_blocked}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Top Chancen</div>
+                    {amazonTopOpportunities.length ? (
+                      amazonTopOpportunities.map((o) => {
+                        const rank =
+                          typeof o.amazon_rank_overall === "number"
+                            ? o.amazon_rank_overall
+                            : typeof o.amazon_rank_specific === "number"
+                              ? o.amazon_rank_specific
+                              : null;
+                        const offers =
+                          typeof o.amazon_offers_count_used_priced_total === "number"
+                            ? `${o.amazon_offers_count_used_priced_total} used`
+                            : typeof o.amazon_offers_count_total === "number"
+                              ? `${o.amazon_offers_count_total}`
+                              : null;
+                        return (
+                          <Link
+                            key={o.master_product_id}
+                            to={`/inventory?q=${encodeURIComponent(o.master_product_id)}&view=overview`}
+                            className="block rounded-md border border-gray-200 px-2.5 py-2 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900/50"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0 truncate text-sm text-gray-900 dark:text-gray-100">{o.title}</div>
+                              <div className="shrink-0 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                                +{formatEur(o.margin_cents_total)} €
+                              </div>
+                            </div>
+                            <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+                              {o.units_total} Stk · {o.platform}
+                              {rank !== null ? ` · BSR #${rank}` : ""}
+                              {offers ? ` · Offers ${offers}` : ""}
+                            </div>
+                          </Link>
+                        );
+                      })
+                    ) : (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Keine direkten Chancen mit positiver Marge.</div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Button asChild variant="outline" className="w-full justify-start">
+                      <Link to="/inventory?queue=AMAZON_STALE&view=overview">
+                        Amazon stale Queue
+                        <Badge variant="warning">{data.inventory_amazon_stale_count}</Badge>
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline" className="w-full justify-start">
+                      <Link to="/master-products?view=amazon">Produktstamm: Amazon View</Link>
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400">…</div>
+              )}
             </CardContent>
           </Card>
 
