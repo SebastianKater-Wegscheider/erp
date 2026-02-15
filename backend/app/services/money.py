@@ -3,6 +3,24 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_HALF_UP
 
 
+def parse_eur_to_cents(input_: str) -> int:
+    s = str(input_).strip().replace(" ", "").replace("\t", "").replace("\n", "").replace("\r", "")
+    s = s.replace(",", ".")
+    if s == "":
+        return 0
+    # Accept optional negative sign and 0-2 decimals.
+    import re
+
+    if not re.fullmatch(r"-?\d+(\.\d{1,2})?", s):
+        raise ValueError("Invalid EUR amount")
+
+    int_part, _, dec_part = s.partition(".")
+    sign = -1 if int_part.startswith("-") else 1
+    euros = int(int_part.replace("-", ""))
+    cents = int((dec_part + "00")[:2]) if dec_part else 0
+    return sign * (euros * 100 + cents)
+
+
 def split_gross_to_net_and_tax(*, gross_cents: int, tax_rate_bp: int) -> tuple[int, int]:
     """
     Integer-only VAT split.

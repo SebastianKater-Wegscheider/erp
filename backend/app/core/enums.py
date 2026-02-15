@@ -60,6 +60,11 @@ class OrderStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class CashRecognition(StrEnum):
+    AT_FINALIZE = "AT_FINALIZE"
+    AT_PAYOUT = "AT_PAYOUT"
+
+
 class FBAShipmentStatus(StrEnum):
     DRAFT = "DRAFT"
     SHIPPED = "SHIPPED"

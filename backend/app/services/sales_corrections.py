@@ -8,7 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
-from app.core.enums import DocumentType, InventoryCondition, InventoryStatus, OrderStatus, PurchaseType, ReturnAction
+from app.core.enums import (
+    CashRecognition,
+    DocumentType,
+    InventoryCondition,
+    InventoryStatus,
+    OrderStatus,
+    PurchaseType,
+    ReturnAction,
+)
 from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
@@ -169,17 +177,18 @@ async def create_sales_correction(
             )
             await transition_status(session, actor=actor, item=item, new_status=InventoryStatus.LOST)
 
-    refund_total_with_shipping = refund_total_gross + data.shipping_refund_gross_cents
-    session.add(
-        LedgerEntry(
-            entry_date=data.correction_date,
-            account=data.payment_source,
-            amount_cents=-refund_total_with_shipping,
-            entity_type="sales_correction",
-            entity_id=correction.id,
-            memo=correction_number,
+    if order.cash_recognition == CashRecognition.AT_FINALIZE:
+        refund_total_with_shipping = refund_total_gross + data.shipping_refund_gross_cents
+        session.add(
+            LedgerEntry(
+                entry_date=data.correction_date,
+                account=data.payment_source,
+                amount_cents=-refund_total_with_shipping,
+                entity_type="sales_correction",
+                entity_id=correction.id,
+                memo=correction_number,
+            )
         )
-    )
 
     await audit_log(
         session,

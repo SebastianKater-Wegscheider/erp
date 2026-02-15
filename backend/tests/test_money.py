@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.services.money import format_eur, mileage_amount_cents, meters_from_km, split_gross_to_net_and_tax
+from app.services.money import format_eur, mileage_amount_cents, meters_from_km, parse_eur_to_cents, split_gross_to_net_and_tax
 
 
 def test_split_gross_to_net_and_tax_exact_20_percent() -> None:
@@ -46,3 +46,18 @@ def test_mileage_amount_cents_round_half_up() -> None:
     assert mileage_amount_cents(distance_meters=1000, rate_cents_per_km=42) == 42
     assert mileage_amount_cents(distance_meters=1500, rate_cents_per_km=42) == 63
 
+
+def test_parse_eur_to_cents() -> None:
+    assert parse_eur_to_cents("") == 0
+    assert parse_eur_to_cents("  ") == 0
+    assert parse_eur_to_cents("0") == 0
+    assert parse_eur_to_cents("0,01") == 1
+    assert parse_eur_to_cents("123,45") == 12_345
+    assert parse_eur_to_cents("123.4") == 12_340
+    assert parse_eur_to_cents("-0,05") == -5
+    assert parse_eur_to_cents(" 1 234,56 ") == 123_456
+
+    with pytest.raises(ValueError):
+        parse_eur_to_cents("abc")
+    with pytest.raises(ValueError):
+        parse_eur_to_cents("12,345")

@@ -7,9 +7,15 @@ from sqlalchemy import Date, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.enums import OrderChannel, OrderStatus, PaymentSource, PurchaseType
+from app.core.enums import CashRecognition, OrderChannel, OrderStatus, PaymentSource, PurchaseType
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.sql_enums import order_channel_enum, order_status_enum, payment_source_enum, purchase_type_enum
+from app.models.sql_enums import (
+    cash_recognition_enum,
+    order_channel_enum,
+    order_status_enum,
+    payment_source_enum,
+    purchase_type_enum,
+)
 
 
 class SalesOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -18,6 +24,11 @@ class SalesOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     order_date: Mapped[date] = mapped_column(Date, nullable=False)
     channel: Mapped[OrderChannel] = mapped_column(order_channel_enum, nullable=False)
     status: Mapped[OrderStatus] = mapped_column(order_status_enum, nullable=False, default=OrderStatus.DRAFT)
+    cash_recognition: Mapped[CashRecognition] = mapped_column(
+        cash_recognition_enum, nullable=False, default=CashRecognition.AT_FINALIZE
+    )
+
+    external_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     buyer_name: Mapped[str] = mapped_column(String(200), nullable=False)
     buyer_address: Mapped[str | None] = mapped_column(Text, nullable=True)

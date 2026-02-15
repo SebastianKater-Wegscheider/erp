@@ -12,6 +12,7 @@ from app.core.enums import (
     OpexCategory,
     OrderChannel,
     OrderStatus,
+    CashRecognition,
     PaymentSource,
     PurchaseKind,
     PurchaseType,
@@ -29,6 +30,7 @@ payment_source_enum = Enum(PaymentSource, name="payment_source")
 
 order_channel_enum = Enum(OrderChannel, name="order_channel")
 order_status_enum = Enum(OrderStatus, name="order_status")
+cash_recognition_enum = Enum(CashRecognition, name="cash_recognition")
 
 mileage_purpose_enum = Enum(MileagePurpose, name="mileage_purpose")
 opex_category_enum = Enum(OpexCategory, name="opex_category")

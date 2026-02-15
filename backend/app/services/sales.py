@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.enums import DocumentType, InventoryStatus, OrderStatus, PurchaseType
+from app.core.enums import CashRecognition, DocumentType, InventoryStatus, OrderStatus, PurchaseType
 from app.core.config import get_settings
 from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
@@ -170,17 +170,18 @@ async def finalize_sales_order(session: AsyncSession, *, actor: str, order_id: u
             raise ValueError(f"Inventory item not RESERVED: {item.id} (status={item.status})")
         await transition_status(session, actor=actor, item=item, new_status=InventoryStatus.SOLD)
 
-    total_gross_cents = sum(line.sale_gross_cents for line in order.lines) + order.shipping_gross_cents
-    session.add(
-        LedgerEntry(
-            entry_date=order.order_date,
-            account=order.payment_source,
-            amount_cents=total_gross_cents,
-            entity_type="sale",
-            entity_id=order.id,
-            memo=invoice_number,
+    if order.cash_recognition == CashRecognition.AT_FINALIZE:
+        total_gross_cents = sum(line.sale_gross_cents for line in order.lines) + order.shipping_gross_cents
+        session.add(
+            LedgerEntry(
+                entry_date=order.order_date,
+                account=order.payment_source,
+                amount_cents=total_gross_cents,
+                entity_type="sale",
+                entity_id=order.id,
+                memo=invoice_number,
+            )
         )
-    )
 
     await audit_log(
         session,
@@ -494,22 +495,23 @@ async def update_sales_order(session: AsyncSession, *, actor: str, order_id: uui
         order.shipping_regular_tax_cents = shipping_regular_tax_cents
         order.shipping_margin_gross_cents = int(shipping_margin_gross_cents)
 
-        # Update the ledger entry (create if missing).
-        total_gross_cents = sum(int(line_by_item[i].sale_gross_cents) for i in item_ids_sorted) + int(order.shipping_gross_cents)
-        entry = (
-            (await session.execute(
-                select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order.id)
-            ))
-            .scalars()
-            .first()
-        )
-        if entry is None:
-            entry = LedgerEntry(entity_type="sale", entity_id=order.id, memo=order.invoice_number)
-            session.add(entry)
-        entry.entry_date = order.order_date
-        entry.account = order.payment_source
-        entry.amount_cents = total_gross_cents
-        entry.memo = order.invoice_number
+        if order.cash_recognition == CashRecognition.AT_FINALIZE:
+            # Update the ledger entry (create if missing).
+            total_gross_cents = sum(int(line_by_item[i].sale_gross_cents) for i in item_ids_sorted) + int(order.shipping_gross_cents)
+            entry = (
+                (await session.execute(
+                    select(LedgerEntry).where(LedgerEntry.entity_type == "sale", LedgerEntry.entity_id == order.id)
+                ))
+                .scalars()
+                .first()
+            )
+            if entry is None:
+                entry = LedgerEntry(entity_type="sale", entity_id=order.id, memo=order.invoice_number)
+                session.add(entry)
+            entry.entry_date = order.order_date
+            entry.account = order.payment_source
+            entry.amount_cents = total_gross_cents
+            entry.memo = order.invoice_number
 
     else:
         raise ValueError("Unsupported order status")

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.enums import OrderChannel, OrderStatus, PaymentSource, PurchaseType
+from app.core.enums import CashRecognition, OrderChannel, OrderStatus, PaymentSource, PurchaseType
 
 
 class SalesOrderLineCreate(BaseModel):
@@ -46,6 +46,8 @@ class SalesOrderOut(BaseModel):
     order_date: date
     channel: OrderChannel
     status: OrderStatus
+    cash_recognition: CashRecognition
+    external_order_id: str | None
     buyer_name: str
     buyer_address: str | None
     shipping_gross_cents: int
