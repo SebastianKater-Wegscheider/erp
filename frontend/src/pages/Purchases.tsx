@@ -1299,7 +1299,9 @@ export function PurchasesPage() {
         ? quickCreatePlatform.trim()
         : PLATFORM_NONE;
 
-  const purchaseRows = list.data ?? [];
+  // Avoid creating a new empty array each render while the query is loading.
+  // A fresh `[]` would retrigger effects keyed on `purchaseRows` and can lead to render loops.
+  const purchaseRows = useMemo(() => list.data ?? [], [list.data]);
   const pagedPurchases = useMemo(() => paginateItems(purchaseRows, page), [purchaseRows, page]);
   const selectedPurchaseIdSet = useMemo(() => new Set(selectedPurchaseIds), [selectedPurchaseIds]);
   const selectedPurchaseCount = selectedPurchaseIds.length;

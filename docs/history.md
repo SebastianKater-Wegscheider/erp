@@ -41,6 +41,20 @@
 - Corrections werden bewusst im Monat der Korrektur als Expense/Outflow erfasst (keine Rueckverteilung auf Originalverkaufsmonat), damit Cash- und VAT-Naehe fuer operative Steuerung erhalten bleibt.
 - Mileage bleibt vorerst ausserhalb der Accounting-Karte, da keine Ledger-Buchung vorliegt.
 
+## 2026-02-15 - Frontend: Purchases Render-Loop behoben + stabile Unit-Tests
+
+### Ausgangslage
+- `PurchasesPage` konnte waehrend des initialen Query-Loadings in eine Render-Loop geraten (hohe CPU, UI wirkt "eingefroren").
+- `vitest run` war dadurch flaky bzw. konnte haengen, insbesondere in `src/pages/Purchases.test.tsx`.
+
+### Business-Impact
+- Potenzieller "Freeze" im Einkaufs-Modul genau in der Phase, in der Nutzer Daten eingeben wollen.
+- Unzuverlaessige Tests bremsen Entwicklung und machen Releases riskanter.
+
+### Technische Entscheidungen
+- `purchaseRows` wird aus `list.data` per `useMemo` abgeleitet, um waehrend `undefined` nicht pro Render ein neues `[]` zu erzeugen (stabilere Effect-Dependencies).
+- `Purchases.test.tsx` mockt `/mileage` und die Map-Libraries (`leaflet`/`react-leaflet`), da der Test nur den Formular-Flow validiert und Map-Rendering in jsdom nicht relevant ist.
+
 ## 2026-02-12 - PAIV: Private Sacheinlagen als eigener Einkaufstyp (cash-neutral)
 
 ### Ausgangslage

@@ -1,9 +1,22 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 
-import { PurchasesPage } from "./Purchases";
+// Purchases uses Leaflet maps for mileage previews. Leaflet/react-leaflet can hang in jsdom during
+// module initialization, so we mock them for unit tests focused on form behavior.
+vi.mock("leaflet", () => ({
+  latLngBounds: vi.fn(() => ({})),
+}));
+
+vi.mock("react-leaflet", () => ({
+  MapContainer: ({ children }: { children?: ReactNode }) => <div data-testid="map">{children}</div>,
+  TileLayer: () => null,
+  Polyline: () => null,
+  CircleMarker: () => null,
+  useMap: () => ({ fitBounds: vi.fn() }),
+}));
 
 const { requestMock } = vi.hoisted(() => ({
   requestMock: vi.fn(),
@@ -17,10 +30,13 @@ vi.mock("../lib/api", () => ({
   }),
 }));
 
-function renderPage() {
+async function renderPage() {
+  const { PurchasesPage } = await import("./Purchases");
+
   requestMock.mockImplementation(async (path: string) => {
     if (path === "/master-products") return [];
     if (path === "/purchases") return [];
+    if (path === "/mileage") return [];
     if (path === "/amazon-scrapes/fee-profile") {
       return { referral_fee_bp: 1500, fulfillment_fee_cents: 350, inbound_shipping_cents: 0 };
     }
@@ -60,7 +76,7 @@ beforeAll(() => {
 });
 
 it("shows PAIV-specific position inputs", async () => {
-  renderPage();
+  await renderPage();
 
   fireEvent.click(await screen.findByRole("button", { name: /Einkauf erfassen/i }));
   fireEvent.click(screen.getAllByRole("combobox")[0]);
