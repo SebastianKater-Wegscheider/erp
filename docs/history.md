@@ -41,6 +41,33 @@
 - Corrections werden bewusst im Monat der Korrektur als Expense/Outflow erfasst (keine Rueckverteilung auf Originalverkaufsmonat), damit Cash- und VAT-Naehe fuer operative Steuerung erhalten bleibt.
 - Mileage bleibt vorerst ausserhalb der Accounting-Karte, da keine Ledger-Buchung vorliegt.
 
+## 2026-02-15 - Marketplace (Amazon/eBay): CSV Import + SKU-basiertes Auto-Matching + Payout-Cash
+
+### Ausgangslage
+- Amazon/eBay Sales werden heute operativ ausserhalb des ERP ausgefuehrt; das ERP bildet v.a. Inventar/Steuer/Belege ab.
+- Fuer die operative Steuerung (Cash-Balance/Runway) ist eine Cash-Buchung zum Order-Datum bei Marktplatzverkaeufen irrefuehrend, weil Auszahlungen gebuendelt und zeitversetzt erfolgen.
+
+### Business-Entscheidungen
+- Daten-Ingest zuerst ueber robuste CSV-Imports (kein API-Key-/Rate-Limit-Risiko im MVP).
+- Matching auf Inventar-Einheit wird automatisiert ueber eine eindeutige, menschlich nutzbare Artikelnummer pro Einheit (`IT-...`), die im Marktplatz-Export als SKU auftaucht.
+- Marktplatz-Sales werden im ERP als finalisierte Sales Orders abgebildet (historische Wahrheit), PDFs bleiben manuell.
+- Cash fuer Marktplatz-Sales/Returns wird erst bei Auszahlung gebucht (Payout/Settlement), nicht bei Order-Finalize.
+
+### Technische Entscheidungen
+- Neues Feld `InventoryItem.item_code` (unique, nicht-null) und Suche/Copy in der UI, damit `IT-...` operativ schnell nutzbar ist.
+- Marketplace-Import erfolgt als Staging:
+  - Orders + Lines werden persistiert, auto-gematcht und als `READY/NEEDS_ATTENTION/APPLIED` markiert.
+  - Matching-Regeln sind deterministisch:
+    - `IT-...` -> exakte Einheit
+    - fallback `MP-...` -> FIFO-Allocation aus sellable Stock (`FBA_WAREHOUSE` vor `AVAILABLE`)
+- Neue Cash-Policy pro Sales Order (`cash_recognition`):
+  - `AT_FINALIZE` (bisheriges Verhalten) vs. `AT_PAYOUT` (Marktplatz)
+  - Sales/Corrections unter `AT_PAYOUT` erzeugen keine `ledger_entries`; Payout-Import erzeugt Bank-Ledger-Eintrag.
+
+### Risiken / Trade-offs
+- Auto-Matching setzt disziplinierte Pflege der SKU im Marktplatz voraus; ohne SKU steigt der manuelle Aufwand drastisch.
+- FIFO-Allocation bei `MP-...` ist deterministisch, kann aber in Edge-Cases (Mehrfachbestand) nicht die reale Einheit spiegeln; `IT-...` bleibt der Preferred Path.
+
 ## 2026-02-15 - Frontend: Purchases Render-Loop behoben + stabile Unit-Tests
 
 ### Ausgangslage
