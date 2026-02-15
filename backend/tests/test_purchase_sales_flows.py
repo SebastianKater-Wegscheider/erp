@@ -209,6 +209,10 @@ async def test_update_private_equity_valuation_fields(db_session: AsyncSession) 
         await db_session.execute(select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.lines)))
     ).scalar_one()
     line = row.lines[0]
+    line_id = line.id
+    line_master_product_id = line.master_product_id
+    line_condition = line.condition
+    line_purchase_type = line.purchase_type
     await db_session.rollback()
 
     async with db_session.begin():
@@ -224,10 +228,10 @@ async def test_update_private_equity_valuation_fields(db_session: AsyncSession) 
                 payment_source=PaymentSource.BANK,
                 lines=[
                     PurchaseLineUpsert(
-                        id=line.id,
-                        master_product_id=line.master_product_id,
-                        condition=line.condition,
-                        purchase_type=line.purchase_type,
+                        id=line_id,
+                        master_product_id=line_master_product_id,
+                        condition=line_condition,
+                        purchase_type=line_purchase_type,
                         purchase_price_cents=1_600,
                         market_value_cents=1_900,
                         held_privately_over_12_months=True,

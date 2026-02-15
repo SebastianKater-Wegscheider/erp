@@ -519,6 +519,7 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
     uploads_dir.mkdir(parents=True, exist_ok=True)
     (uploads_dir / "chat-1.png").write_bytes(b"chat1")
     (uploads_dir / "listing-1.png").write_bytes(b"listing1")
+    (uploads_dir / "market-comp-1.png").write_bytes(b"marketcomp1")
 
     created = await add_purchase_attachments(
         purchase_id=purchase.id,
@@ -545,7 +546,7 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
             data=PurchaseAttachmentBatchCreate(
                 attachments=[
                     {
-                        "upload_path": "uploads/listing-1.png",
+                        "upload_path": "uploads/market-comp-1.png",
                         "kind": "MARKET_COMP",
                     },
                 ]
@@ -558,7 +559,7 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
         data=PurchaseAttachmentBatchCreate(
             attachments=[
                 {
-                    "upload_path": "uploads/listing-1.png",
+                    "upload_path": "uploads/market-comp-1.png",
                     "kind": "MARKET_COMP",
                     "purchase_line_id": str(purchase_line_id),
                 },
@@ -569,8 +570,8 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
     assert market_comp[0].purchase_line_id == purchase_line_id
 
     listed = await list_purchase_attachments(purchase_id=purchase.id, session=db_session)
-    assert len(listed) == 2
-    assert {item.kind for item in listed} == {"CHAT", "LISTING"}
+    assert len(listed) == 3
+    assert {item.kind for item in listed} == {"CHAT", "LISTING", "MARKET_COMP"}
 
     await delete_purchase_attachment(
         purchase_id=purchase.id,
@@ -578,7 +579,7 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
         session=db_session,
     )
     after_delete = await list_purchase_attachments(purchase_id=purchase.id, session=db_session)
-    assert len(after_delete) == 1
+    assert len(after_delete) == 2
 
     filename, content = await monthly_close_zip(db_session, year=2026, month=2, storage_dir=tmp_path)
     assert filename == "month-close-2026-02.zip"
@@ -590,8 +591,10 @@ async def test_purchase_attachments_crud_and_monthly_close_export(db_session: As
     assert "csv/purchase_attachments.csv" in names
     assert "csv/private_equity_bookings.csv" in names
     assert "input_docs/purchase_attachments/uploads/listing-1.png" in names
+    assert "input_docs/purchase_attachments/uploads/market-comp-1.png" in names
     assert "willhaben.at" in csv_content
     assert "LISTING" in csv_content
+    assert "MARKET_COMP" in csv_content
 
 
 @pytest.mark.asyncio

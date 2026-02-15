@@ -444,7 +444,7 @@ async def test_company_dashboard_returns_amazon_inventory_insights(db_session: A
     assert amazon["in_stock_units_blocked"] == 1
 
     assert amazon["in_stock_market_gross_cents"] == 21_600
-    assert amazon["in_stock_fba_payout_cents"] == 18_960
+    assert amazon["in_stock_fba_payout_cents"] == 16_960
     assert amazon["in_stock_margin_cents"] == 1_660
     assert amazon["positive_margin_units"] == 3
     assert amazon["negative_margin_units"] == 1

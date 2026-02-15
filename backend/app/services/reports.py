@@ -242,7 +242,11 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
             out["in_stock_units_missing_asin"] = int(out["in_stock_units_missing_asin"]) + 1
         else:
             blocked = bool(r.blocked_last is True)
-            stale = r.last_success_at is None or r.last_success_at < stale_before
+            last_success_at = r.last_success_at
+            # SQLite may return naive datetimes even when the column is timezone-aware.
+            if last_success_at is not None and getattr(last_success_at, "tzinfo", None) is None:
+                last_success_at = last_success_at.replace(tzinfo=timezone.utc)
+            stale = last_success_at is None or last_success_at < stale_before
             if blocked:
                 out["in_stock_units_blocked"] = int(out["in_stock_units_blocked"]) + 1
             if blocked or stale:
