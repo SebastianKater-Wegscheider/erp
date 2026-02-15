@@ -71,6 +71,7 @@ async def list_inventory(
             pat = f"%{needle}%"
             stmt = stmt.where(
                 or_(
+                    InventoryItem.item_code.ilike(pat),
                     MasterProduct.title.ilike(pat),
                     MasterProduct.sku.ilike(pat),
                     MasterProduct.platform.ilike(pat),

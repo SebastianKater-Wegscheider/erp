@@ -12,6 +12,7 @@ class InventoryItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    item_code: str
     master_product_id: UUID
     purchase_line_id: UUID | None
 
