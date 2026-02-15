@@ -10,6 +10,7 @@ const InventoryPage = lazy(() => import("./pages/Inventory").then((m) => ({ defa
 const FBAShipmentsPage = lazy(() => import("./pages/FBAShipments").then((m) => ({ default: m.FBAShipmentsPage })));
 const PurchasesPage = lazy(() => import("./pages/Purchases").then((m) => ({ default: m.PurchasesPage })));
 const SalesPage = lazy(() => import("./pages/Sales").then((m) => ({ default: m.SalesPage })));
+const MarketplacePage = lazy(() => import("./pages/Marketplace").then((m) => ({ default: m.MarketplacePage })));
 const CostAllocationsPage = lazy(() => import("./pages/CostAllocations").then((m) => ({ default: m.CostAllocationsPage })));
 const OpexPage = lazy(() => import("./pages/Opex").then((m) => ({ default: m.OpexPage })));
 const MileagePage = lazy(() => import("./pages/Mileage").then((m) => ({ default: m.MileagePage })));
@@ -37,6 +38,7 @@ export function App() {
               <Route path="/fba-shipments" element={<FBAShipmentsPage />} />
               <Route path="/purchases" element={<PurchasesPage />} />
               <Route path="/sales" element={<SalesPage />} />
+              <Route path="/marketplace" element={<MarketplacePage />} />
               <Route path="/cost-allocations" element={<CostAllocationsPage />} />
               <Route path="/opex" element={<OpexPage />} />
               <Route path="/mileage" element={<MileagePage />} />
