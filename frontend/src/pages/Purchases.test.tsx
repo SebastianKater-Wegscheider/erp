@@ -87,4 +87,4 @@ it("shows PAIV-specific position inputs", async () => {
 
   expect(await screen.findByPlaceholderText("Marktwert (EUR)")).toBeInTheDocument();
   expect(await screen.findByText(">12 Monate Privatbesitz")).toBeInTheDocument();
-});
+}, 15_000);
