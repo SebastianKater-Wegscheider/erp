@@ -9,6 +9,9 @@ from app.core.enums import (
     InventoryCondition,
     InventoryStatus,
     MileagePurpose,
+    MarketplaceImportKind,
+    MarketplaceMatchStrategy,
+    MarketplaceStagedOrderStatus,
     OpexCategory,
     OrderChannel,
     OrderStatus,
@@ -38,3 +41,7 @@ opex_category_enum = Enum(OpexCategory, name="opex_category")
 document_type_enum = Enum(DocumentType, name="document_type")
 
 return_action_enum = Enum(ReturnAction, name="return_action")
+
+marketplace_import_kind_enum = Enum(MarketplaceImportKind, name="marketplace_import_kind")
+marketplace_staged_order_status_enum = Enum(MarketplaceStagedOrderStatus, name="marketplace_staged_order_status")
+marketplace_match_strategy_enum = Enum(MarketplaceMatchStrategy, name="marketplace_match_strategy")

@@ -13,6 +13,8 @@ from app.models.amazon_scrape import (
 )
 from app.models.master_product import MasterProduct
 from app.models.marketplace_payout import MarketplacePayout
+from app.models.marketplace_import_batch import MarketplaceImportBatch
+from app.models.marketplace_staged_order import MarketplaceStagedOrder, MarketplaceStagedOrderLine
 from app.models.mileage_log import MileageLog
 from app.models.job_lock import JobLock
 from app.models.opex_expense import OpexExpense
@@ -37,6 +39,9 @@ __all__ = [
     "JobLock",
     "LedgerEntry",
     "MasterProduct",
+    "MarketplaceImportBatch",
+    "MarketplaceStagedOrder",
+    "MarketplaceStagedOrderLine",
     "MarketplacePayout",
     "MileageLog",
     "OpexExpense",

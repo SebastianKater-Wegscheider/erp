@@ -65,6 +65,23 @@ class CashRecognition(StrEnum):
     AT_PAYOUT = "AT_PAYOUT"
 
 
+class MarketplaceImportKind(StrEnum):
+    ORDERS = "ORDERS"
+    PAYOUTS = "PAYOUTS"
+
+
+class MarketplaceStagedOrderStatus(StrEnum):
+    READY = "READY"
+    NEEDS_ATTENTION = "NEEDS_ATTENTION"
+    APPLIED = "APPLIED"
+
+
+class MarketplaceMatchStrategy(StrEnum):
+    ITEM_CODE = "ITEM_CODE"
+    MASTER_SKU_FIFO = "MASTER_SKU_FIFO"
+    NONE = "NONE"
+
+
 class FBAShipmentStatus(StrEnum):
     DRAFT = "DRAFT"
     SHIPPED = "SHIPPED"
