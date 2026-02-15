@@ -1,4 +1,4 @@
-import { ArrowUpRight, Boxes, ExternalLink, PackagePlus, ReceiptText, RefreshCw, Search } from "lucide-react";
+import { ArrowUpRight, Boxes, ChevronDown, ChevronUp, ExternalLink, PackagePlus, ReceiptText, RefreshCw, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -15,6 +15,7 @@ import { Input } from "../components/ui/input";
 import { PageHeader } from "../components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components/ui/table-row-layout";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 type CompanyDashboardOut = {
   inventory_value_cents: number;
@@ -78,6 +79,35 @@ type CompanyDashboardOut = {
       amazon_offers_count_used_priced_total?: number | null;
     }>;
   };
+  accounting: {
+    window_months: number;
+    current_month: string;
+    current_cash_inflow_cents: number;
+    current_cash_outflow_cents: number;
+    current_cash_net_cents: number;
+    current_accrual_income_cents: number;
+    current_accrual_expenses_cents: number;
+    current_accrual_operating_result_cents: number;
+    current_vat_payable_cents: number;
+    average_cash_burn_3m_cents: number;
+    estimated_runway_months: number | null;
+    current_outflow_breakdown_cents: Record<string, number>;
+    current_opex_by_category_cents: Record<string, number>;
+    months: Array<{
+      month: string;
+      cash_inflow_cents: number;
+      cash_outflow_cents: number;
+      cash_net_cents: number;
+      accrual_income_cents: number;
+      accrual_expenses_cents: number;
+      accrual_operating_result_cents: number;
+    }>;
+    insights: Array<{
+      key: string;
+      tone: "info" | "warning" | "danger";
+      text: string;
+    }>;
+  };
 
   top_products_30d: Array<ProductAgg>;
   worst_products_30d: Array<ProductAgg>;
@@ -112,6 +142,24 @@ const INVENTORY_STATUS_LABEL: Record<string, string> = {
   RETURNED: "Retourniert",
   DISCREPANCY: "Abweichung",
   LOST: "Verloren",
+};
+
+const ACCOUNTING_OUTFLOW_LABEL: Record<string, string> = {
+  purchase: "Einkauf",
+  opex: "OpEx",
+  cost_allocation: "Kostenallokation",
+  sales_correction: "Refund/Korrektur",
+  other: "Sonstiges",
+};
+
+const OPEX_CATEGORY_LABEL: Record<string, string> = {
+  PACKAGING: "Verpackung",
+  POSTAGE: "Versand",
+  SOFTWARE: "Software",
+  OFFICE: "Buero",
+  CONSULTING: "Beratung",
+  FEES: "Gebuehren",
+  OTHER: "Sonstiges",
 };
 
 function kleinanzeigenSlug(q: string): string {
@@ -151,6 +199,8 @@ export function DashboardPage() {
 
   const data = q.data;
   const [rangeDays, setRangeDays] = useState<7 | 30 | 90>(30);
+  const [accountingView, setAccountingView] = useState<"cashflow" | "accrual">("cashflow");
+  const [showAccountingDetails, setShowAccountingDetails] = useState(false);
   const ts = useMemo(() => {
     const all = data?.sales_timeseries ?? [];
     const slice = rangeDays >= all.length ? all : all.slice(all.length - rangeDays);
@@ -170,6 +220,42 @@ export function DashboardPage() {
     const orders = slice.reduce((s, p) => s + p.orders_count, 0);
     return { revenue, profit, orders };
   }, [data?.sales_timeseries, rangeDays]);
+
+  const accountingMonths = useMemo(() => data?.accounting?.months ?? [], [data?.accounting?.months]);
+
+  const accountingChartData = useMemo(
+    () =>
+      accountingMonths.map((month) => ({
+        x: month.month,
+        cash_income_eur: month.cash_inflow_cents / 100,
+        cash_expenses_eur: month.cash_outflow_cents / 100,
+        cash_net_eur: month.cash_net_cents / 100,
+        accrual_income_eur: month.accrual_income_cents / 100,
+        accrual_expenses_eur: month.accrual_expenses_cents / 100,
+        accrual_operating_eur: month.accrual_operating_result_cents / 100,
+      })),
+    [accountingMonths],
+  );
+
+  const accountingOutflowBars = useMemo(() => {
+    const rows = Object.entries(data?.accounting?.current_outflow_breakdown_cents ?? {}).map(([key, cents]) => ({
+      key,
+      label: ACCOUNTING_OUTFLOW_LABEL[key] ?? key,
+      cents,
+    }));
+    rows.sort((a, b) => b.cents - a.cents);
+    return rows;
+  }, [data?.accounting?.current_outflow_breakdown_cents]);
+
+  const accountingOpexRows = useMemo(() => {
+    const rows = Object.entries(data?.accounting?.current_opex_by_category_cents ?? {}).map(([key, cents]) => ({
+      key,
+      label: OPEX_CATEGORY_LABEL[key] ?? key,
+      cents,
+    }));
+    rows.sort((a, b) => b.cents - a.cents);
+    return rows;
+  }, [data?.accounting?.current_opex_by_category_cents]);
 
   const cashRows = useMemo(() => {
     const rows = Object.entries(data?.cash_balance_cents ?? {});
@@ -333,6 +419,213 @@ export function DashboardPage() {
                     </div>
                     <div className="text-gray-600 dark:text-gray-300">Aufträge: <span className="font-medium text-gray-900 dark:text-gray-100">{totals.orders}</span></div>
                   </div>
+                </>
+              ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400">…</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>Accounting (6M)</CardTitle>
+                <Button variant="outline" size="sm" onClick={() => setShowAccountingDetails((v) => !v)}>
+                  {showAccountingDetails ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  {showAccountingDetails ? "Details ausblenden" : "Details anzeigen"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {data ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Income (Monat)</div>
+                      <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        {formatEur(data.accounting.current_accrual_income_cents)} €
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Expenses (Monat)</div>
+                      <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        {formatEur(data.accounting.current_accrual_expenses_cents)} €
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Net Cash (Monat)</div>
+                      <div
+                        className={[
+                          "mt-1 text-lg font-semibold",
+                          data.accounting.current_cash_net_cents < 0 ? "text-red-700 dark:text-red-300" : "text-gray-900 dark:text-gray-100",
+                        ].join(" ")}
+                      >
+                        {formatEur(data.accounting.current_cash_net_cents)} €
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Operating Result</div>
+                      <div
+                        className={[
+                          "mt-1 text-lg font-semibold",
+                          data.accounting.current_accrual_operating_result_cents < 0
+                            ? "text-red-700 dark:text-red-300"
+                            : "text-gray-900 dark:text-gray-100",
+                        ].join(" ")}
+                      >
+                        {formatEur(data.accounting.current_accrual_operating_result_cents)} €
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
+                    <span>Monat {data.accounting.current_month}</span>
+                    <span>VAT: {formatEur(data.accounting.current_vat_payable_cents)} €</span>
+                    <span>Burn (3M): {formatEur(data.accounting.average_cash_burn_3m_cents)} €/Monat</span>
+                    <span>
+                      Runway:{" "}
+                      {data.accounting.estimated_runway_months === null
+                        ? "keine Burn-Rate"
+                        : `${data.accounting.estimated_runway_months} Monate`}
+                    </span>
+                  </div>
+
+                  {!!data.accounting.insights.length && (
+                    <div className="flex flex-wrap gap-2">
+                      {data.accounting.insights.map((insight) => (
+                        <Badge
+                          key={insight.key}
+                          variant={insight.tone === "danger" ? "danger" : insight.tone === "warning" ? "warning" : "secondary"}
+                        >
+                          {insight.text}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  <Tabs
+                    value={accountingView}
+                    onValueChange={(value) => setAccountingView(value as "cashflow" | "accrual")}
+                    className="space-y-0"
+                  >
+                    <TabsList>
+                      <TabsTrigger value="cashflow">Cashflow</TabsTrigger>
+                      <TabsTrigger value="accrual">Accrual</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="cashflow">
+                      <MultiLineChart
+                        data={accountingChartData}
+                        series={[
+                          { key: "cash_income_eur", label: "Cash In (EUR)", stroke: "#2563eb" },
+                          { key: "cash_expenses_eur", label: "Cash Out (EUR)", stroke: "#ef4444" },
+                          { key: "cash_net_eur", label: "Cash Net (EUR)", stroke: "#059669" },
+                        ]}
+                        height={190}
+                        ariaLabel="Cashflow Monatsverlauf"
+                        xFormatter={(x) => x}
+                        valueFormatter={(v) => `${Math.round(v)} EUR`}
+                        className="text-gray-900 dark:text-gray-100"
+                      />
+                    </TabsContent>
+                    <TabsContent value="accrual">
+                      <MultiLineChart
+                        data={accountingChartData}
+                        series={[
+                          { key: "accrual_income_eur", label: "Accrual Income (EUR)", stroke: "#2563eb" },
+                          { key: "accrual_expenses_eur", label: "Accrual Expenses (EUR)", stroke: "#ef4444" },
+                          { key: "accrual_operating_eur", label: "Operatives Ergebnis (EUR)", stroke: "#f59e0b" },
+                        ]}
+                        height={190}
+                        ariaLabel="Accrual Monatsverlauf"
+                        xFormatter={(x) => x}
+                        valueFormatter={(v) => `${Math.round(v)} EUR`}
+                        className="text-gray-900 dark:text-gray-100"
+                      />
+                    </TabsContent>
+                  </Tabs>
+
+                  {showAccountingDetails && (
+                    <div className="space-y-4 rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                      <div className="text-sm font-medium text-gray-700 dark:text-gray-200">Monatliche Details</div>
+                      <div className="rounded-md border border-gray-200 dark:border-gray-800">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Monat</TableHead>
+                              <TableHead className="text-right">Cash In</TableHead>
+                              <TableHead className="text-right">Cash Out</TableHead>
+                              <TableHead className="text-right">Cash Net</TableHead>
+                              <TableHead className="text-right">Income</TableHead>
+                              <TableHead className="text-right">Expenses</TableHead>
+                              <TableHead className="text-right">Operating</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {accountingMonths.map((month) => (
+                              <TableRow key={month.month} className={TABLE_ROW_COMPACT_CLASS}>
+                                <TableCell>{month.month}</TableCell>
+                                <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(month.cash_inflow_cents)} €</TableCell>
+                                <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(month.cash_outflow_cents)} €</TableCell>
+                                <TableCell
+                                  className={[
+                                    TABLE_CELL_NUMERIC_CLASS,
+                                    month.cash_net_cents < 0 ? "text-red-700 dark:text-red-300" : "",
+                                  ].join(" ")}
+                                >
+                                  {formatEur(month.cash_net_cents)} €
+                                </TableCell>
+                                <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(month.accrual_income_cents)} €</TableCell>
+                                <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(month.accrual_expenses_cents)} €</TableCell>
+                                <TableCell
+                                  className={[
+                                    TABLE_CELL_NUMERIC_CLASS,
+                                    month.accrual_operating_result_cents < 0 ? "text-red-700 dark:text-red-300" : "",
+                                  ].join(" ")}
+                                >
+                                  {formatEur(month.accrual_operating_result_cents)} €
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium text-gray-700 dark:text-gray-200">Outflow Breakdown (Monat)</div>
+                          {accountingOutflowBars.filter((row) => row.cents > 0).length ? (
+                            <BarList
+                              items={accountingOutflowBars
+                                .filter((row) => row.cents > 0)
+                                .map((row) => ({
+                                  key: row.key,
+                                  label: row.label,
+                                  value: row.cents,
+                                  valueLabel: `${formatEur(row.cents)} €`,
+                                }))}
+                            />
+                          ) : (
+                            <div className="text-sm text-gray-500 dark:text-gray-400">Keine Outflows im aktuellen Monat.</div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium text-gray-700 dark:text-gray-200">OpEx Kategorien (Monat)</div>
+                          {accountingOpexRows.length ? (
+                            <div className="flex flex-wrap gap-2">
+                              {accountingOpexRows.map((row) => (
+                                <Badge key={row.key} variant="outline">
+                                  {row.label}: {formatEur(row.cents)} €
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-500 dark:text-gray-400">Keine OpEx im aktuellen Monat.</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="text-sm text-gray-500 dark:text-gray-400">…</div>

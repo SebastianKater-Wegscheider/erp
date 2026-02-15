@@ -1,5 +1,46 @@
 # History
 
+## 2026-02-15 - Dashboard: Monthly Accounting Intelligence (Cashflow + Accrual)
+
+### Ausgangslage
+- Das Dashboard zeigt bereits starke operative Kennzahlen (Sales, Lager, Amazon), aber keine kompakte Monats-Sicht fuer klassische Accounting-Fragen wie "Einnahmen vs. Ausgaben" oder "Cash Runway".
+- Nutzer brauchen einen schnellen Monatsueberblick ohne eine zusaetzliche, ueberladene Reporting-Seite.
+
+### Business-Entscheidungen
+- Neue Sektion direkt im bestehenden Dashboard statt neuer Top-Level-Seite.
+- Zeitraum fix auf die letzten 6 Kalendermonate (inkl. aktuellem Monat), damit Trends sichtbar bleiben und die Karte kompakt bleibt.
+- Zwei Perspektiven parallel:
+  - Cashflow (ledger-basiert)
+  - Operating Accrual View (Income vs. COGS + OpEx + Corrections)
+- Drilldown ist standardmaessig eingeklappt, um Informationsdichte niedrig zu halten.
+
+### Technische Entscheidungen
+- `GET /reports/company-dashboard` wird um ein neues Objekt `accounting` erweitert (kein neuer Endpoint).
+- Monatsaggregation erfolgt als feste Kalender-Buckets (zero-filled), damit fehlende Aktivitaet explizit als `0` sichtbar bleibt.
+- Cashflow basiert ausschliesslich auf `ledger_entries` (inflow > 0, outflow = abs(amount < 0)).
+- Accrual basiert auf:
+  - Income: finalisierte Sales-Lines (`sale_gross + shipping_allocated`)
+  - Expenses: COGS (`cost_basis`) + `opex.amount_cents` + `sales_correction` refunds
+- Zusatzauswertungen:
+  - aktueller VAT-Snapshot via bestehendem `vat_report()`
+  - Outflow-Breakdown des aktuellen Monats nach Quelle (`purchase`, `opex`, `cost_allocation`, `sales_correction`, `other`)
+  - OpEx-Kategorien des aktuellen Monats
+
+### Schwellenwerte / Insights
+- Maximal 3 Insights, priorisiert:
+  1. `danger`: Runway < 3 Monate
+  2. `warning`: aktueller Monats-Cashflow negativ
+  3. `warning`: aktuelles operatives Ergebnis negativ
+  4. `info`: VAT payable > 0
+  5. `info`: Refund-Anteil > 20% vom aktuellen Monats-Outflow
+- Runway-Berechnung:
+  - `average_cash_burn_3m = max(0, -avg(last_3_month_cash_net))`
+  - `estimated_runway_months = floor(total_cash_balance / average_cash_burn_3m)` bei Burn > 0
+
+### Trade-offs
+- Corrections werden bewusst im Monat der Korrektur als Expense/Outflow erfasst (keine Rueckverteilung auf Originalverkaufsmonat), damit Cash- und VAT-Naehe fuer operative Steuerung erhalten bleibt.
+- Mileage bleibt vorerst ausserhalb der Accounting-Karte, da keine Ledger-Buchung vorliegt.
+
 ## 2026-02-12 - PAIV: Private Sacheinlagen als eigener Einkaufstyp (cash-neutral)
 
 ### Ausgangslage

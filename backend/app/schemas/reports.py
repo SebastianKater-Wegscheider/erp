@@ -80,6 +80,45 @@ class AmazonInventoryInsightsOut(BaseModel):
     top_opportunities: list[AmazonInventoryOpportunityOut]
 
 
+class CompanyDashboardAccountingMonthOut(BaseModel):
+    month: str
+    cash_inflow_cents: int = Field(ge=0)
+    cash_outflow_cents: int = Field(ge=0)
+    cash_net_cents: int
+    accrual_income_cents: int = Field(ge=0)
+    accrual_expenses_cents: int = Field(ge=0)
+    accrual_operating_result_cents: int
+
+
+class CompanyDashboardAccountingInsightOut(BaseModel):
+    key: str
+    tone: str
+    text: str
+
+
+class CompanyDashboardAccountingOut(BaseModel):
+    window_months: int = Field(ge=1)
+    current_month: str
+
+    current_cash_inflow_cents: int = Field(ge=0)
+    current_cash_outflow_cents: int = Field(ge=0)
+    current_cash_net_cents: int
+
+    current_accrual_income_cents: int = Field(ge=0)
+    current_accrual_expenses_cents: int = Field(ge=0)
+    current_accrual_operating_result_cents: int
+
+    current_vat_payable_cents: int
+    average_cash_burn_3m_cents: int = Field(ge=0)
+    estimated_runway_months: int | None = Field(default=None, ge=0)
+
+    current_outflow_breakdown_cents: dict[str, int]
+    current_opex_by_category_cents: dict[str, int]
+
+    months: list[CompanyDashboardAccountingMonthOut]
+    insights: list[CompanyDashboardAccountingInsightOut]
+
+
 class CompanyDashboardOut(BaseModel):
     inventory_value_cents: int = Field(ge=0)
     cash_balance_cents: dict[str, int]
@@ -106,6 +145,7 @@ class CompanyDashboardOut(BaseModel):
     master_products_missing_asin_count: int = Field(ge=0)
 
     amazon_inventory: AmazonInventoryInsightsOut
+    accounting: CompanyDashboardAccountingOut
 
     top_products_30d: list[CompanyDashboardProductAgg]
     worst_products_30d: list[CompanyDashboardProductAgg]

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { vi } from "vitest";
@@ -77,6 +77,91 @@ const DASHBOARD_DATA = {
       },
     ],
   },
+  accounting: {
+    window_months: 6,
+    current_month: "2026-02",
+    current_cash_inflow_cents: 45_000,
+    current_cash_outflow_cents: 62_000,
+    current_cash_net_cents: -17_000,
+    current_accrual_income_cents: 45_000,
+    current_accrual_expenses_cents: 63_000,
+    current_accrual_operating_result_cents: -18_000,
+    current_vat_payable_cents: 2_500,
+    average_cash_burn_3m_cents: 8_000,
+    estimated_runway_months: 2,
+    current_outflow_breakdown_cents: {
+      purchase: 20_000,
+      opex: 25_000,
+      cost_allocation: 7_000,
+      sales_correction: 10_000,
+      other: 0,
+    },
+    current_opex_by_category_cents: {
+      SOFTWARE: 15_000,
+      FEES: 10_000,
+    },
+    months: [
+      {
+        month: "2025-09",
+        cash_inflow_cents: 12_000,
+        cash_outflow_cents: 4_000,
+        cash_net_cents: 8_000,
+        accrual_income_cents: 10_000,
+        accrual_expenses_cents: 7_000,
+        accrual_operating_result_cents: 3_000,
+      },
+      {
+        month: "2025-10",
+        cash_inflow_cents: 9_000,
+        cash_outflow_cents: 7_000,
+        cash_net_cents: 2_000,
+        accrual_income_cents: 8_000,
+        accrual_expenses_cents: 7_500,
+        accrual_operating_result_cents: 500,
+      },
+      {
+        month: "2025-11",
+        cash_inflow_cents: 7_000,
+        cash_outflow_cents: 9_000,
+        cash_net_cents: -2_000,
+        accrual_income_cents: 7_200,
+        accrual_expenses_cents: 9_500,
+        accrual_operating_result_cents: -2_300,
+      },
+      {
+        month: "2025-12",
+        cash_inflow_cents: 8_000,
+        cash_outflow_cents: 10_000,
+        cash_net_cents: -2_000,
+        accrual_income_cents: 7_900,
+        accrual_expenses_cents: 10_500,
+        accrual_operating_result_cents: -2_600,
+      },
+      {
+        month: "2026-01",
+        cash_inflow_cents: 11_000,
+        cash_outflow_cents: 13_000,
+        cash_net_cents: -2_000,
+        accrual_income_cents: 9_000,
+        accrual_expenses_cents: 12_100,
+        accrual_operating_result_cents: -3_100,
+      },
+      {
+        month: "2026-02",
+        cash_inflow_cents: 45_000,
+        cash_outflow_cents: 62_000,
+        cash_net_cents: -17_000,
+        accrual_income_cents: 45_000,
+        accrual_expenses_cents: 63_000,
+        accrual_operating_result_cents: -18_000,
+      },
+    ],
+    insights: [
+      { key: "runway_low", tone: "danger", text: "Runway unter 3 Monaten." },
+      { key: "cash_negative", tone: "warning", text: "Aktueller Monats-Cashflow ist negativ." },
+      { key: "accrual_negative", tone: "warning", text: "Operatives Ergebnis ist negativ." },
+    ],
+  },
   top_products_30d: [],
   worst_products_30d: [],
 };
@@ -113,12 +198,32 @@ it("renders amazon intelligence card with key values and opportunities", async (
   renderPage();
 
   await screen.findByText("Amazon Intelligence");
+  await screen.findByText("Accounting (6M)");
   await screen.findByText("777,00 €");
   expect(screen.getByText("Sell Value (net)")).toBeInTheDocument();
   expect(screen.getByText("777,00 €")).toBeInTheDocument();
   expect(screen.getAllByText(/Bepreist/i).length).toBeGreaterThan(0);
   expect(screen.getByText("Top Chancen")).toBeInTheDocument();
   expect(screen.getByText("Mario Kart 64")).toBeInTheDocument();
+  expect(screen.getByText("Income (Monat)")).toBeInTheDocument();
+  expect(screen.getByText("Expenses (Monat)")).toBeInTheDocument();
+  expect(screen.getByText("Net Cash (Monat)")).toBeInTheDocument();
+  expect(screen.getByText("Operating Result")).toBeInTheDocument();
+  expect(screen.getByText("Cash In (EUR)")).toBeInTheDocument();
+  expect(screen.getByText("Cash Out (EUR)")).toBeInTheDocument();
+  expect(screen.getByText("Cash Net (EUR)")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Cashflow Monatsverlauf" })).toBeInTheDocument();
+
+  const accrualTab = screen.getByRole("tab", { name: "Accrual" });
+  fireEvent.mouseDown(accrualTab);
+  fireEvent.click(accrualTab);
+  await waitFor(() => expect(accrualTab).toHaveAttribute("data-state", "active"));
+  expect(await screen.findByRole("img", { name: "Accrual Monatsverlauf" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /Details anzeigen/i }));
+  expect(await screen.findByText("Monatliche Details")).toBeInTheDocument();
+  expect(screen.getByText("Outflow Breakdown (Monat)")).toBeInTheDocument();
+  expect(screen.getByText("OpEx Kategorien (Monat)")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /Amazon stale Queue/i })).toHaveAttribute(
     "href",
     "/inventory?queue=AMAZON_STALE&view=overview",

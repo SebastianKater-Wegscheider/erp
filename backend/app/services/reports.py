@@ -72,6 +72,13 @@ class MonthRange:
     end: date
 
 
+@dataclass(frozen=True)
+class CalendarMonthBucket:
+    start: date
+    end: date
+    label: str
+
+
 def month_range(*, year: int, month: int) -> MonthRange:
     start = date(year, month, 1)
     if month == 12:
@@ -79,6 +86,26 @@ def month_range(*, year: int, month: int) -> MonthRange:
     else:
         end = date(year, month + 1, 1)
     return MonthRange(start=start, end=end)
+
+
+def _shift_month_start(base: date, offset: int) -> date:
+    month_index = (base.year * 12 + (base.month - 1)) + offset
+    year = month_index // 12
+    month = (month_index % 12) + 1
+    return date(year, month, 1)
+
+
+def _calendar_month_buckets(*, today: date, window_months: int) -> list[CalendarMonthBucket]:
+    if window_months < 1:
+        raise ValueError("window_months must be >= 1")
+    current_month_start = date(today.year, today.month, 1)
+    oldest_month_start = _shift_month_start(current_month_start, -(window_months - 1))
+    out: list[CalendarMonthBucket] = []
+    for i in range(window_months):
+        start = _shift_month_start(oldest_month_start, i)
+        end = _shift_month_start(start, 1)
+        out.append(CalendarMonthBucket(start=start, end=end, label=f"{start.year:04d}-{start.month:02d}"))
+    return out
 
 
 def _used_best_price_cents(
@@ -298,6 +325,215 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
     top_opportunities = sorted(opportunities.values(), key=_opportunity_sort_key)[:5]
     out["top_opportunities"] = top_opportunities
     return out
+
+
+def _normalize_outflow_entity_type(entity_type: str) -> str:
+    if entity_type in {"purchase", "opex", "cost_allocation", "sales_correction"}:
+        return entity_type
+    return "other"
+
+
+async def _accounting_dashboard_insights(
+    session: AsyncSession,
+    *,
+    today: date,
+    total_cash_balance_cents: int,
+    window_months: int = 6,
+) -> dict:
+    buckets = _calendar_month_buckets(today=today, window_months=window_months)
+    period_start = buckets[0].start
+    period_end = buckets[-1].end
+    current_month = buckets[-1].label
+
+    months: list[dict[str, int | str]] = [
+        {
+            "month": b.label,
+            "cash_inflow_cents": 0,
+            "cash_outflow_cents": 0,
+            "cash_net_cents": 0,
+            "accrual_income_cents": 0,
+            "accrual_expenses_cents": 0,
+            "accrual_operating_result_cents": 0,
+        }
+        for b in buckets
+    ]
+    month_by_label = {str(m["month"]): m for m in months}
+
+    current_outflow_breakdown_cents: dict[str, int] = {
+        "purchase": 0,
+        "opex": 0,
+        "cost_allocation": 0,
+        "sales_correction": 0,
+        "other": 0,
+    }
+    current_opex_by_category_cents: dict[str, int] = {}
+
+    ledger_rows = (
+        await session.execute(
+            select(LedgerEntry.entry_date, LedgerEntry.amount_cents, LedgerEntry.entity_type).where(
+                and_(LedgerEntry.entry_date >= period_start, LedgerEntry.entry_date < period_end)
+            )
+        )
+    ).all()
+    for row in ledger_rows:
+        label = f"{row.entry_date.year:04d}-{row.entry_date.month:02d}"
+        bucket = month_by_label.get(label)
+        if bucket is None:
+            continue
+        amount = int(row.amount_cents)
+        if amount >= 0:
+            bucket["cash_inflow_cents"] = int(bucket["cash_inflow_cents"]) + amount
+            continue
+
+        outflow = -amount
+        bucket["cash_outflow_cents"] = int(bucket["cash_outflow_cents"]) + outflow
+        if label == current_month:
+            outflow_key = _normalize_outflow_entity_type(row.entity_type)
+            current_outflow_breakdown_cents[outflow_key] = int(current_outflow_breakdown_cents.get(outflow_key, 0)) + outflow
+
+    accrual_income_expr = SalesOrderLine.sale_gross_cents + SalesOrderLine.shipping_allocated_cents
+    sales_rows = (
+        await session.execute(
+            select(
+                SalesOrder.order_date,
+                accrual_income_expr.label("accrual_income_cents"),
+                SalesOrderLine.cost_basis_cents,
+            )
+            .select_from(SalesOrderLine)
+            .join(SalesOrder, SalesOrder.id == SalesOrderLine.order_id)
+            .where(
+                and_(
+                    SalesOrder.status == OrderStatus.FINALIZED,
+                    SalesOrder.order_date >= period_start,
+                    SalesOrder.order_date < period_end,
+                )
+            )
+        )
+    ).all()
+    for row in sales_rows:
+        label = f"{row.order_date.year:04d}-{row.order_date.month:02d}"
+        bucket = month_by_label.get(label)
+        if bucket is None:
+            continue
+        bucket["accrual_income_cents"] = int(bucket["accrual_income_cents"]) + int(row.accrual_income_cents)
+        bucket["accrual_expenses_cents"] = int(bucket["accrual_expenses_cents"]) + int(row.cost_basis_cents)
+
+    opex_rows = (
+        await session.execute(
+            select(OpexExpense.expense_date, OpexExpense.amount_cents, OpexExpense.category).where(
+                and_(OpexExpense.expense_date >= period_start, OpexExpense.expense_date < period_end)
+            )
+        )
+    ).all()
+    for row in opex_rows:
+        label = f"{row.expense_date.year:04d}-{row.expense_date.month:02d}"
+        bucket = month_by_label.get(label)
+        if bucket is None:
+            continue
+        amount = int(row.amount_cents)
+        bucket["accrual_expenses_cents"] = int(bucket["accrual_expenses_cents"]) + amount
+        if label == current_month:
+            key = row.category.value
+            current_opex_by_category_cents[key] = int(current_opex_by_category_cents.get(key, 0)) + amount
+
+    correction_rows = (
+        await session.execute(
+            select(
+                SalesCorrection.correction_date,
+                SalesCorrection.refund_gross_cents,
+                SalesCorrection.shipping_refund_gross_cents,
+            ).where(and_(SalesCorrection.correction_date >= period_start, SalesCorrection.correction_date < period_end))
+        )
+    ).all()
+    for row in correction_rows:
+        label = f"{row.correction_date.year:04d}-{row.correction_date.month:02d}"
+        bucket = month_by_label.get(label)
+        if bucket is None:
+            continue
+        bucket["accrual_expenses_cents"] = int(bucket["accrual_expenses_cents"]) + int(row.refund_gross_cents) + int(
+            row.shipping_refund_gross_cents
+        )
+
+    for month in months:
+        month["cash_net_cents"] = int(month["cash_inflow_cents"]) - int(month["cash_outflow_cents"])
+        month["accrual_operating_result_cents"] = int(month["accrual_income_cents"]) - int(month["accrual_expenses_cents"])
+
+    vat = await vat_report(session, year=today.year, month=today.month)
+    current_vat_payable_cents = int(vat["vat_payable_cents"])
+
+    last_3_month_nets = [int(month["cash_net_cents"]) for month in months[-3:]]
+    sum_last_3_month_nets = sum(last_3_month_nets)
+    average_cash_burn_3m_cents = 0
+    if sum_last_3_month_nets < 0:
+        average_cash_burn_3m_cents = (-sum_last_3_month_nets) // len(last_3_month_nets)
+
+    estimated_runway_months: int | None = None
+    if average_cash_burn_3m_cents > 0:
+        estimated_runway_months = max(0, int(total_cash_balance_cents)) // average_cash_burn_3m_cents
+
+    current_month_bucket = month_by_label[current_month]
+    current_cash_outflow_cents = int(current_month_bucket["cash_outflow_cents"])
+    current_refund_outflow_cents = int(current_outflow_breakdown_cents["sales_correction"])
+
+    insights: list[dict[str, str]] = []
+    if estimated_runway_months is not None and estimated_runway_months < 3:
+        insights.append(
+            {
+                "key": "runway_low",
+                "tone": "danger",
+                "text": "Runway unter 3 Monaten auf Basis des durchschnittlichen 3M Cash-Burns.",
+            }
+        )
+    if int(current_month_bucket["cash_net_cents"]) < 0:
+        insights.append(
+            {
+                "key": "cash_negative",
+                "tone": "warning",
+                "text": "Aktueller Monats-Cashflow ist negativ.",
+            }
+        )
+    if int(current_month_bucket["accrual_operating_result_cents"]) < 0:
+        insights.append(
+            {
+                "key": "accrual_negative",
+                "tone": "warning",
+                "text": "Aktuelles operatives Ergebnis (Accrual) ist negativ.",
+            }
+        )
+    if current_vat_payable_cents > 0:
+        insights.append(
+            {
+                "key": "vat_due",
+                "tone": "info",
+                "text": "Fuer den aktuellen Monat ergibt sich eine positive USt-Zahllast.",
+            }
+        )
+    if current_cash_outflow_cents > 0 and current_refund_outflow_cents * 100 > current_cash_outflow_cents * 20:
+        insights.append(
+            {
+                "key": "refunds_high_share",
+                "tone": "info",
+                "text": "Refunds machen mehr als 20% des aktuellen Monats-Outflows aus.",
+            }
+        )
+
+    return {
+        "window_months": window_months,
+        "current_month": current_month,
+        "current_cash_inflow_cents": int(current_month_bucket["cash_inflow_cents"]),
+        "current_cash_outflow_cents": current_cash_outflow_cents,
+        "current_cash_net_cents": int(current_month_bucket["cash_net_cents"]),
+        "current_accrual_income_cents": int(current_month_bucket["accrual_income_cents"]),
+        "current_accrual_expenses_cents": int(current_month_bucket["accrual_expenses_cents"]),
+        "current_accrual_operating_result_cents": int(current_month_bucket["accrual_operating_result_cents"]),
+        "current_vat_payable_cents": current_vat_payable_cents,
+        "average_cash_burn_3m_cents": average_cash_burn_3m_cents,
+        "estimated_runway_months": estimated_runway_months,
+        "current_outflow_breakdown_cents": {k: int(v) for k, v in current_outflow_breakdown_cents.items()},
+        "current_opex_by_category_cents": dict(sorted(current_opex_by_category_cents.items())),
+        "months": months,
+        "insights": insights[:3],
+    }
 
 
 async def dashboard(session: AsyncSession, *, today: date) -> dict:
@@ -612,6 +848,12 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
         }
 
     amazon_inventory = await _amazon_inventory_insights(session)
+    accounting = await _accounting_dashboard_insights(
+        session,
+        today=today,
+        total_cash_balance_cents=sum(int(v) for v in base["cash_balance_cents"].values()),
+        window_months=6,
+    )
 
     return {
         **base,
@@ -633,6 +875,7 @@ async def company_dashboard(session: AsyncSession, *, today: date, days: int = 9
         "negative_profit_orders_30d_count": negative_profit_orders_30d_count,
         "master_products_missing_asin_count": master_products_missing_asin_count,
         "amazon_inventory": amazon_inventory,
+        "accounting": accounting,
         "top_products_30d": [_product_row_to_dict(r) for r in top_products_rows],
         "worst_products_30d": [_product_row_to_dict(r) for r in worst_products_rows],
     }

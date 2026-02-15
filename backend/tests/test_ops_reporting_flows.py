@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 import zipfile
 from datetime import date
 
@@ -15,6 +16,7 @@ from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
 from app.models.purchase import Purchase
+from app.models.sales_correction import SalesCorrection
 from app.schemas.purchase_attachment import PurchaseAttachmentBatchCreate
 from app.schemas.cost_allocation import CostAllocationCreate, CostAllocationLineCreate
 from app.schemas.mileage import MileageCreate
@@ -25,7 +27,7 @@ from app.services.cost_allocations import create_cost_allocation
 from app.services.mileage import create_mileage_log
 from app.services.opex import create_opex
 from app.services.purchases import create_purchase
-from app.services.reports import dashboard, monthly_close_zip, vat_report
+from app.services.reports import company_dashboard, dashboard, monthly_close_zip, vat_report
 from app.services.sales import create_sales_order, finalize_sales_order
 
 
@@ -241,6 +243,170 @@ async def test_dashboard_and_vat_report_calculations(db_session: AsyncSession) -
     assert vat["output_vat_margin_cents"] == 0
     assert vat["input_vat_cents"] == 200
     assert vat["vat_payable_cents"] == 200
+
+
+@pytest.mark.asyncio
+async def test_company_dashboard_accounting_returns_monthly_cash_and_accrual_insights(db_session: AsyncSession) -> None:
+    today = date(2026, 2, 15)
+
+    async with db_session.begin():
+        mp = await _create_master_product(db_session, "ACC")
+        purchase = await create_purchase(
+            db_session,
+            actor=ACTOR,
+            data=PurchaseCreate(
+                kind=PurchaseKind.COMMERCIAL_REGULAR,
+                purchase_date=date(2026, 2, 1),
+                counterparty_name="Supplier",
+                total_amount_cents=1_200,
+                tax_rate_bp=2_000,
+                payment_source=PaymentSource.BANK,
+                external_invoice_number="SUP-ACC-1",
+                receipt_upload_path="uploads/sup-acc-1.pdf",
+                lines=[
+                    PurchaseLineCreate(
+                        master_product_id=mp.id,
+                        condition=InventoryCondition.GOOD,
+                        purchase_type=PurchaseType.REGULAR,
+                        purchase_price_cents=1_200,
+                    )
+                ],
+            ),
+        )
+
+    purchase_row = (
+        await db_session.execute(select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.lines)))
+    ).scalar_one()
+    item_id = (
+        await db_session.execute(select(InventoryItem.id).where(InventoryItem.purchase_line_id == purchase_row.lines[0].id))
+    ).scalar_one()
+    await db_session.rollback()
+
+    async with db_session.begin():
+        order = await create_sales_order(
+            db_session,
+            actor=ACTOR,
+            data=SalesOrderCreate(
+                order_date=date(2026, 2, 2),
+                channel=OrderChannel.AMAZON,
+                buyer_name="Buyer Accounting",
+                shipping_gross_cents=0,
+                payment_source=PaymentSource.BANK,
+                lines=[SalesOrderLineCreate(inventory_item_id=item_id, sale_gross_cents=2_400)],
+            ),
+        )
+    async with db_session.begin():
+        await finalize_sales_order(db_session, actor=ACTOR, order_id=order.id)
+
+    async with db_session.begin():
+        await create_opex(
+            db_session,
+            actor=ACTOR,
+            data=OpexCreate(
+                expense_date=date(2026, 2, 3),
+                recipient="Accounting SaaS",
+                category=OpexCategory.SOFTWARE,
+                amount_cents=2_000,
+                tax_rate_bp=2_000,
+                input_tax_deductible=True,
+                payment_source=PaymentSource.BANK,
+            ),
+        )
+
+    async with db_session.begin():
+        correction = SalesCorrection(
+            order_id=order.id,
+            correction_date=date(2026, 2, 4),
+            correction_number="SC-2026-000001",
+            pdf_path=None,
+            refund_gross_cents=1_000,
+            shipping_refund_gross_cents=0,
+            shipping_refund_regular_gross_cents=0,
+            shipping_refund_regular_net_cents=0,
+            shipping_refund_regular_tax_cents=0,
+            shipping_refund_margin_gross_cents=0,
+            payment_source=PaymentSource.BANK,
+        )
+        db_session.add(correction)
+        await db_session.flush()
+        db_session.add(
+            LedgerEntry(
+                entry_date=correction.correction_date,
+                account=correction.payment_source,
+                amount_cents=-1_000,
+                entity_type="sales_correction",
+                entity_id=correction.id,
+                memo=correction.correction_number,
+            )
+        )
+
+        db_session.add_all(
+            [
+                LedgerEntry(
+                    entry_date=date(2025, 9, 5),
+                    account=PaymentSource.BANK,
+                    amount_cents=3_500,
+                    entity_type="sale",
+                    entity_id=uuid.uuid4(),
+                    memo="seed-cash-in",
+                ),
+                LedgerEntry(
+                    entry_date=date(2025, 12, 5),
+                    account=PaymentSource.BANK,
+                    amount_cents=-1_000,
+                    entity_type="opex",
+                    entity_id=uuid.uuid4(),
+                    memo="seed-dec-outflow",
+                ),
+                LedgerEntry(
+                    entry_date=date(2026, 1, 5),
+                    account=PaymentSource.BANK,
+                    amount_cents=-1_000,
+                    entity_type="opex",
+                    entity_id=uuid.uuid4(),
+                    memo="seed-jan-outflow",
+                ),
+            ]
+        )
+
+    out = await company_dashboard(db_session, today=today)
+    accounting = out["accounting"]
+    months = accounting["months"]
+    by_month = {m["month"]: m for m in months}
+
+    assert accounting["window_months"] == 6
+    assert accounting["current_month"] == "2026-02"
+    assert [m["month"] for m in months] == ["2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02"]
+
+    assert by_month["2025-10"]["cash_inflow_cents"] == 0
+    assert by_month["2025-10"]["cash_outflow_cents"] == 0
+    assert by_month["2025-10"]["accrual_income_cents"] == 0
+    assert by_month["2025-10"]["accrual_expenses_cents"] == 0
+
+    assert by_month["2026-02"]["cash_inflow_cents"] == 2_400
+    assert by_month["2026-02"]["cash_outflow_cents"] == 4_200
+    assert by_month["2026-02"]["cash_net_cents"] == -1_800
+    assert by_month["2026-02"]["accrual_income_cents"] == 2_400
+    assert by_month["2026-02"]["accrual_expenses_cents"] == 4_000
+    assert by_month["2026-02"]["accrual_operating_result_cents"] == -1_600
+
+    assert accounting["current_outflow_breakdown_cents"] == {
+        "purchase": 1_200,
+        "opex": 2_000,
+        "cost_allocation": 0,
+        "sales_correction": 1_000,
+        "other": 0,
+    }
+    assert accounting["current_opex_by_category_cents"] == {"SOFTWARE": 2_000}
+
+    vat = await vat_report(db_session, year=2026, month=2)
+    assert accounting["current_vat_payable_cents"] == vat["vat_payable_cents"]
+
+    assert accounting["average_cash_burn_3m_cents"] == 1_266
+    assert accounting["estimated_runway_months"] == 0
+
+    assert [i["key"] for i in accounting["insights"]] == ["runway_low", "cash_negative", "accrual_negative"]
+    assert len(accounting["insights"]) == 3
 
 
 @pytest.mark.asyncio
