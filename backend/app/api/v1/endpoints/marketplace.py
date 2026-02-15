@@ -2,26 +2,52 @@ from __future__ import annotations
 
 import csv
 import io
+from contextlib import asynccontextmanager
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.enums import OrderChannel, PaymentSource
+from app.core.enums import MarketplaceStagedOrderStatus, OrderChannel, PaymentSource
 from app.core.security import require_basic_auth
 from app.models.ledger_entry import LedgerEntry
+from app.models.marketplace_staged_order import MarketplaceStagedOrder
 from app.models.marketplace_payout import MarketplacePayout
+from app.schemas.marketplace_orders import (
+    MarketplaceOrdersImportIn,
+    MarketplaceOrdersImportOut,
+    MarketplaceStagedOrderApplyIn,
+    MarketplaceStagedOrderApplyOut,
+    MarketplaceStagedOrderApplyResultOut,
+    MarketplaceStagedOrderOut,
+)
 from app.schemas.marketplace_payout import (
     MarketplacePayoutImportIn,
     MarketplacePayoutImportOut,
     MarketplacePayoutImportRowError,
     MarketplacePayoutOut,
 )
+from app.services.marketplace_orders import apply_staged_order_to_finalized_sale, import_marketplace_orders_csv
 from app.services.money import parse_eur_to_cents
 
 
 router = APIRouter()
+
+
+@asynccontextmanager
+async def _begin_tx(session: AsyncSession):
+    # Endpoint handlers are sometimes called directly in tests using a shared session.
+    # That session may already have an autobegun transaction (even after a SELECT),
+    # so we fall back to SAVEPOINT semantics in that case.
+    if session.in_transaction():
+        async with session.begin_nested():
+            yield
+    else:
+        async with session.begin():
+            yield
 
 
 def _pick_csv_delimiter(csv_text: str, preferred: str | None) -> str:
@@ -70,7 +96,7 @@ async def import_marketplace_payouts(
     failed_count = 0
     errors: list[MarketplacePayoutImportRowError] = []
 
-    async with session.begin_nested():
+    async with _begin_tx(session):
         for row_number, row in enumerate(reader, start=2):
             values = {k: (row.get(k) or "").strip() for k in fieldnames}
             if not any(values.values()):
@@ -150,3 +176,134 @@ async def import_marketplace_payouts(
         failed_count=failed_count,
         errors=errors,
     )
+
+
+@router.post("/imports/orders", response_model=MarketplaceOrdersImportOut)
+async def import_marketplace_orders(
+    data: MarketplaceOrdersImportIn,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> MarketplaceOrdersImportOut:
+    try:
+        async with _begin_tx(session):
+            summary = await import_marketplace_orders_csv(
+                session,
+                actor=actor,
+                csv_text=data.csv_text,
+                delimiter=data.delimiter,
+                source_label=data.source_label,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e) or "Invalid CSV") from e
+
+    return MarketplaceOrdersImportOut(
+        batch_id=summary.batch_id,
+        total_rows=summary.total_rows,
+        staged_orders_count=summary.staged_orders_count,
+        staged_lines_count=summary.staged_lines_count,
+        ready_orders_count=summary.ready_orders_count,
+        needs_attention_orders_count=summary.needs_attention_orders_count,
+        skipped_orders_count=summary.skipped_orders_count,
+        failed_count=summary.failed_count,
+        errors=summary.errors,
+    )
+
+
+@router.get("/staged-orders", response_model=list[MarketplaceStagedOrderOut])
+async def list_staged_orders(
+    status: MarketplaceStagedOrderStatus | None = None,
+    batch_id: UUID | None = None,
+    q: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> list[MarketplaceStagedOrderOut]:
+    stmt = (
+        select(MarketplaceStagedOrder)
+        .options(selectinload(MarketplaceStagedOrder.lines))
+        .order_by(MarketplaceStagedOrder.order_date.desc(), MarketplaceStagedOrder.created_at.desc())
+    )
+    if status is not None:
+        stmt = stmt.where(MarketplaceStagedOrder.status == status)
+    if batch_id is not None:
+        stmt = stmt.where(MarketplaceStagedOrder.batch_id == batch_id)
+    if q:
+        stmt = stmt.where(MarketplaceStagedOrder.external_order_id.ilike(f"%{q.strip()}%"))
+    rows = (await session.execute(stmt)).scalars().all()
+    return [MarketplaceStagedOrderOut.model_validate(r) for r in rows]
+
+
+@router.get("/staged-orders/{staged_order_id}", response_model=MarketplaceStagedOrderOut)
+async def get_staged_order(
+    staged_order_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> MarketplaceStagedOrderOut:
+    row = (
+        (
+            await session.execute(
+                select(MarketplaceStagedOrder)
+                .where(MarketplaceStagedOrder.id == staged_order_id)
+                .options(selectinload(MarketplaceStagedOrder.lines))
+            )
+        )
+        .scalars()
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return MarketplaceStagedOrderOut.model_validate(row)
+
+
+@router.post("/staged-orders/apply", response_model=MarketplaceStagedOrderApplyOut)
+async def apply_staged_orders(
+    data: MarketplaceStagedOrderApplyIn,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> MarketplaceStagedOrderApplyOut:
+    if not data.staged_order_ids and not data.batch_id:
+        raise HTTPException(status_code=400, detail="Provide staged_order_ids or batch_id")
+
+    if data.batch_id:
+        ids = (
+            (
+                await session.execute(
+                    select(MarketplaceStagedOrder.id).where(
+                        MarketplaceStagedOrder.batch_id == data.batch_id,
+                        MarketplaceStagedOrder.status == MarketplaceStagedOrderStatus.READY,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        staged_order_ids = [i for i in ids]
+    else:
+        staged_order_ids = list(data.staged_order_ids or [])
+
+    results: list[MarketplaceStagedOrderApplyResultOut] = []
+    async with _begin_tx(session):
+        for staged_order_id in staged_order_ids:
+            try:
+                async with session.begin_nested():
+                    sale_id = await apply_staged_order_to_finalized_sale(
+                        session,
+                        actor=actor,
+                        staged_order_id=staged_order_id,
+                    )
+                results.append(
+                    MarketplaceStagedOrderApplyResultOut(
+                        staged_order_id=staged_order_id,
+                        sales_order_id=sale_id,
+                        ok=True,
+                        error=None,
+                    )
+                )
+            except Exception as e:
+                results.append(
+                    MarketplaceStagedOrderApplyResultOut(
+                        staged_order_id=staged_order_id,
+                        sales_order_id=None,
+                        ok=False,
+                        error=str(e) or "Failed",
+                    )
+                )
+
+    return MarketplaceStagedOrderApplyOut(results=results)
