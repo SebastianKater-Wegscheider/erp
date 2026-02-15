@@ -93,3 +93,73 @@ export async function createMileageViaApi(
   expect(json.id).toBeTruthy();
   return json.id;
 }
+
+export async function createPurchaseViaApi(
+  request: APIRequestContext,
+  options: {
+    counterpartyName: string;
+    purchaseDate?: string;
+    paymentSource?: "CASH" | "BANK";
+    masterProductId: string;
+    purchasePriceCents?: number;
+  },
+): Promise<string> {
+  const {
+    counterpartyName,
+    purchaseDate = "2026-02-14",
+    paymentSource = "CASH",
+    masterProductId,
+    purchasePriceCents = 1000,
+  } = options;
+
+  const response = await request.post(`${E2E_API_BASE_URL}/purchases`, {
+    headers: authJsonHeaders(),
+    data: {
+      kind: "PRIVATE_DIFF",
+      purchase_date: purchaseDate,
+      counterparty_name: counterpartyName,
+      counterparty_address: null,
+      counterparty_birthdate: null,
+      counterparty_id_number: null,
+      source_platform: "E2E",
+      listing_url: null,
+      notes: null,
+      total_amount_cents: purchasePriceCents,
+      shipping_cost_cents: 0,
+      buyer_protection_fee_cents: 0,
+      tax_rate_bp: 0,
+      payment_source: paymentSource,
+      lines: [
+        {
+          master_product_id: masterProductId,
+          condition: "GOOD",
+          purchase_type: "DIFF",
+          purchase_price_cents: purchasePriceCents,
+        },
+      ],
+    },
+  });
+
+  expect(response.ok(), `purchase create failed (${response.status()})`).toBeTruthy();
+  const json = (await response.json()) as { id: string };
+  expect(json.id).toBeTruthy();
+  return json.id;
+}
+
+export async function listInventoryViaApi(
+  request: APIRequestContext,
+  options: { q?: string; status?: string; limit?: number; offset?: number },
+): Promise<Array<{ id: string; item_code: string; master_product_id: string; status: string }>> {
+  const { q, status, limit = 50, offset = 0 } = options;
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+
+  const response = await request.get(`${E2E_API_BASE_URL}/inventory?${params.toString()}`, {
+    headers: { Authorization: basicAuthHeader(E2E_USER, E2E_PASS) },
+  });
+  expect(response.ok(), `inventory list failed (${response.status()})`).toBeTruthy();
+  return (await response.json()) as Array<{ id: string; item_code: string; master_product_id: string; status: string }>;
+}
