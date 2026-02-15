@@ -37,6 +37,7 @@ import {
 
 type InventoryItem = {
   id: string;
+  item_code: string;
   master_product_id: string;
   condition: string;
   purchase_type: string;
@@ -966,6 +967,9 @@ export function InventoryPage() {
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
+                              <Badge variant="outline" className="font-mono text-[11px]">
+                                {it.item_code}
+                              </Badge>
                               {mp?.sku ? (
                                 <Badge variant="outline" className="font-mono text-[11px]">
                                   {mp.sku}
@@ -983,6 +987,15 @@ export function InventoryPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void copyToClipboard(it.item_code);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Item code kopieren
+                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onSelect={(e) => {
                                     e.preventDefault();
@@ -1317,6 +1330,9 @@ export function InventoryPage() {
                                 </div>
                               ) : null}
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                                <Badge variant="outline" className="font-mono text-[10px]">
+                                  {it.item_code}
+                                </Badge>
                                 {mp?.sku ? (
                                   <Badge variant="outline" className="font-mono text-[10px]">
                                     {mp.sku}
@@ -1419,6 +1435,15 @@ export function InventoryPage() {
                                 <DropdownMenuItem
                                   onSelect={(e) => {
                                     e.preventDefault();
+                                    void copyToClipboard(it.item_code);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Item code kopieren
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
                                     void copyToClipboard(it.id);
                                   }}
                                 >
@@ -1497,6 +1522,9 @@ export function InventoryPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <div className="min-w-0 truncate font-medium">{mp ? mp.title : it.master_product_id}</div>
                                 {mp?.kind ? <Badge variant="secondary">{kindLabel(mp.kind)}</Badge> : null}
+                                <Badge variant="outline" className="font-mono text-[11px]">
+                                  {it.item_code}
+                                </Badge>
                                 {mp?.sku ? (
                                   <Badge variant="outline" className="font-mono text-[11px]">
                                     {mp.sku}
@@ -1619,6 +1647,15 @@ export function InventoryPage() {
                                 <DropdownMenuItem
                                   onSelect={(e) => {
                                     e.preventDefault();
+                                    void copyToClipboard(it.item_code);
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  Item code kopieren
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
                                     void copyToClipboard(it.id);
                                   }}
                                 >
@@ -1680,19 +1717,35 @@ export function InventoryPage() {
             <DialogTitle>Artikel bearbeiten</DialogTitle>
             <DialogDescription>
               {editing ? (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.id}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void copyToClipboard(editing.id);
-                    }}
-                  >
-                    <Copy className="h-4 w-4" />
-                    ID kopieren
-                  </Button>
+                <div className="grid gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.item_code}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void copyToClipboard(editing.item_code);
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Item code kopieren
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.id}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void copyToClipboard(editing.id);
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                      ID kopieren
+                    </Button>
+                  </div>
                 </div>
               ) : null}
             </DialogDescription>

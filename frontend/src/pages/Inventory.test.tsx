@@ -41,6 +41,7 @@ const MASTER_PRODUCTS = [
 const INVENTORY = [
   {
     id: "00000000-0000-0000-0000-000000009999",
+    item_code: "IT-000000000999",
     master_product_id: "00000000-0000-0000-0000-000000000111",
     condition: "GOOD",
     purchase_type: "DIFF",
