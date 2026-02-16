@@ -66,6 +66,25 @@ class ImportedStagedOrdersSummary:
     errors: list[MarketplaceOrdersImportRowError]
 
 
+async def _item_already_consumed(session: AsyncSession, item_id: uuid.UUID) -> bool:
+    already_sold = (
+        await session.scalar(
+            select(exists().where(SalesOrderLine.inventory_item_id == item_id))
+        )
+    ) or False
+    already_corrected = (
+        await session.scalar(
+            select(exists().where(SalesCorrectionLine.inventory_item_id == item_id))
+        )
+    ) or False
+    return bool(already_sold or already_corrected)
+
+
+def _recompute_staged_order_status(order: MarketplaceStagedOrder) -> MarketplaceStagedOrderStatus:
+    all_matched = bool(order.lines) and all(line.matched_inventory_item_id is not None for line in order.lines)
+    return MarketplaceStagedOrderStatus.READY if all_matched else MarketplaceStagedOrderStatus.NEEDS_ATTENTION
+
+
 async def import_marketplace_orders_csv(
     session: AsyncSession,
     *,
@@ -280,17 +299,7 @@ async def import_marketplace_orders_csv(
                     elif inv.status not in (InventoryStatus.AVAILABLE, InventoryStatus.FBA_WAREHOUSE):
                         match_error = f"Inventory item not sellable (status={inv.status.value})"
                     else:
-                        already_sold = (
-                            await session.scalar(
-                                select(exists().where(SalesOrderLine.inventory_item_id == inv.id))
-                            )
-                        ) or False
-                        already_corrected = (
-                            await session.scalar(
-                                select(exists().where(SalesCorrectionLine.inventory_item_id == inv.id))
-                            )
-                        ) or False
-                        if already_sold or already_corrected:
+                        if await _item_already_consumed(session, inv.id):
                             match_error = "Inventory item already sold/corrected"
                         else:
                             match_inventory_id = inv.id
@@ -439,17 +448,7 @@ async def apply_staged_order_to_finalized_sale(
             raise ValueError(f"Inventory item not found: {inv_id}")
         if item.status not in (InventoryStatus.AVAILABLE, InventoryStatus.FBA_WAREHOUSE):
             raise ValueError(f"Inventory item not sellable: {item.id} (status={item.status})")
-        already_sold = (
-            await session.scalar(
-                select(exists().where(SalesOrderLine.inventory_item_id == item.id))
-            )
-        ) or False
-        already_corrected = (
-            await session.scalar(
-                select(exists().where(SalesCorrectionLine.inventory_item_id == item.id))
-            )
-        ) or False
-        if already_sold or already_corrected:
+        if await _item_already_consumed(session, item.id):
             raise ValueError(f"Inventory item already sold/corrected: {item.id}")
 
         tax_rate_bp = 0 if item.purchase_type == PurchaseType.DIFF else regular_vat_rate_bp
@@ -540,3 +539,61 @@ async def apply_staged_order_to_finalized_sale(
     order.status = MarketplaceStagedOrderStatus.APPLIED
     order.sales_order_id = sale.id
     return sale.id
+
+
+async def override_staged_order_line_match(
+    session: AsyncSession,
+    *,
+    staged_order_id: uuid.UUID,
+    staged_line_id: uuid.UUID,
+    inventory_item_id: uuid.UUID,
+) -> MarketplaceStagedOrder:
+    order = (
+        (
+            await session.execute(
+                select(MarketplaceStagedOrder)
+                .where(MarketplaceStagedOrder.id == staged_order_id)
+                .options(selectinload(MarketplaceStagedOrder.lines))
+            )
+        )
+        .scalars()
+        .one_or_none()
+    )
+    if order is None:
+        raise ValueError("Staged order not found")
+    if order.status == MarketplaceStagedOrderStatus.APPLIED or order.sales_order_id is not None:
+        raise ValueError("Staged order already applied")
+
+    line = next((l for l in order.lines if l.id == staged_line_id), None)
+    if line is None:
+        raise ValueError("Staged line not found")
+
+    item = await session.get(InventoryItem, inventory_item_id)
+    if item is None:
+        raise ValueError("Inventory item not found")
+    if item.status not in (InventoryStatus.AVAILABLE, InventoryStatus.FBA_WAREHOUSE):
+        raise ValueError(f"Inventory item not sellable (status={item.status.value})")
+    if await _item_already_consumed(session, item.id):
+        raise ValueError("Inventory item already sold/corrected")
+
+    used_elsewhere = (
+        (
+            await session.execute(
+                select(MarketplaceStagedOrderLine)
+                .where(
+                    MarketplaceStagedOrderLine.matched_inventory_item_id == item.id,
+                    MarketplaceStagedOrderLine.id != line.id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if used_elsewhere is not None:
+        raise ValueError("Inventory item already matched by another staged line")
+
+    line.matched_inventory_item_id = item.id
+    line.match_error = None
+    order.status = _recompute_staged_order_status(order)
+    await session.flush()
+    return order

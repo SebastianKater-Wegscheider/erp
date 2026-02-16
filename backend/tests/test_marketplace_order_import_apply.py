@@ -12,7 +12,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./_endpoint_import_te
 os.environ.setdefault("BASIC_AUTH_USERNAME", "test-user")
 os.environ.setdefault("BASIC_AUTH_PASSWORD", "test-pass")
 
-from app.api.v1.endpoints.marketplace import apply_staged_orders, import_marketplace_orders  # noqa: E402
+from app.api.v1.endpoints.marketplace import apply_staged_orders, import_marketplace_orders, override_staged_order_line  # noqa: E402
 from app.core.enums import (  # noqa: E402
     CashRecognition,
     InventoryCondition,
@@ -31,6 +31,7 @@ from app.models.sales import SalesOrder, SalesOrderLine  # noqa: E402
 from app.schemas.marketplace_orders import (  # noqa: E402
     MarketplaceOrdersImportIn,
     MarketplaceStagedOrderApplyIn,
+    MarketplaceStagedOrderLineOverrideIn,
 )
 
 
@@ -252,3 +253,69 @@ async def test_marketplace_orders_master_sku_fifo_prefers_fba_and_is_determinist
     assert staged_2.status == MarketplaceStagedOrderStatus.READY
     assert len(staged_2.lines) == 1
     assert staged_2.lines[0].matched_inventory_item_id == fba_2.id
+
+
+@pytest.mark.asyncio
+async def test_override_staged_line_match_sets_ready_status_and_matched_inventory(
+    db_session: AsyncSession,
+) -> None:
+    async with db_session.begin():
+        mp = MasterProduct(kind="GAME", title="Import Override", platform="PS5", region="EU", variant="")
+        db_session.add(mp)
+        await db_session.flush()
+
+        item = InventoryItem(
+            master_product_id=mp.id,
+            condition=InventoryCondition.GOOD,
+            purchase_type=PurchaseType.DIFF,
+            purchase_price_cents=1_000,
+            allocated_costs_cents=0,
+            storage_location=None,
+            serial_number=None,
+            status=InventoryStatus.AVAILABLE,
+            acquired_date=None,
+        )
+        db_session.add(item)
+        await db_session.flush()
+
+    # Unsupported SKU format intentionally yields NEEDS_ATTENTION.
+    csv_text = "\n".join(
+        [
+            "channel,external_order_id,order_date,sku,sale_gross_eur,shipping_gross_eur",
+            "AMAZON,AO-OVERRIDE-1,2026-02-05,ABC-INVALID,29.99,0",
+        ]
+    )
+    out = await import_marketplace_orders(
+        data=MarketplaceOrdersImportIn(csv_text=csv_text),
+        session=db_session,
+        actor="test-user",
+    )
+    assert out.ready_orders_count == 0
+    assert out.needs_attention_orders_count == 1
+
+    staged = (
+        (
+            await db_session.execute(
+                select(MarketplaceStagedOrder)
+                .where(MarketplaceStagedOrder.external_order_id == "AO-OVERRIDE-1")
+                .options(selectinload(MarketplaceStagedOrder.lines))
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert staged.status == MarketplaceStagedOrderStatus.NEEDS_ATTENTION
+    assert len(staged.lines) == 1
+    assert staged.lines[0].matched_inventory_item_id is None
+
+    updated = await override_staged_order_line(
+        staged_order_id=staged.id,
+        staged_line_id=staged.lines[0].id,
+        data=MarketplaceStagedOrderLineOverrideIn(inventory_item_id=item.id),
+        session=db_session,
+        actor="test-user",
+    )
+    assert updated.status == MarketplaceStagedOrderStatus.READY
+    assert len(updated.lines) == 1
+    assert updated.lines[0].matched_inventory_item_id == item.id
+    assert updated.lines[0].match_error is None

@@ -22,6 +22,7 @@ from app.schemas.marketplace_orders import (
     MarketplaceStagedOrderApplyIn,
     MarketplaceStagedOrderApplyOut,
     MarketplaceStagedOrderApplyResultOut,
+    MarketplaceStagedOrderLineOverrideIn,
     MarketplaceStagedOrderOut,
 )
 from app.schemas.marketplace_payout import (
@@ -30,7 +31,11 @@ from app.schemas.marketplace_payout import (
     MarketplacePayoutImportRowError,
     MarketplacePayoutOut,
 )
-from app.services.marketplace_orders import apply_staged_order_to_finalized_sale, import_marketplace_orders_csv
+from app.services.marketplace_orders import (
+    apply_staged_order_to_finalized_sale,
+    import_marketplace_orders_csv,
+    override_staged_order_line_match,
+)
 from app.services.money import parse_eur_to_cents
 
 
@@ -307,3 +312,37 @@ async def apply_staged_orders(
                 )
 
     return MarketplaceStagedOrderApplyOut(results=results)
+
+
+@router.post("/staged-orders/{staged_order_id}/lines/{staged_line_id}/override", response_model=MarketplaceStagedOrderOut)
+async def override_staged_order_line(
+    staged_order_id: UUID,
+    staged_line_id: UUID,
+    data: MarketplaceStagedOrderLineOverrideIn,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> MarketplaceStagedOrderOut:
+    _ = actor
+    try:
+        async with _begin_tx(session):
+            await override_staged_order_line_match(
+                session,
+                staged_order_id=staged_order_id,
+                staged_line_id=staged_line_id,
+                inventory_item_id=data.inventory_item_id,
+            )
+            order = (
+                (
+                    await session.execute(
+                        select(MarketplaceStagedOrder)
+                        .where(MarketplaceStagedOrder.id == staged_order_id)
+                        .options(selectinload(MarketplaceStagedOrder.lines))
+                    )
+                )
+                .scalars()
+                .one()
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e) or "Invalid override") from e
+
+    return MarketplaceStagedOrderOut.model_validate(order)

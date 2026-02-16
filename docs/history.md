@@ -1,5 +1,26 @@
 # History
 
+## 2026-02-16 - Marketplace: Manueller Match-Override fuer Stage-Lines
+
+### Ausgangslage
+- Der CSV-Import liefert bereits hohe Auto-Match-Quote ueber `IT-...` und fallback `MP-...`.
+- Fuer die verbleibenden `NEEDS_ATTENTION`-Faelle fehlte ein gezielter Korrektur-Flow direkt im Staging.
+
+### Business-Entscheidungen
+- Kein Vollabbruch fuer einzelne Ausreisser: Nutzer sollen wenige problematische Lines manuell auf konkrete Einheiten mappen koennen.
+- Override bleibt streng validiert (nur verkaeufliche, noch unverbrauchte Einheiten), damit die Buchhaltungs- und Bestandswahrheit erhalten bleibt.
+
+### Technische Entscheidungen
+- Neuer API-Flow fuer Line-Override im Marketplace-Staging (line -> `inventory_item_id`).
+- Nach Override wird der Order-Status deterministisch neu berechnet:
+  - alle Lines gematcht -> `READY`
+  - sonst `NEEDS_ATTENTION`
+- UI im `/marketplace` Review erhaelt pro problematischer Line eine direkte Override-Aktion inkl. Inventory-Suche (`IT-...` Copy/Search-first).
+
+### Trade-offs
+- Der erste Schritt setzt auf bewusst explizite manuelle Auswahl (kein "auto rematch all"), um Fehlzuordnungen zu minimieren.
+- Fuer groessere Restmengen kann spaeter ein Bulk-Override folgen.
+
 ## 2026-02-15 - Dashboard: Monthly Accounting Intelligence (Cashflow + Accrual)
 
 ### Ausgangslage

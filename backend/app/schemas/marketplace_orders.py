@@ -71,6 +71,10 @@ class MarketplaceStagedOrderApplyIn(BaseModel):
     batch_id: UUID | None = None
 
 
+class MarketplaceStagedOrderLineOverrideIn(BaseModel):
+    inventory_item_id: UUID
+
+
 class MarketplaceStagedOrderApplyResultOut(BaseModel):
     staged_order_id: UUID
     sales_order_id: UUID | None
@@ -80,4 +84,3 @@ class MarketplaceStagedOrderApplyResultOut(BaseModel):
 
 class MarketplaceStagedOrderApplyOut(BaseModel):
     results: list[MarketplaceStagedOrderApplyResultOut] = Field(default_factory=list)
-
