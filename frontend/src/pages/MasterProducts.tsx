@@ -1181,7 +1181,7 @@ export function MasterProductsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="TARGET_POTENTIAL_DESC">Target-Potenzial (Reseller)</SelectItem>
-                    <SelectItem value="BSR_OVERALL_ASC">BSR Gesamt (Bestseller zuerst)</SelectItem>
+                    <SelectItem value="BSR_OVERALL_ASC">BSR</SelectItem>
                     <SelectItem value="TITLE_ASC">Titel A–Z</SelectItem>
                     <SelectItem value="AMAZON_FRESH_DESC">Amazon zuletzt aktualisiert</SelectItem>
                   </SelectContent>
@@ -1343,274 +1343,274 @@ export function MasterProductsPage() {
                     <div className="flex items-start gap-3">
                       <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-gray-900 dark:text-gray-100">{m.title}</div>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
-                            <Badge variant="outline" className="font-mono text-[11px]">
-                              {m.sku}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        {viewMode === "catalog" ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                aria-label="Aktionen"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                disabled={!m.asin || scrapeNow.isPending}
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  scrapeNow.mutate(m.id);
-                                }}
-                              >
-                                <RefreshCw className="h-4 w-4" />
-                                Amazon scrape jetzt
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  openEdit(m);
-                                }}
-                              >
-                                <Pencil className="h-4 w-4" />
-                                Bearbeiten
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
-                                onSelect={(e) => {
-                                  e.preventDefault();
-                                  requestDelete(m);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Löschen
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2"
-                            aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleExpanded(m.id);
-                            }}
-                          >
-                            Details
-                            {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </Button>
-                        )}
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                        <span>{m.platform}</span>
-                        <span className="text-gray-300 dark:text-gray-700">•</span>
-                        <span>{m.region}</span>
-                        {m.variant ? (
-                          <>
-                            <span className="text-gray-300 dark:text-gray-700">•</span>
-                            <span className="truncate">{m.variant}</span>
-                          </>
-                        ) : null}
-                      </div>
-
-                      {viewMode === "catalog" && (m.ean || m.asin) ? (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {m.ean ? <CopyIdPill label="EAN" value={m.ean} /> : null}
-                          {m.asin ? <CopyIdPill label="ASIN" value={m.asin} /> : null}
-                        </div>
-                      ) : null}
-
-                      {viewMode === "amazon" && m.asin ? (
-                        <div className="mt-2 space-y-2">
-                          <div
-                            className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
-                              disabled={!m.asin || scrapeNow.isPending}
-                              onClick={() => scrapeNow.mutate(m.id)}
-                            >
-                              <RefreshCw className="h-3.5 w-3.5" />
-                              Scrape
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
-                              onClick={() => openEdit(m)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              Bearbeiten
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
-                              onClick={() => requestDelete(m)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Löschen
-                            </button>
-                          </div>
-                          <div className="rounded-lg border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-emerald-50/80 p-2.5 dark:border-amber-900/60 dark:from-amber-950/20 dark:via-gray-950 dark:to-emerald-950/20">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Badge variant={resellerTargetTierVariant(targetSignal.tier)}>{resellerTargetTierLabel(targetSignal.tier)}</Badge>
-                              <Badge variant={targetSignal.priceMeetsGoal ? "success" : "outline"}>
-                                {targetSignal.priceMeetsGoal ? ">= 40 EUR" : "< 40 EUR"}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-gray-900 dark:text-gray-100">{m.title}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
+                              <Badge variant="outline" className="font-mono text-[11px]">
+                                {m.sku}
                               </Badge>
                             </div>
-                            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                              <div className="rounded-md border border-gray-200/80 bg-white/70 px-2 py-1 dark:border-gray-800 dark:bg-gray-950/40">
-                                <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">BSR Gesamt</div>
-                                <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                  {targetSignal.bsrRank !== null ? `#${targetSignal.bsrRank}` : "—"}
-                                </div>
-                              </div>
-                              <div className="rounded-md border border-gray-200/80 bg-white/70 px-2 py-1 text-right dark:border-gray-800 dark:bg-gray-950/40">
-                                <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Verkaufspreis</div>
-                                <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                  {fmtMaybeEur(targetSignal.salesPriceCents)}
-                                </div>
-                              </div>
+                          </div>
+
+                          {viewMode === "catalog" ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  aria-label="Aktionen"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  disabled={!m.asin || scrapeNow.isPending}
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    scrapeNow.mutate(m.id);
+                                  }}
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                  Amazon scrape jetzt
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    openEdit(m);
+                                  }}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  Bearbeiten
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    requestDelete(m);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Löschen
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2"
+                              aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpanded(m.id);
+                              }}
+                            >
+                              Details
+                              {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                          <span>{m.platform}</span>
+                          <span className="text-gray-300 dark:text-gray-700">•</span>
+                          <span>{m.region}</span>
+                          {m.variant ? (
+                            <>
+                              <span className="text-gray-300 dark:text-gray-700">•</span>
+                              <span className="truncate">{m.variant}</span>
+                            </>
+                          ) : null}
+                        </div>
+
+                        {viewMode === "catalog" && (m.ean || m.asin) ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {m.ean ? <CopyIdPill label="EAN" value={m.ean} /> : null}
+                            {m.asin ? <CopyIdPill label="ASIN" value={m.asin} /> : null}
+                          </div>
+                        ) : null}
+
+                        {viewMode === "amazon" && m.asin ? (
+                          <div className="mt-2 space-y-2">
+                            <div
+                              className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                                disabled={!m.asin || scrapeNow.isPending}
+                                onClick={() => scrapeNow.mutate(m.id)}
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Scrape
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                                onClick={() => openEdit(m)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Bearbeiten
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
+                                onClick={() => requestDelete(m)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Löschen
+                              </button>
                             </div>
-                            <div className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">{targetSignal.summary}</div>
-                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                              {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
-                              {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
-                              <span className="text-gray-500 dark:text-gray-400">
-                                {m.amazon_last_success_at
-                                  ? new Date(m.amazon_last_success_at).toLocaleString("de-DE", {
+                            <div className="rounded-lg border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-emerald-50/80 p-2.5 dark:border-amber-900/60 dark:from-amber-950/20 dark:via-gray-950 dark:to-emerald-950/20">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Badge variant={resellerTargetTierVariant(targetSignal.tier)}>{resellerTargetTierLabel(targetSignal.tier)}</Badge>
+                                <Badge variant={targetSignal.priceMeetsGoal ? "success" : "outline"}>
+                                  {targetSignal.priceMeetsGoal ? ">= 40 EUR" : "< 40 EUR"}
+                                </Badge>
+                              </div>
+                              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                                <div className="rounded-md border border-gray-200/80 bg-white/70 px-2 py-1 dark:border-gray-800 dark:bg-gray-950/40">
+                                  <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">BSR Gesamt</div>
+                                  <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                    {targetSignal.bsrRank !== null ? `#${targetSignal.bsrRank}` : "—"}
+                                  </div>
+                                </div>
+                                <div className="rounded-md border border-gray-200/80 bg-white/70 px-2 py-1 text-right dark:border-gray-800 dark:bg-gray-950/40">
+                                  <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Verkaufspreis</div>
+                                  <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                    {fmtMaybeEur(targetSignal.salesPriceCents)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">{targetSignal.summary}</div>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                                {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
+                                {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
+                                <span className="text-gray-500 dark:text-gray-400">
+                                  {m.amazon_last_success_at
+                                    ? new Date(m.amazon_last_success_at).toLocaleString("de-DE", {
                                       dateStyle: "short",
                                       timeStyle: "short",
                                     })
-                                  : "noch nie"}
-                              </span>
-                            </div>
-                          </div>
-
-                          {isExpanded(m.id) ? (
-                            <div
-                              className="pt-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                              }}
-                            >
-                              {(() => {
-                                const used = computeUsedBest(m);
-                                const sell = estimateSellThroughFromBsr(m);
-                                const sellRange = formatSellThroughRange(sell.range_days);
-                                const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
-                                const rank = typeof m.amazon_rank_overall === "number" ? m.amazon_rank_overall : m.amazon_rank_specific;
-                                const rankCat = m.amazon_rank_overall_category ?? m.amazon_rank_specific_category ?? null;
-                                const usedOffers =
-                                  typeof m.amazon_offers_count_used_priced_total === "number"
-                                    ? m.amazon_offers_count_used_priced_total
-                                    : null;
-                                const offers = typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : null;
-
-                                return (
-                                  <div className="mb-2 grid gap-2 sm:grid-cols-2">
-                                    <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        Used best
-                                      </div>
-                                      <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                        {used.cents !== null ? fmtMaybeEur(used.cents) : "—"}
-                                      </div>
-                                      <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                                        {used.cents !== null ? used.label : "—"}
-                                      </div>
-                                    </div>
-
-                                    <div
-                                      className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30"
-                                      title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren."
-                                    >
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        Abverkauf
-                                      </div>
-                                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                                        <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
-                                        <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
-                                      </div>
-                                      <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                        <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
-                                      </div>
-                                    </div>
-
-                                    <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        BSR
-                                      </div>
-                                      <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                        {typeof rank === "number" ? `#${rank}` : "—"}
-                                      </div>
-                                      <div className="text-[11px] text-gray-500 dark:text-gray-400">{rankCat ?? "—"}</div>
-                                    </div>
-
-                                    <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        Offers
-                                      </div>
-                                      <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                        {usedOffers !== null ? `${usedOffers} used` : offers !== null ? `${offers}` : "—"}
-                                      </div>
-                                      <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                                        Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-
-                              <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-700 dark:text-gray-200">
-                                <div>Neu: {fmtMaybeEur(m.amazon_price_new_cents)}</div>
-                                <div>Wie neu: {fmtMaybeEur(m.amazon_price_used_like_new_cents)}</div>
-                                <div>Sehr gut: {fmtMaybeEur(m.amazon_price_used_very_good_cents)}</div>
-                                <div>Gut: {fmtMaybeEur(m.amazon_price_used_good_cents)}</div>
-                                <div>Akzeptabel: {fmtMaybeEur(m.amazon_price_used_acceptable_cents)}</div>
-                                <div>Sammlerst.: {fmtMaybeEur(m.amazon_price_collectible_cents)}</div>
-                                <div>
-                                  Offers priced:{" "}
-                                  {typeof m.amazon_offers_count_priced_total === "number" ? m.amazon_offers_count_priced_total : "—"}
-                                </div>
-                                <div>
-                                  Next retry:{" "}
-                                  {m.amazon_next_retry_at
-                                    ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
-                                    : "—"}
-                                </div>
+                                    : "noch nie"}
+                                </span>
                               </div>
-
-                              {m.amazon_last_error ? (
-                                <div className="mt-2 text-[11px] text-red-700 dark:text-red-300">Last error: {m.amazon_last_error}</div>
-                              ) : null}
-
-                              <AmazonDetails masterProductId={m.id} lastRunId={m.amazon_last_run_id} expanded={true} />
                             </div>
-                          ) : null}
-                        </div>
-                      ) : null}
 
+                            {isExpanded(m.id) ? (
+                              <div
+                                className="pt-1"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                }}
+                              >
+                                {(() => {
+                                  const used = computeUsedBest(m);
+                                  const sell = estimateSellThroughFromBsr(m);
+                                  const sellRange = formatSellThroughRange(sell.range_days);
+                                  const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                                  const rank = typeof m.amazon_rank_overall === "number" ? m.amazon_rank_overall : m.amazon_rank_specific;
+                                  const rankCat = m.amazon_rank_overall_category ?? m.amazon_rank_specific_category ?? null;
+                                  const usedOffers =
+                                    typeof m.amazon_offers_count_used_priced_total === "number"
+                                      ? m.amazon_offers_count_used_priced_total
+                                      : null;
+                                  const offers = typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : null;
+
+                                  return (
+                                    <div className="mb-2 grid gap-2 sm:grid-cols-2">
+                                      <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          Used best
+                                        </div>
+                                        <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                          {used.cents !== null ? fmtMaybeEur(used.cents) : "—"}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                          {used.cents !== null ? used.label : "—"}
+                                        </div>
+                                      </div>
+
+                                      <div
+                                        className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30"
+                                        title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren."
+                                      >
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          Abverkauf
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                                          <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
+                                          <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
+                                        </div>
+                                        <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                          <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
+                                        </div>
+                                      </div>
+
+                                      <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          BSR
+                                        </div>
+                                        <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                          {typeof rank === "number" ? `#${rank}` : "—"}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">{rankCat ?? "—"}</div>
+                                      </div>
+
+                                      <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                        <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                          Offers
+                                        </div>
+                                        <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                          {usedOffers !== null ? `${usedOffers} used` : offers !== null ? `${offers}` : "—"}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                          Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-700 dark:text-gray-200">
+                                  <div>Neu: {fmtMaybeEur(m.amazon_price_new_cents)}</div>
+                                  <div>Wie neu: {fmtMaybeEur(m.amazon_price_used_like_new_cents)}</div>
+                                  <div>Sehr gut: {fmtMaybeEur(m.amazon_price_used_very_good_cents)}</div>
+                                  <div>Gut: {fmtMaybeEur(m.amazon_price_used_good_cents)}</div>
+                                  <div>Akzeptabel: {fmtMaybeEur(m.amazon_price_used_acceptable_cents)}</div>
+                                  <div>Sammlerst.: {fmtMaybeEur(m.amazon_price_collectible_cents)}</div>
+                                  <div>
+                                    Offers priced:{" "}
+                                    {typeof m.amazon_offers_count_priced_total === "number" ? m.amazon_offers_count_priced_total : "—"}
+                                  </div>
+                                  <div>
+                                    Next retry:{" "}
+                                    {m.amazon_next_retry_at
+                                      ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+                                      : "—"}
+                                  </div>
+                                </div>
+
+                                {m.amazon_last_error ? (
+                                  <div className="mt-2 text-[11px] text-red-700 dark:text-red-300">Last error: {m.amazon_last_error}</div>
+                                ) : null}
+
+                                <AmazonDetails masterProductId={m.id} lastRunId={m.amazon_last_run_id} expanded={true} />
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                      </div>
                     </div>
-                  </div>
                   </div>
                 );
               })}
@@ -1719,324 +1719,324 @@ export function MasterProductsPage() {
 
                     return (
                       <Fragment key={m.id}>
-                      <TableRow className={[TABLE_ROW_COMPACT_CLASS, rowTone].join(" ")}>
-                        <TableCell>
-                          <div className="flex items-start gap-3">
-                            <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
+                        <TableRow className={[TABLE_ROW_COMPACT_CLASS, rowTone].join(" ")}>
+                          <TableCell>
+                            <div className="flex items-start gap-3">
+                              <ReferenceImageThumb url={m.reference_image_url} openHref={amazonListingUrl(m.asin)} alt={m.title} />
 
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <div className="min-w-0 truncate font-medium">{m.title}</div>
-                                <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
-                                <Badge variant="outline" className="font-mono text-[11px]">
-                                  {m.sku}
-                                </Badge>
-                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="min-w-0 truncate font-medium">{m.title}</div>
+                                  <Badge variant="secondary">{kindLabel(m.kind)}</Badge>
+                                  <Badge variant="outline" className="font-mono text-[11px]">
+                                    {m.sku}
+                                  </Badge>
+                                </div>
 
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                                <span>{m.platform}</span>
-                                <span className="text-gray-300 dark:text-gray-700">•</span>
-                                <span>{m.region}</span>
-                                {m.variant ? (
-                                  <>
-                                    <span className="text-gray-300 dark:text-gray-700">•</span>
-                                    <span className="truncate">{m.variant}</span>
-                                  </>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                  <span>{m.platform}</span>
+                                  <span className="text-gray-300 dark:text-gray-700">•</span>
+                                  <span>{m.region}</span>
+                                  {m.variant ? (
+                                    <>
+                                      <span className="text-gray-300 dark:text-gray-700">•</span>
+                                      <span className="truncate">{m.variant}</span>
+                                    </>
+                                  ) : null}
+                                </div>
+
+                                {viewMode === "catalog" && catalogMeta ? (
+                                  <div className="mt-1 truncate text-[11px] text-gray-500 dark:text-gray-400">
+                                    {catalogMeta}
+                                  </div>
                                 ) : null}
+
+                                {viewMode === "catalog" && m.reference_image_url?.trim() ? (
+                                  <a
+                                    href={resolveReferenceImageSrc(m.reference_image_url)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                                    title={resolveReferenceImageSrc(m.reference_image_url)}
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    {shortUrlLabel(resolveReferenceImageSrc(m.reference_image_url))}
+                                  </a>
+                                ) : null}
+                                {viewMode === "amazon" ? (
+                                  <div
+                                    className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                                      disabled={!m.asin || scrapeNow.isPending}
+                                      onClick={() => scrapeNow.mutate(m.id)}
+                                    >
+                                      <RefreshCw className="h-3.5 w-3.5" />
+                                      Scrape
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+                                      onClick={() => openEdit(m)}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                      Bearbeiten
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center gap-1 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
+                                      onClick={() => requestDelete(m)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      Löschen
+                                    </button>
+                                  </div>
+                                ) : null}
+
                               </div>
-
-                              {viewMode === "catalog" && catalogMeta ? (
-                                <div className="mt-1 truncate text-[11px] text-gray-500 dark:text-gray-400">
-                                  {catalogMeta}
-                                </div>
-                              ) : null}
-
-                              {viewMode === "catalog" && m.reference_image_url?.trim() ? (
-                                <a
-                                  href={resolveReferenceImageSrc(m.reference_image_url)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mt-2 inline-flex items-center gap-1 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
-                                  title={resolveReferenceImageSrc(m.reference_image_url)}
-                                >
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                  {shortUrlLabel(resolveReferenceImageSrc(m.reference_image_url))}
-                                </a>
-                              ) : null}
-                              {viewMode === "amazon" ? (
-                                <div
-                                  className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
-                                    disabled={!m.asin || scrapeNow.isPending}
-                                    onClick={() => scrapeNow.mutate(m.id)}
-                                  >
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                    Scrape
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
-                                    onClick={() => openEdit(m)}
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                    Bearbeiten
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
-                                    onClick={() => requestDelete(m)}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    Löschen
-                                  </button>
-                                </div>
-                              ) : null}
-
                             </div>
-                          </div>
-                        </TableCell>
-
-                        {viewMode === "catalog" ? (
-                          <TableCell className="text-sm">
-                            {m.ean || m.asin ? (
-                              <div className="space-y-1 text-[11px] text-gray-600 dark:text-gray-300">
-                                {m.ean ? <div className="truncate font-mono">EAN {m.ean}</div> : null}
-                                {m.asin ? <div className="truncate font-mono">ASIN {m.asin}</div> : null}
-                              </div>
-                            ) : (
-                              <span className="text-gray-500 dark:text-gray-400">—</span>
-                            )}
                           </TableCell>
-                        ) : (
-                          <>
+
+                          {viewMode === "catalog" ? (
                             <TableCell className="text-sm">
-                              {!m.asin ? (
-                                <span className="text-gray-500 dark:text-gray-400">—</span>
-                              ) : (
-                                <div className="rounded-lg border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-emerald-50/80 px-2.5 py-2 dark:border-amber-900/60 dark:from-amber-950/20 dark:via-gray-950 dark:to-emerald-950/20">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant={resellerTargetTierVariant(targetSignal.tier)} className="text-[11px]">
-                                      {resellerTargetTierLabel(targetSignal.tier)}
-                                    </Badge>
-                                    <Badge variant={targetSignal.priceMeetsGoal ? "success" : "outline"} className="text-[11px]">
-                                      {targetSignal.priceMeetsGoal ? ">= 40 EUR" : "< 40 EUR"}
-                                    </Badge>
-                                  </div>
-                                  <div className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">{targetSignal.summary}</div>
-                                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                    {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
-                                    {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
-                                  </div>
+                              {m.ean || m.asin ? (
+                                <div className="space-y-1 text-[11px] text-gray-600 dark:text-gray-300">
+                                  {m.ean ? <div className="truncate font-mono">EAN {m.ean}</div> : null}
+                                  {m.asin ? <div className="truncate font-mono">ASIN {m.asin}</div> : null}
                                 </div>
+                              ) : (
+                                <span className="text-gray-500 dark:text-gray-400">—</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right text-sm">
-                              <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                {targetSignal.bsrRank !== null ? `#${targetSignal.bsrRank}` : "—"}
-                              </div>
-                              <div className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">{targetSignal.bsrCategory}</div>
-                            </TableCell>
-                            <TableCell className="text-right text-sm">
-                              <div
-                                className={[
-                                  "ml-auto inline-flex min-w-[7rem] items-center justify-end rounded-md border px-2 py-1 font-semibold tabular-nums",
-                                  resellerTargetPriceClass(targetSignal.salesPriceCents),
-                                ].join(" ")}
-                              >
-                                {fmtMaybeEur(targetSignal.salesPriceCents)}
-                              </div>
-                              <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{targetSignal.salesPriceLabel}</div>
-                            </TableCell>
-                            <TableCell className={TABLE_ACTION_CELL_CLASS}>
-                              <div className={`${TABLE_ACTION_GROUP_CLASS} items-end`}>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2"
-                                  aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    toggleExpanded(m.id);
-                                  }}
+                          ) : (
+                            <>
+                              <TableCell className="text-sm">
+                                {!m.asin ? (
+                                  <span className="text-gray-500 dark:text-gray-400">—</span>
+                                ) : (
+                                  <div className="rounded-lg border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-emerald-50/80 px-2.5 py-2 dark:border-amber-900/60 dark:from-amber-950/20 dark:via-gray-950 dark:to-emerald-950/20">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant={resellerTargetTierVariant(targetSignal.tier)} className="text-[11px]">
+                                        {resellerTargetTierLabel(targetSignal.tier)}
+                                      </Badge>
+                                      <Badge variant={targetSignal.priceMeetsGoal ? "success" : "outline"} className="text-[11px]">
+                                        {targetSignal.priceMeetsGoal ? ">= 40 EUR" : "< 40 EUR"}
+                                      </Badge>
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-gray-600 dark:text-gray-300">{targetSignal.summary}</div>
+                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                      {m.amazon_blocked_last ? <Badge variant="danger">blocked</Badge> : null}
+                                      {isAmazonStale(m) ? <Badge variant="warning">stale</Badge> : <Badge variant="success">fresh</Badge>}
+                                    </div>
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right text-sm">
+                                <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                  {targetSignal.bsrRank !== null ? `#${targetSignal.bsrRank}` : "—"}
+                                </div>
+                                <div className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">{targetSignal.bsrCategory}</div>
+                              </TableCell>
+                              <TableCell className="text-right text-sm">
+                                <div
+                                  className={[
+                                    "ml-auto inline-flex min-w-[7rem] items-center justify-end rounded-md border px-2 py-1 font-semibold tabular-nums",
+                                    resellerTargetPriceClass(targetSignal.salesPriceCents),
+                                  ].join(" ")}
                                 >
-                                  Details
-                                  {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                </Button>
+                                  {fmtMaybeEur(targetSignal.salesPriceCents)}
+                                </div>
+                                <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{targetSignal.salesPriceLabel}</div>
+                              </TableCell>
+                              <TableCell className={TABLE_ACTION_CELL_CLASS}>
+                                <div className={`${TABLE_ACTION_GROUP_CLASS} items-end`}>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2"
+                                    aria-label={isExpanded(m.id) ? "Details einklappen" : "Details ausklappen"}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      toggleExpanded(m.id);
+                                    }}
+                                  >
+                                    Details
+                                    {isExpanded(m.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </>
+                          )}
+
+                          {viewMode === "catalog" ? (
+                            <TableCell className={TABLE_ACTION_CELL_CLASS}>
+                              <div className={TABLE_ACTION_GROUP_CLASS}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Aktionen">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      disabled={!m.asin || scrapeNow.isPending}
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        scrapeNow.mutate(m.id);
+                                      }}
+                                    >
+                                      <RefreshCw className="h-4 w-4" />
+                                      Amazon scrape jetzt
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        openEdit(m);
+                                      }}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                      Bearbeiten
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        requestDelete(m);
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Löschen
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
                             </TableCell>
-                          </>
-                        )}
-
-                        {viewMode === "catalog" ? (
-                          <TableCell className={TABLE_ACTION_CELL_CLASS}>
-                            <div className={TABLE_ACTION_GROUP_CLASS}>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Aktionen">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    disabled={!m.asin || scrapeNow.isPending}
-                                    onSelect={(e) => {
-                                      e.preventDefault();
-                                      scrapeNow.mutate(m.id);
-                                    }}
-                                  >
-                                    <RefreshCw className="h-4 w-4" />
-                                    Amazon scrape jetzt
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onSelect={(e) => {
-                                      e.preventDefault();
-                                      openEdit(m);
-                                    }}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                    Bearbeiten
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="text-red-700 focus:bg-red-50 focus:text-red-800 dark:text-red-300 dark:focus:bg-red-950/40 dark:focus:text-red-200"
-                                    onSelect={(e) => {
-                                      e.preventDefault();
-                                      requestDelete(m);
-                                    }}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    Löschen
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        ) : null}
-                      </TableRow>
-                      {viewMode === "amazon" && m.asin && isExpanded(m.id) ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="bg-gray-50/60 py-0 dark:bg-gray-950/30">
-                            <div className="py-3">
-                              {(() => {
-                                const used = computeUsedBest(m);
-                                const sell = estimateSellThroughFromBsr(m);
-                                const sellRange = formatSellThroughRange(sell.range_days);
-                                const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
-                                const rank = typeof m.amazon_rank_overall === "number" ? m.amazon_rank_overall : m.amazon_rank_specific;
-                                const rankCat = m.amazon_rank_overall_category ?? m.amazon_rank_specific_category ?? null;
-                                const usedOffers =
-                                  typeof m.amazon_offers_count_used_priced_total === "number"
-                                    ? m.amazon_offers_count_used_priced_total
-                                    : null;
-                                const offers = typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : null;
-                                const nextRetryLabel = m.amazon_next_retry_at
-                                  ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
-                                  : "—";
-
-                                return (
-                                  <>
-                                  <div className={`mb-2 text-[11px] ${TABLE_CELL_META_CLASS}`}>
-                                    Failures {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"} ·
-                                    Next retry {nextRetryLabel}
-                                    {m.amazon_block_reason_last ? ` · Block reason: ${m.amazon_block_reason_last}` : ""}
-                                  </div>
-                                  <div className="mb-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                                    <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        Used best
-                                      </div>
-                                      <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                        {used.cents !== null ? fmtMaybeEur(used.cents) : "—"}
-                                      </div>
-                                      <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                                        {used.cents !== null ? used.label : "—"}
-                                      </div>
-                                    </div>
-
-                                    <div
-                                      className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30"
-                                      title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren."
-                                    >
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        Abverkauf
-                                      </div>
-                                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                                        <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
-                                        <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
-                                      </div>
-                                      <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                        <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
-                                      </div>
-                                    </div>
-
-                                    <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        BSR
-                                      </div>
-                                      <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                        {typeof rank === "number" ? `#${rank}` : "—"}
-                                      </div>
-                                      <div className="text-[11px] text-gray-500 dark:text-gray-400">{rankCat ?? "—"}</div>
-                                    </div>
-
-                                    <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
-                                      <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                        Offers
-                                      </div>
-                                      <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                        {usedOffers !== null ? `${usedOffers} used` : offers !== null ? `${offers}` : "—"}
-                                      </div>
-                                      <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                                        Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  </>
-                                );
-                              })()}
-
-                              <div className="grid grid-cols-4 gap-2 text-[11px] text-gray-700 dark:text-gray-200">
-                                <div>Neu: {fmtMaybeEur(m.amazon_price_new_cents)}</div>
-                                <div>Wie neu: {fmtMaybeEur(m.amazon_price_used_like_new_cents)}</div>
-                                <div>Sehr gut: {fmtMaybeEur(m.amazon_price_used_very_good_cents)}</div>
-                                <div>Gut: {fmtMaybeEur(m.amazon_price_used_good_cents)}</div>
-                                <div>Akzeptabel: {fmtMaybeEur(m.amazon_price_used_acceptable_cents)}</div>
-                                <div>Sammlerst.: {fmtMaybeEur(m.amazon_price_collectible_cents)}</div>
-                                <div>Buybox: {fmtMaybeEur(m.amazon_buybox_total_cents)}</div>
-                                <div>Offers: {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}</div>
-                                <div>
-                                  Offers priced:{" "}
-                                  {typeof m.amazon_offers_count_priced_total === "number" ? m.amazon_offers_count_priced_total : "—"}
-                                </div>
-                                <div>
-                                  Used priced:{" "}
-                                  {typeof m.amazon_offers_count_used_priced_total === "number"
-                                    ? m.amazon_offers_count_used_priced_total
-                                    : "—"}
-                                </div>
-                                <div>
-                                  Next retry:{" "}
-                                  {m.amazon_next_retry_at
-                                    ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
-                                    : "—"}
-                                </div>
-                                <div>Failures: {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"}</div>
-                              </div>
-
-                              {m.amazon_last_error ? (
-                                <div className="mt-2 text-[11px] text-red-700 dark:text-red-300">Last error: {m.amazon_last_error}</div>
-                              ) : null}
-
-                              <AmazonDetails masterProductId={m.id} lastRunId={m.amazon_last_run_id} expanded={true} />
-                            </div>
-                          </TableCell>
+                          ) : null}
                         </TableRow>
-                      ) : null}
+                        {viewMode === "amazon" && m.asin && isExpanded(m.id) ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="bg-gray-50/60 py-0 dark:bg-gray-950/30">
+                              <div className="py-3">
+                                {(() => {
+                                  const used = computeUsedBest(m);
+                                  const sell = estimateSellThroughFromBsr(m);
+                                  const sellRange = formatSellThroughRange(sell.range_days);
+                                  const sellDisplay = sellRange === "—" ? "—" : `~${sellRange}`;
+                                  const rank = typeof m.amazon_rank_overall === "number" ? m.amazon_rank_overall : m.amazon_rank_specific;
+                                  const rankCat = m.amazon_rank_overall_category ?? m.amazon_rank_specific_category ?? null;
+                                  const usedOffers =
+                                    typeof m.amazon_offers_count_used_priced_total === "number"
+                                      ? m.amazon_offers_count_used_priced_total
+                                      : null;
+                                  const offers = typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : null;
+                                  const nextRetryLabel = m.amazon_next_retry_at
+                                    ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+                                    : "—";
+
+                                  return (
+                                    <>
+                                      <div className={`mb-2 text-[11px] ${TABLE_CELL_META_CLASS}`}>
+                                        Failures {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"} ·
+                                        Next retry {nextRetryLabel}
+                                        {m.amazon_block_reason_last ? ` · Block reason: ${m.amazon_block_reason_last}` : ""}
+                                      </div>
+                                      <div className="mb-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                                        <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                          <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                            Used best
+                                          </div>
+                                          <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                            {used.cents !== null ? fmtMaybeEur(used.cents) : "—"}
+                                          </div>
+                                          <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                            {used.cents !== null ? used.label : "—"}
+                                          </div>
+                                        </div>
+
+                                        <div
+                                          className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30"
+                                          title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren."
+                                        >
+                                          <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                            Abverkauf
+                                          </div>
+                                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                                            <Badge variant={sellThroughSpeedVariant(sell.speed)}>{sellThroughSpeedLabel(sell.speed)}</Badge>
+                                            <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{sellDisplay}</div>
+                                          </div>
+                                          <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                            <Badge variant={sellThroughConfidenceVariant(sell.confidence)}>{sell.confidence}</Badge>
+                                          </div>
+                                        </div>
+
+                                        <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                          <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                            BSR
+                                          </div>
+                                          <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                            {typeof rank === "number" ? `#${rank}` : "—"}
+                                          </div>
+                                          <div className="text-[11px] text-gray-500 dark:text-gray-400">{rankCat ?? "—"}</div>
+                                        </div>
+
+                                        <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
+                                          <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                            Offers
+                                          </div>
+                                          <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                            {usedOffers !== null ? `${usedOffers} used` : offers !== null ? `${offers}` : "—"}
+                                          </div>
+                                          <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                            Buybox {fmtMaybeEur(m.amazon_buybox_total_cents)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </>
+                                  );
+                                })()}
+
+                                <div className="grid grid-cols-4 gap-2 text-[11px] text-gray-700 dark:text-gray-200">
+                                  <div>Neu: {fmtMaybeEur(m.amazon_price_new_cents)}</div>
+                                  <div>Wie neu: {fmtMaybeEur(m.amazon_price_used_like_new_cents)}</div>
+                                  <div>Sehr gut: {fmtMaybeEur(m.amazon_price_used_very_good_cents)}</div>
+                                  <div>Gut: {fmtMaybeEur(m.amazon_price_used_good_cents)}</div>
+                                  <div>Akzeptabel: {fmtMaybeEur(m.amazon_price_used_acceptable_cents)}</div>
+                                  <div>Sammlerst.: {fmtMaybeEur(m.amazon_price_collectible_cents)}</div>
+                                  <div>Buybox: {fmtMaybeEur(m.amazon_buybox_total_cents)}</div>
+                                  <div>Offers: {typeof m.amazon_offers_count_total === "number" ? m.amazon_offers_count_total : "—"}</div>
+                                  <div>
+                                    Offers priced:{" "}
+                                    {typeof m.amazon_offers_count_priced_total === "number" ? m.amazon_offers_count_priced_total : "—"}
+                                  </div>
+                                  <div>
+                                    Used priced:{" "}
+                                    {typeof m.amazon_offers_count_used_priced_total === "number"
+                                      ? m.amazon_offers_count_used_priced_total
+                                      : "—"}
+                                  </div>
+                                  <div>
+                                    Next retry:{" "}
+                                    {m.amazon_next_retry_at
+                                      ? new Date(m.amazon_next_retry_at).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })
+                                      : "—"}
+                                  </div>
+                                  <div>Failures: {typeof m.amazon_consecutive_failures === "number" ? m.amazon_consecutive_failures : "—"}</div>
+                                </div>
+
+                                {m.amazon_last_error ? (
+                                  <div className="mt-2 text-[11px] text-red-700 dark:text-red-300">Last error: {m.amazon_last_error}</div>
+                                ) : null}
+
+                                <AmazonDetails masterProductId={m.id} lastRunId={m.amazon_last_run_id} expanded={true} />
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : null}
                       </Fragment>
                     );
                   })}
@@ -2186,7 +2186,7 @@ export function MasterProductsPage() {
           }
         }}
       >
-          <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>{editorMode === "create" ? "Produkt anlegen" : "Produkt bearbeiten"}</DialogTitle>
             <DialogDescription>
