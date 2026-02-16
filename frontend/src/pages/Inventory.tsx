@@ -846,7 +846,7 @@ export function InventoryPage() {
         }
         actions={
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <BulkTargetPricingDialog />
+            <BulkTargetPricingDialog defaultQuery={q} defaultStatus={status} />
             <Button
               variant="secondary"
               onClick={() => {
@@ -1693,6 +1693,10 @@ export function InventoryPage() {
                                 setEditing(it);
                                 setEditStorageLocation(it.storage_location ?? "");
                                 setEditSerialNumber(it.serial_number ?? "");
+                                setEditTargetPriceMode(it.target_price_mode as "AUTO" | "MANUAL");
+                                setEditManualPrice(
+                                  it.manual_target_sell_price_cents ? (it.manual_target_sell_price_cents / 100).toFixed(2) : "",
+                                );
                               }}
                             >
                               Bearbeiten

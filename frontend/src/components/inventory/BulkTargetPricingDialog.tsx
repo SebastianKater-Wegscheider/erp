@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ArrowRight, CheckCircle2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApi } from "../../lib/api";
 import { formatEur } from "../../lib/money";
 import { Button } from "../ui/button";
@@ -53,7 +53,15 @@ type BulkTargetPricingApplyResponse = {
     updated_count: number;
 };
 
-export function BulkTargetPricingDialog({ trigger }: { trigger?: React.ReactNode }) {
+export function BulkTargetPricingDialog({
+    trigger,
+    defaultQuery = "",
+    defaultStatus = "ALL", // "ALL" or specific status like "AVAILABLE"
+}: {
+    trigger?: React.ReactNode;
+    defaultQuery?: string;
+    defaultStatus?: string;
+}) {
     const api = useApi();
     const qc = useQueryClient();
     const [open, setOpen] = useState(false);
@@ -61,8 +69,18 @@ export function BulkTargetPricingDialog({ trigger }: { trigger?: React.ReactNode
 
     // Filter States
     const [filterMode, setFilterMode] = useState<"ALL" | "AUTO" | "MANUAL">("ALL");
-    const [filterQuery, setFilterQuery] = useState("");
-    const [filterStatusAvailableOnly, setFilterStatusAvailableOnly] = useState(true);
+    const [filterQuery, setFilterQuery] = useState(defaultQuery);
+    // If defaultStatus provided (and not ALL), use it. otherwise default to available-only true
+    const [filterStatusAvailableOnly, setFilterStatusAvailableOnly] = useState(defaultStatus === "ALL" || defaultStatus === "AVAILABLE");
+
+    // Reset state when opening (or re-opening with new defaults if they changed?)
+    // Actually, we should sync state when opening.
+    useEffect(() => {
+        if (open) {
+            setFilterQuery(defaultQuery);
+            setFilterStatusAvailableOnly(defaultStatus === "ALL" || defaultStatus === "AVAILABLE");
+        }
+    }, [open, defaultQuery, defaultStatus]);
 
     // Action States
     const [targetMode, setTargetMode] = useState<TargetPriceMode>("AUTO");
@@ -249,6 +267,18 @@ export function BulkTargetPricingDialog({ trigger }: { trigger?: React.ReactNode
                                 <div className="text-sm text-amber-600 font-medium dark:text-amber-400">Keine Änderungen notwendig.</div>
                             )}
                         </div>
+
+                        {previewData.total_items_changed > 1 && (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+                                <strong>Achtung:</strong> Sie bearbeiten {previewData.total_items_changed} Artikel gleichzeitig.
+                            </div>
+                        )}
+
+                        {previewData.total_items_changed > 1 && (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+                                <strong>Achtung:</strong> Sie bearbeiten {previewData.total_items_changed} Artikel gleichzeitig.
+                            </div>
+                        )}
 
                         <div className="max-h-[400px] overflow-y-auto rounded-md border dark:border-gray-800">
                             <Table>
