@@ -86,6 +86,13 @@ type MarketplacePayoutImportOut = {
   errors: Array<{ row_number: number; message: string; external_payout_id?: string | null }>;
 };
 
+type InventoryMatchCandidate = {
+  id: string;
+  item_code: string;
+  master_product_id: string;
+  status: string;
+};
+
 const STAGED_STATUS_LABEL: Record<MarketplaceStagedOrderOut["status"], string> = {
   READY: "READY",
   NEEDS_ATTENTION: "Needs attention",
@@ -132,6 +139,10 @@ export function MarketplacePage() {
   const [reviewStatus, setReviewStatus] = useState<string>("ALL");
   const [reviewQuery, setReviewQuery] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<{ stagedOrderId: string; stagedLineId: string; sku: string } | null>(
+    null,
+  );
+  const [overrideSearch, setOverrideSearch] = useState("");
 
   const [applyOut, setApplyOut] = useState<MarketplaceStagedOrderApplyOut | null>(null);
 
@@ -192,6 +203,35 @@ export function MarketplacePage() {
     },
   });
 
+  const overrideCandidates = useQuery({
+    queryKey: ["marketplace-override-candidates", overrideSearch],
+    enabled: !!overrideTarget,
+    queryFn: () =>
+      api.request<InventoryMatchCandidate[]>(
+        `/inventory?limit=30&offset=0${overrideSearch.trim() ? `&q=${encodeURIComponent(overrideSearch.trim())}` : ""}`,
+      ),
+  });
+
+  const overrideMatch = useMutation({
+    mutationFn: (inventoryItemId: string) => {
+      if (!overrideTarget) throw new Error("Kein Override-Ziel ausgewählt");
+      return api.request<MarketplaceStagedOrderOut>(
+        `/marketplace/staged-orders/${overrideTarget.stagedOrderId}/lines/${overrideTarget.stagedLineId}/override`,
+        {
+          method: "POST",
+          json: { inventory_item_id: inventoryItemId },
+        },
+      );
+    },
+    onSuccess: async (updatedOrder) => {
+      setSelectedOrderId(updatedOrder.id);
+      setOverrideTarget(null);
+      setOverrideSearch("");
+      await qc.invalidateQueries({ queryKey: ["marketplace-staged-orders"] });
+      await qc.invalidateQueries({ queryKey: ["inventory"] });
+    },
+  });
+
   const payouts = useQuery({
     queryKey: ["marketplace-payouts"],
     enabled: tab === "payouts",
@@ -214,6 +254,9 @@ export function MarketplacePage() {
   });
 
   const stagedOrderRows = stagedOrders.data ?? [];
+  const sellableOverrideCandidates = (overrideCandidates.data ?? []).filter(
+    (r) => r.status === "AVAILABLE" || r.status === "FBA_WAREHOUSE",
+  );
 
   return (
     <div className="space-y-4">
@@ -485,6 +528,7 @@ export function MarketplacePage() {
                           <TableHead>Strategy</TableHead>
                           <TableHead>Matched item</TableHead>
                           <TableHead>Error</TableHead>
+                          <TableHead className="text-right">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -515,6 +559,27 @@ export function MarketplacePage() {
                               )}
                             </TableCell>
                             <TableCell className="text-xs text-rose-700 dark:text-rose-300">{l.match_error ?? ""}</TableCell>
+                            <TableCell className="text-right">
+                              {!l.matched_inventory_item_id && selectedOrder.status !== "APPLIED" ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setOverrideSearch(l.sku.startsWith("IT-") ? l.sku : "");
+                                    setOverrideTarget({
+                                      stagedOrderId: selectedOrder.id,
+                                      stagedLineId: l.id,
+                                      sku: l.sku,
+                                    });
+                                  }}
+                                >
+                                  Manual override
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-[color:var(--app-text-muted)]">-</span>
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -522,6 +587,84 @@ export function MarketplacePage() {
                   </div>
                 </div>
               )}
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={!!overrideTarget}
+            onOpenChange={(open) => {
+              if (!open) {
+                setOverrideTarget(null);
+                setOverrideSearch("");
+              }
+            }}
+          >
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Manual Match Override</DialogTitle>
+                <DialogDescription className="font-mono text-xs">
+                  {overrideTarget ? `Line SKU: ${overrideTarget.sku}` : ""}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Inventory search</Label>
+                  <Input
+                    value={overrideSearch}
+                    onChange={(e) => setOverrideSearch(e.target.value)}
+                    placeholder="IT-... oder Produktbegriff"
+                  />
+                </div>
+
+                {(overrideCandidates.isError || overrideMatch.isError) && (
+                  <InlineMessage tone="error">
+                    {((overrideCandidates.error ?? overrideMatch.error) as Error).message}
+                  </InlineMessage>
+                )}
+
+                {!overrideCandidates.isLoading && !sellableOverrideCandidates.length && (
+                  <InlineMessage tone="neutral">Keine verkaeuflichen Items (AVAILABLE/FBA_WAREHOUSE) gefunden.</InlineMessage>
+                )}
+
+                {!!sellableOverrideCandidates.length && (
+                  <div className="max-h-[360px] overflow-auto rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface)]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Item code</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>ID</TableHead>
+                          <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sellableOverrideCandidates.map((c) => (
+                          <TableRow key={c.id}>
+                            <TableCell className="font-mono text-xs">{c.item_code}</TableCell>
+                            <TableCell>
+                              <Badge variant={c.status === "FBA_WAREHOUSE" ? "secondary" : "success"} className="font-mono text-[11px]">
+                                {c.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">{c.id}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => overrideMatch.mutate(c.id)}
+                                disabled={overrideMatch.isPending}
+                              >
+                                Match this item
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
             </DialogContent>
           </Dialog>
         </TabsContent>
