@@ -19,6 +19,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    cash_recognition_enum = sa.Enum("AT_FINALIZE", "AT_PAYOUT", name="cash_recognition", create_type=False)
+    order_channel_enum = sa.Enum("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel", create_type=False)
+
     op.execute(
         "DO $$ BEGIN "
         "CREATE TYPE cash_recognition AS ENUM ('AT_FINALIZE', 'AT_PAYOUT'); "
@@ -30,7 +33,7 @@ def upgrade() -> None:
         "sales_orders",
         sa.Column(
             "cash_recognition",
-            sa.Enum("AT_FINALIZE", "AT_PAYOUT", name="cash_recognition"),
+            cash_recognition_enum,
             nullable=False,
             server_default="AT_FINALIZE",
         ),
@@ -46,7 +49,7 @@ def upgrade() -> None:
 
     op.create_table(
         "marketplace_payouts",
-        sa.Column("channel", sa.Enum("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel"), nullable=False),
+        sa.Column("channel", order_channel_enum, nullable=False),
         sa.Column("external_payout_id", sa.String(length=200), nullable=False),
         sa.Column("payout_date", sa.Date(), nullable=False),
         sa.Column("net_amount_cents", sa.Integer(), nullable=False),
@@ -71,4 +74,3 @@ def downgrade() -> None:
     op.drop_column("sales_orders", "cash_recognition")
 
     # Enum type removal is intentionally omitted for PostgreSQL compatibility.
-

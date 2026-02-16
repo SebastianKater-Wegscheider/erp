@@ -20,6 +20,15 @@ depends_on = None
 
 
 def upgrade() -> None:
+    marketplace_import_kind_enum = sa.Enum("ORDERS", "PAYOUTS", name="marketplace_import_kind", create_type=False)
+    marketplace_staged_order_status_enum = sa.Enum(
+        "READY", "NEEDS_ATTENTION", "APPLIED", name="marketplace_staged_order_status", create_type=False
+    )
+    marketplace_match_strategy_enum = sa.Enum(
+        "ITEM_CODE", "MASTER_SKU_FIFO", "NONE", name="marketplace_match_strategy", create_type=False
+    )
+    order_channel_enum = sa.Enum("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel", create_type=False)
+
     op.execute(
         "DO $$ BEGIN "
         "CREATE TYPE marketplace_import_kind AS ENUM ('ORDERS', 'PAYOUTS'); "
@@ -41,7 +50,7 @@ def upgrade() -> None:
 
     op.create_table(
         "marketplace_import_batches",
-        sa.Column("kind", sa.Enum("ORDERS", "PAYOUTS", name="marketplace_import_kind"), nullable=False),
+        sa.Column("kind", marketplace_import_kind_enum, nullable=False),
         sa.Column("actor", sa.String(length=200), nullable=False),
         sa.Column("source_label", sa.String(length=200), nullable=True),
         sa.Column("raw_csv_text", sa.Text(), nullable=False),
@@ -59,7 +68,7 @@ def upgrade() -> None:
     op.create_table(
         "marketplace_staged_orders",
         sa.Column("batch_id", sa.UUID(), nullable=True),
-        sa.Column("channel", sa.Enum("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel"), nullable=False),
+        sa.Column("channel", order_channel_enum, nullable=False),
         sa.Column("external_order_id", sa.String(length=200), nullable=False),
         sa.Column("order_date", sa.Date(), nullable=False),
         sa.Column("buyer_name", sa.String(length=200), nullable=False),
@@ -67,7 +76,7 @@ def upgrade() -> None:
         sa.Column("shipping_gross_cents", sa.Integer(), server_default="0", nullable=False),
         sa.Column(
             "status",
-            sa.Enum("READY", "NEEDS_ATTENTION", "APPLIED", name="marketplace_staged_order_status"),
+            marketplace_staged_order_status_enum,
             server_default="NEEDS_ATTENTION",
             nullable=False,
         ),
@@ -93,7 +102,7 @@ def upgrade() -> None:
         sa.Column("matched_inventory_item_id", sa.UUID(), nullable=True),
         sa.Column(
             "match_strategy",
-            sa.Enum("ITEM_CODE", "MASTER_SKU_FIFO", "NONE", name="marketplace_match_strategy"),
+            marketplace_match_strategy_enum,
             server_default="NONE",
             nullable=False,
         ),
@@ -124,4 +133,3 @@ def downgrade() -> None:
     op.drop_table("marketplace_import_batches")
 
     # Enum type removal is intentionally omitted for PostgreSQL compatibility.
-
