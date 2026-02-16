@@ -20,14 +20,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    marketplace_import_kind_enum = sa.Enum("ORDERS", "PAYOUTS", name="marketplace_import_kind", create_type=False)
-    marketplace_staged_order_status_enum = sa.Enum(
+    marketplace_import_kind_enum = postgresql.ENUM("ORDERS", "PAYOUTS", name="marketplace_import_kind", create_type=False)
+    marketplace_staged_order_status_enum = postgresql.ENUM(
         "READY", "NEEDS_ATTENTION", "APPLIED", name="marketplace_staged_order_status", create_type=False
     )
-    marketplace_match_strategy_enum = sa.Enum(
+    marketplace_match_strategy_enum = postgresql.ENUM(
         "ITEM_CODE", "MASTER_SKU_FIFO", "NONE", name="marketplace_match_strategy", create_type=False
     )
-    order_channel_enum = sa.Enum("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel", create_type=False)
+    order_channel_enum = postgresql.ENUM("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel", create_type=False)
 
     op.execute(
         "DO $$ BEGIN "

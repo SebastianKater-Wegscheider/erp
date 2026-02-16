@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "3c7f1c0a8b21"
@@ -19,8 +20,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    cash_recognition_enum = sa.Enum("AT_FINALIZE", "AT_PAYOUT", name="cash_recognition", create_type=False)
-    order_channel_enum = sa.Enum("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel", create_type=False)
+    cash_recognition_enum = postgresql.ENUM("AT_FINALIZE", "AT_PAYOUT", name="cash_recognition", create_type=False)
+    order_channel_enum = postgresql.ENUM("EBAY", "AMAZON", "WILLHABEN", "OTHER", name="order_channel", create_type=False)
 
     op.execute(
         "DO $$ BEGIN "
