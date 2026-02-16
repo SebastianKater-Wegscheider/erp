@@ -127,3 +127,15 @@ class MasterProductKind(StrEnum):
     CONSOLE = "CONSOLE"
     ACCESSORY = "ACCESSORY"
     OTHER = "OTHER"
+
+
+class TargetPriceMode(StrEnum):
+    AUTO = "AUTO"
+    MANUAL = "MANUAL"
+
+
+class EffectiveTargetPriceSource(StrEnum):
+    MANUAL = "MANUAL"
+    AUTO_AMAZON = "AUTO_AMAZON"
+    AUTO_COST_FLOOR = "AUTO_COST_FLOOR"
+    UNPRICED = "UNPRICED"

@@ -34,6 +34,7 @@ import {
   TABLE_CELL_META_CLASS,
   TABLE_ROW_COMPACT_CLASS,
 } from "../components/ui/table-row-layout";
+import { BulkTargetPricingDialog } from "../components/inventory/BulkTargetPricingDialog";
 
 type InventoryItem = {
   id: string;
@@ -47,6 +48,20 @@ type InventoryItem = {
   serial_number?: string | null;
   status: string;
   acquired_date?: string | null;
+  target_price_mode: "AUTO" | "MANUAL";
+  manual_target_sell_price_cents?: number | null;
+  recommended_target_sell_price_cents?: number | null;
+  effective_target_sell_price_cents?: number | null;
+  effective_target_price_source: "MANUAL" | "AUTO_AMAZON" | "AUTO_COST_FLOOR" | "UNPRICED";
+  target_price_recommendation?: {
+    strategy: string;
+    recommended_target_sell_price_cents: number;
+    anchor_price_cents?: number | null;
+    anchor_source: string;
+    adjustment_bp: number;
+    margin_floor_price_cents: number;
+    summary: string;
+  } | null;
 };
 
 type MasterProductKind = "GAME" | "CONSOLE" | "ACCESSORY" | "OTHER";
@@ -389,6 +404,8 @@ export function InventoryPage() {
   const [editing, setEditing] = useState<InventoryItem | null>(null);
   const [editStorageLocation, setEditStorageLocation] = useState("");
   const [editSerialNumber, setEditSerialNumber] = useState("");
+  const [editTargetPriceMode, setEditTargetPriceMode] = useState<"AUTO" | "MANUAL">("AUTO");
+  const [editManualPrice, setEditManualPrice] = useState(""); // Eur string
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [previewErrors, setPreviewErrors] = useState<Record<string, true>>({});
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
@@ -748,12 +765,22 @@ export function InventoryPage() {
   const update = useMutation({
     mutationFn: async () => {
       if (!editing) throw new Error("Kein Artikel ausgewählt");
+      const payload: any = {
+        storage_location: editStorageLocation.trim() ? editStorageLocation.trim() : null,
+        serial_number: editSerialNumber.trim() ? editSerialNumber.trim() : null,
+        target_price_mode: editTargetPriceMode,
+      };
+      if (editTargetPriceMode === "MANUAL") {
+        const parsed = parseFloat(editManualPrice.replace(",", "."));
+        if (!isNaN(parsed) && parsed >= 0) {
+          payload.manual_target_sell_price_cents = Math.round(parsed * 100);
+        } else {
+          throw new Error("Ungültiger Preis");
+        }
+      }
       return api.request<InventoryItem>(`/inventory/${editing.id}`, {
         method: "PATCH",
-        json: {
-          storage_location: editStorageLocation.trim() ? editStorageLocation.trim() : null,
-          serial_number: editSerialNumber.trim() ? editSerialNumber.trim() : null,
-        },
+        json: payload,
       });
     },
     onSuccess: async () => {
@@ -818,17 +845,20 @@ export function InventoryPage() {
             : "Operative Pflege für SN, Lagerplatz, Bilder und Artikelzustand."
         }
         actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void master.refetch();
-              void inv.refetch();
-            }}
-            disabled={master.isFetching || inv.isFetching}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Aktualisieren
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <BulkTargetPricingDialog />
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void master.refetch();
+                void inv.refetch();
+              }}
+              disabled={master.isFetching || inv.isFetching}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Aktualisieren
+            </Button>
+          </div>
         }
         actionsClassName="w-full sm:w-auto"
       />
@@ -1065,10 +1095,21 @@ export function InventoryPage() {
                             <div className="mt-2 grid gap-2 sm:grid-cols-2">
                               <div className="rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-800 dark:bg-gray-950/30">
                                 <div className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                  Marktpreis
+                                  Zielpreis
                                 </div>
-                                <div className="mt-0.5 font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                                  {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
+                                <div className="mt-0.5 flex flex-col items-start">
+                                  <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                    {typeof it.effective_target_sell_price_cents === "number"
+                                      ? `${formatEur(it.effective_target_sell_price_cents)} €`
+                                      : "—"}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400">
+                                    {it.target_price_mode === "MANUAL"
+                                      ? "Manuell"
+                                      : it.effective_target_price_source === "AUTO_AMAZON"
+                                        ? "Auto (Amazon)"
+                                        : "Auto (Floor)"}
+                                  </div>
                                 </div>
                                 <div className="text-[11px] text-gray-500 dark:text-gray-400">{market.label}</div>
                               </div>
@@ -1274,7 +1315,7 @@ export function InventoryPage() {
                   <TableRow>
                     <TableHead>Produkt</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className={OVERVIEW_METRIC_CELL_CLASS}>Marktpreis</TableHead>
+                    <TableHead className={OVERVIEW_METRIC_CELL_CLASS}>Zielpreis</TableHead>
                     <TableHead className={OVERVIEW_METRIC_CELL_CLASS}>Abverkauf</TableHead>
                     <TableHead className={OVERVIEW_METRIC_CELL_CLASS}>Marge</TableHead>
                     <TableHead className="text-right"></TableHead>
@@ -1290,7 +1331,9 @@ export function InventoryPage() {
                     const totalCostCents = it.purchase_price_cents + it.allocated_costs_cents;
                     const hasAllocated = it.allocated_costs_cents > 0;
                     const market = estimateMarketPriceForInventoryCondition(mp, it.condition);
-                    const payout = estimateFbaPayout(market.cents, feeProfileValue);
+                    // Use effective target price for payout/margin calculation if available, otherwise fall back to estimate
+                    const effectiveCents = it.effective_target_sell_price_cents ?? market.cents;
+                    const payout = estimateFbaPayout(effectiveCents, feeProfileValue);
                     const margin = estimateMargin(payout.payout_cents, totalCostCents);
                     const sell = estimateSellThroughFromBsr(mp ?? {});
                     const sellRange = formatSellThroughRange(sell.range_days);
@@ -1373,10 +1416,23 @@ export function InventoryPage() {
                         </TableCell>
                         <TableCell className={OVERVIEW_METRIC_CELL_CLASS}>
                           <div className={OVERVIEW_METRIC_CARD_CLASS}>
-                            <div className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                              {typeof market.cents === "number" ? `${formatEur(market.cents)} €` : "—"}
+                            <div className="flex flex-col items-end">
+                              <div className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                                {typeof it.effective_target_sell_price_cents === "number"
+                                  ? `${formatEur(it.effective_target_sell_price_cents)} €`
+                                  : "—"}
+                              </div>
+                              <div className="text-[10px] text-gray-400">
+                                {it.target_price_mode === "MANUAL"
+                                  ? "Manuell"
+                                  : it.effective_target_price_source === "AUTO_AMAZON"
+                                    ? "Auto (Amazon)"
+                                    : "Auto (Floor)"}
+                              </div>
                             </div>
-                            <div className={`${TABLE_CELL_META_CLASS} w-full truncate text-right`}>{market.label}</div>
+                            <div className={`${TABLE_CELL_META_CLASS} w-full truncate text-right`}>
+                              {it.target_price_recommendation?.summary ?? market.label}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell className={OVERVIEW_METRIC_CELL_CLASS} title="Schätzung aus BSR + Offer-Konkurrenz; echte Verkäufe variieren.">
@@ -1421,6 +1477,10 @@ export function InventoryPage() {
                                 setEditing(it);
                                 setEditStorageLocation(it.storage_location ?? "");
                                 setEditSerialNumber(it.serial_number ?? "");
+                                setEditTargetPriceMode(it.target_price_mode as "AUTO" | "MANUAL");
+                                setEditManualPrice(
+                                  it.manual_target_sell_price_cents ? (it.manual_target_sell_price_cents / 100).toFixed(2) : "",
+                                );
                               }}
                             >
                               Bearbeiten
@@ -1760,6 +1820,52 @@ export function InventoryPage() {
               <div className="space-y-2">
                 <Label>Lagerplatz (optional)</Label>
                 <Input value={editStorageLocation} onChange={(e) => setEditStorageLocation(e.target.value)} placeholder="Regal 2 / Box A / …" />
+              </div>
+            </div>
+
+            <div className="rounded-md border p-4 dark:border-gray-800">
+              <div className="mb-4 text-sm font-medium">Zielpreis</div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Modus</Label>
+                  <Select
+                    value={editTargetPriceMode}
+                    onValueChange={(v) => {
+                      setEditTargetPriceMode(v as "AUTO" | "MANUAL");
+                      if (v === "MANUAL" && !editManualPrice && editing?.recommended_target_sell_price_cents) {
+                        setEditManualPrice((editing.recommended_target_sell_price_cents / 100).toFixed(2));
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AUTO">Automatisch (Empfohlen)</SelectItem>
+                      <SelectItem value="MANUAL">Manuell</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {editing?.target_price_recommendation && (
+                    <div className="text-[11px] text-gray-500">
+                      Empfehlung: {(editing.target_price_recommendation.recommended_target_sell_price_cents / 100).toFixed(2)} €
+                      <br />
+                      <span className="opacity-80">{editing.target_price_recommendation.summary}</span>
+                    </div>
+                  )}
+                </div>
+                {editTargetPriceMode === "MANUAL" && (
+                  <div className="space-y-2">
+                    <Label>Verkaufspreis (EUR)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={editManualPrice}
+                      onChange={(e) => setEditManualPrice(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

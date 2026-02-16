@@ -57,6 +57,10 @@ type CompanyDashboardOut = {
     in_stock_units_fresh: number;
     in_stock_units_stale_or_blocked: number;
     in_stock_units_blocked: number;
+    in_stock_units_manual_priced: number;
+    in_stock_units_auto_priced: number;
+    in_stock_units_unpriced: number;
+    in_stock_units_effective_priced: number;
     positive_margin_units: number;
     negative_margin_units: number;
     top_opportunities: Array<{
@@ -825,8 +829,25 @@ export function DashboardPage() {
                   </div>
 
                   <div className="text-xs text-gray-600 dark:text-gray-300">
-                    Bepreist {data.amazon_inventory.in_stock_units_priced}/{data.amazon_inventory.in_stock_units_total} · Fresh{" "}
-                    {data.amazon_inventory.in_stock_units_fresh} · Stale/blocked {data.amazon_inventory.in_stock_units_stale_or_blocked}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      <span>
+                        Bepreist: <strong>{data.amazon_inventory.in_stock_units_effective_priced}</strong> /{" "}
+                        {data.amazon_inventory.in_stock_units_total}
+                      </span>
+                      <span className="text-gray-400">
+                        (Auto {data.amazon_inventory.in_stock_units_auto_priced} · Manuell{" "}
+                        {data.amazon_inventory.in_stock_units_manual_priced})
+                      </span>
+                      {data.amazon_inventory.in_stock_units_unpriced > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400">
+                          Unpriced: {data.amazon_inventory.in_stock_units_unpriced}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1">
+                      Fresh {data.amazon_inventory.in_stock_units_fresh} · Stale/blocked{" "}
+                      {data.amazon_inventory.in_stock_units_stale_or_blocked}
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">

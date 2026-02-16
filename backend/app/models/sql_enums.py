@@ -20,6 +20,7 @@ from app.core.enums import (
     PurchaseKind,
     PurchaseType,
     ReturnAction,
+    TargetPriceMode,
 )
 
 inventory_condition_enum = Enum(InventoryCondition, name="inventory_condition")
@@ -45,3 +46,5 @@ return_action_enum = Enum(ReturnAction, name="return_action")
 marketplace_import_kind_enum = Enum(MarketplaceImportKind, name="marketplace_import_kind")
 marketplace_staged_order_status_enum = Enum(MarketplaceStagedOrderStatus, name="marketplace_staged_order_status")
 marketplace_match_strategy_enum = Enum(MarketplaceMatchStrategy, name="marketplace_match_strategy")
+
+target_price_mode_enum = Enum(TargetPriceMode, name="target_price_mode")

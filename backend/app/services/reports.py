@@ -12,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.enums import InventoryStatus, OrderStatus, PurchaseKind, PurchaseType
+from app.services.target_pricing import (
+    fba_payout_cents as _fba_payout_cents_impl,
+    market_price_for_condition_cents as _market_price_for_condition_cents_impl,
+)
 from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.cost_allocation import CostAllocation
 from app.models.inventory_item import InventoryItem
@@ -108,64 +112,8 @@ def _calendar_month_buckets(*, today: date, window_months: int) -> list[Calendar
     return out
 
 
-def _used_best_price_cents(
-    *,
-    price_used_like_new_cents: int | None,
-    price_used_very_good_cents: int | None,
-    price_used_good_cents: int | None,
-    price_used_acceptable_cents: int | None,
-) -> int | None:
-    values = [
-        v
-        for v in (
-            price_used_like_new_cents,
-            price_used_very_good_cents,
-            price_used_good_cents,
-            price_used_acceptable_cents,
-        )
-        if isinstance(v, int)
-    ]
-    return min(values) if values else None
-
-
-def _market_price_for_condition_cents(
-    *,
-    inventory_condition: str,
-    price_new_cents: int | None,
-    price_used_like_new_cents: int | None,
-    price_used_very_good_cents: int | None,
-    price_used_good_cents: int | None,
-    price_used_acceptable_cents: int | None,
-) -> int | None:
-    used_best = _used_best_price_cents(
-        price_used_like_new_cents=price_used_like_new_cents,
-        price_used_very_good_cents=price_used_very_good_cents,
-        price_used_good_cents=price_used_good_cents,
-        price_used_acceptable_cents=price_used_acceptable_cents,
-    )
-    condition = inventory_condition.upper().strip()
-    if condition == "NEW":
-        return price_new_cents if isinstance(price_new_cents, int) else used_best
-    if condition == "LIKE_NEW":
-        return price_used_like_new_cents if isinstance(price_used_like_new_cents, int) else used_best
-    if condition == "GOOD":
-        if isinstance(price_used_good_cents, int):
-            return price_used_good_cents
-        if isinstance(price_used_very_good_cents, int):
-            return price_used_very_good_cents
-        return used_best
-    if condition == "ACCEPTABLE":
-        if isinstance(price_used_acceptable_cents, int):
-            return price_used_acceptable_cents
-        if isinstance(price_used_good_cents, int):
-            return price_used_good_cents
-        return used_best
-    return None
-
-
-def _referral_fee_cents(price_cents: int, referral_fee_bp: int) -> int:
-    # Deterministic half-up rounding for basis-point fee calculation.
-    return ((price_cents * referral_fee_bp) + 5_000) // 10_000
+# Pricing helpers are now shared via target_pricing service.
+_market_price_for_condition_cents = _market_price_for_condition_cents_impl
 
 
 def _fba_payout_cents(
@@ -175,11 +123,17 @@ def _fba_payout_cents(
     fulfillment_fee_cents: int,
     inbound_shipping_cents: int,
 ) -> int:
-    referral_cents = _referral_fee_cents(market_price_cents, referral_fee_bp)
-    return market_price_cents - referral_cents - fulfillment_fee_cents - inbound_shipping_cents
+    return _fba_payout_cents_impl(
+        market_price_cents=market_price_cents,
+        referral_fee_bp=referral_fee_bp,
+        fulfillment_fee_cents=fulfillment_fee_cents,
+        inbound_shipping_cents=inbound_shipping_cents,
+    )
 
 
 async def _amazon_inventory_insights(session: AsyncSession) -> dict:
+    from app.services.target_pricing import compute_effective_price, compute_recommendation
+
     settings = get_settings()
     now_utc = datetime.now(timezone.utc)
     stale_before = now_utc - timedelta(hours=24)
@@ -192,6 +146,8 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
                 InventoryItem.condition,
                 InventoryItem.purchase_price_cents,
                 InventoryItem.allocated_costs_cents,
+                InventoryItem.target_price_mode,
+                InventoryItem.manual_target_sell_price_cents,
                 MasterProduct.sku,
                 MasterProduct.title,
                 MasterProduct.platform,
@@ -230,6 +186,11 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
         "in_stock_units_blocked": 0,
         "positive_margin_units": 0,
         "negative_margin_units": 0,
+        # Pricing source counters
+        "in_stock_units_manual_priced": 0,
+        "in_stock_units_auto_priced": 0,
+        "in_stock_units_unpriced": 0,
+        "in_stock_units_effective_priced": 0,
     }
     opportunities: dict[str, dict] = {}
 
@@ -254,17 +215,43 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
             else:
                 out["in_stock_units_fresh"] = int(out["in_stock_units_fresh"]) + 1
 
-        market_price_cents = _market_price_for_condition_cents(
-            inventory_condition=r.condition.value,
+        # Compute effective target price via engine
+        cond = r.condition.value if hasattr(r.condition, "value") else str(r.condition)
+        rec = compute_recommendation(
+            purchase_price_cents=int(r.purchase_price_cents),
+            allocated_costs_cents=int(r.allocated_costs_cents),
+            condition=cond,
             price_new_cents=r.price_new_cents,
             price_used_like_new_cents=r.price_used_like_new_cents,
             price_used_very_good_cents=r.price_used_very_good_cents,
             price_used_good_cents=r.price_used_good_cents,
             price_used_acceptable_cents=r.price_used_acceptable_cents,
+            rank=r.rank_specific or r.rank_overall,
+            offers_count=r.offers_count_used_priced_total or r.offers_count_total,
+            settings=settings,
         )
-        if market_price_cents is None:
+        effective_cents, source = compute_effective_price(
+            mode=r.target_price_mode or "AUTO",
+            manual_target_sell_price_cents=r.manual_target_sell_price_cents,
+            recommendation=rec,
+        )
+
+        # Track pricing source counters
+        from app.core.enums import EffectiveTargetPriceSource
+        if source == EffectiveTargetPriceSource.MANUAL:
+            out["in_stock_units_manual_priced"] = int(out["in_stock_units_manual_priced"]) + 1
+        elif source in (EffectiveTargetPriceSource.AUTO_AMAZON, EffectiveTargetPriceSource.AUTO_COST_FLOOR):
+            out["in_stock_units_auto_priced"] = int(out["in_stock_units_auto_priced"]) + 1
+        else:
+            out["in_stock_units_unpriced"] = int(out["in_stock_units_unpriced"]) + 1
+
+        if effective_cents is None:
             continue
 
+        out["in_stock_units_effective_priced"] = int(out["in_stock_units_effective_priced"]) + 1
+
+        # Use effective target sell price for valuation
+        market_price_cents = effective_cents
         payout_cents = _fba_payout_cents(
             market_price_cents=market_price_cents,
             referral_fee_bp=settings.amazon_fba_referral_fee_bp,

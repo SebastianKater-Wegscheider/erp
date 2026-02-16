@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     amazon_fba_fulfillment_fee_cents: int = Field(350, alias="AMAZON_FBA_FULFILLMENT_FEE_CENTS")
     amazon_fba_inbound_shipping_cents: int = Field(0, alias="AMAZON_FBA_INBOUND_SHIPPING_CENTS")
 
+    # --- Target pricing engine ---
+    target_pricing_margin_floor_bp: int = Field(2000, alias="TARGET_PRICING_MARGIN_FLOOR_BP")
+    target_pricing_margin_floor_min_cents: int = Field(500, alias="TARGET_PRICING_MARGIN_FLOOR_MIN_CENTS")
+    target_pricing_bsr_strong_max: int = Field(10000, alias="TARGET_PRICING_BSR_STRONG_MAX")
+    target_pricing_bsr_weak_min: int = Field(80000, alias="TARGET_PRICING_BSR_WEAK_MIN")
+    target_pricing_offers_low_max: int = Field(2, alias="TARGET_PRICING_OFFERS_LOW_MAX")
+    target_pricing_offers_high_min: int = Field(12, alias="TARGET_PRICING_OFFERS_HIGH_MIN")
+
     @field_validator("company_name", mode="before")
     @classmethod
     def _normalize_company_name(cls, v: object) -> object:

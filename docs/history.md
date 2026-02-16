@@ -1,5 +1,39 @@
 # History
 
+## 2026-02-16 - Per-Item Target Pricing + Recommendation Engine
+
+### Ausgangslage
+- Dashboard-Sell-Value basiert bisher ausschliesslich auf Amazon-Marktpreisen; Items ohne ASIN oder ohne Preisdaten werden als "unbepreist" ignoriert.
+- Es gibt keinen operativen Weg, pro Inventar-Einheit einen eigenen Zielpreis zu setzen (z.B. fuer Positionen ohne Amazon-Match oder bei gewuenschter Abweichung).
+- Bulk-Operationen fuer Pricing fehlen komplett.
+
+### Business-Entscheidungen
+- Speichergranularitaet: **pro Inventar-Item**, nicht pro Master-Produkt.
+- Manueller Preis hat Vorrang (`MANUAL` wins when set); ansonsten automatische Empfehlung.
+- Empfehlungsstrategie: **Margin First** — Amazon-Anker wenn vorhanden, ansonsten Cost-Floor.
+- Margin-Floor: `max(20% Netto-Marge, 5 EUR)` als Untergrenze.
+- Preiseinheit: Brutto-Listungspreis (EUR Cent).
+- UI-Scope (v1): Editing/Empfehlungs-UX nur in Inventory; Dashboard zeigt Transparenz-Zaehler.
+- Bulk-Ops: erweiterte Filterbedingungen (Condition + BSR + Offers + ASIN), Preview-first + einmaliges Apply; keine persistenten Regeln.
+
+### Technische Entscheidungen
+- Neue DB-Spalten `target_price_mode` (String, default `AUTO`) und `manual_target_sell_price_cents` (Integer, nullable) auf `inventory_items`.
+- Neuer deterministischer Engine-Service (`target_pricing.py`): Kostenbasis → Condition-aware Amazon-Anker → Marktsignal-Adjustierung (Rank/Offers/Condition) → Floor-Berechnung via Fee-Profil-Inversion → Empfehlung = max(adjusted, floor), gerundet auf 0.10 EUR.
+- Bestehende `_market_price_for_condition_cents` + `_fba_payout_cents` aus `reports.py` werden in den neuen Service extrahiert (shared, keine Duplikation).
+- Dashboard-Sell-Value/Margins basieren neu auf **effective target price** statt rohem Amazon-Preis; Transparenz-Zaehler (manual/auto/unpriced).
+- Bulk Preview/Apply als POST-Endpoints, Non-Persistent, mit Audit-Logging.
+
+### Schwellenwerte
+- `TARGET_PRICING_MARGIN_FLOOR_BP=2000` (20% Netto-Marge)
+- `TARGET_PRICING_MARGIN_FLOOR_MIN_CENTS=500` (5 EUR Minimum)
+- `TARGET_PRICING_BSR_STRONG_MAX=10000` / `BSR_WEAK_MIN=80000`
+- `TARGET_PRICING_OFFERS_LOW_MAX=2` / `OFFERS_HIGH_MIN=12`
+
+### Trade-offs
+- Scope bewusst Inventory-first; Master-Products-Seite bleibt Intelligence-only.
+- Bulk-Regeln sind One-Time-Apply (keine gespeicherten Presets).
+- Waehrung bleibt EUR; alle Preise in Cent.
+
 ## 2026-02-16 - Marketplace: Manueller Match-Override fuer Stage-Lines
 
 ### Ausgangslage

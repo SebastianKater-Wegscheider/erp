@@ -7,7 +7,7 @@ from sqlalchemy import Date, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.enums import InventoryCondition, InventoryStatus, PurchaseType
+from app.core.enums import InventoryCondition, InventoryStatus, PurchaseType, TargetPriceMode
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.sql_enums import inventory_condition_enum, inventory_status_enum, purchase_type_enum
 
@@ -58,3 +58,9 @@ class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[InventoryStatus] = mapped_column(inventory_status_enum, nullable=False, default=InventoryStatus.DRAFT)
 
     acquired_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # --- Target pricing ---
+    target_price_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=TargetPriceMode.AUTO, server_default="AUTO",
+    )
+    manual_target_sell_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)

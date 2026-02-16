@@ -77,6 +77,12 @@ class AmazonInventoryInsightsOut(BaseModel):
     positive_margin_units: int = Field(ge=0)
     negative_margin_units: int = Field(ge=0)
 
+    # Pricing source transparency counters
+    in_stock_units_manual_priced: int = Field(default=0, ge=0)
+    in_stock_units_auto_priced: int = Field(default=0, ge=0)
+    in_stock_units_unpriced: int = Field(default=0, ge=0)
+    in_stock_units_effective_priced: int = Field(default=0, ge=0)
+
     top_opportunities: list[AmazonInventoryOpportunityOut]
 
 
