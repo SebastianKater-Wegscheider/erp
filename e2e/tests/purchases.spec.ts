@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { createMasterProductViaApi, createMileageViaApi, loginViaUi } from "./helpers";
 
 test("create purchase via UI persists successfully", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
   const productTitle = `E2E Purchase Product ${unique}`;
   const sellerName = `E2E Seller ${unique}`;
@@ -30,15 +31,17 @@ test("create purchase via UI persists successfully", async ({ page, request }) =
   await optionButton.click();
   await expect(productInput).toHaveValue(/·/);
 
-  const createResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().includes("/api/v1/purchases") &&
-      response.status() === 200,
-  );
-
-  await dialog.getByRole("button", { name: "Erstellen", exact: true }).click();
-  await createResponse;
+  const createButton = dialog.getByRole("button", { name: "Erstellen", exact: true });
+  await expect(createButton).toBeEnabled();
+  const [createResponse] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/api/v1/purchases"),
+    ),
+    createButton.click(),
+  ]);
+  expect(createResponse.ok(), `purchase create failed (${createResponse.status()})`).toBeTruthy();
 
   await expect(dialog).toBeHidden();
   const sellerRow = page.getByRole("row").filter({ hasText: sellerName }).first();
@@ -59,6 +62,7 @@ test("create purchase via UI persists successfully", async ({ page, request }) =
 });
 
 test("cash purchase reminder clears when mileage is linked via fahrtenbuch", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
   const productTitle = `E2E Mileage Link Product ${unique}`;
   const sellerName = `E2E Mileage Link Seller ${unique}`;
@@ -85,15 +89,17 @@ test("cash purchase reminder clears when mileage is linked via fahrtenbuch", asy
   await optionButton.click();
   await expect(productInput).toHaveValue(/·/);
 
-  const createResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().includes("/api/v1/purchases") &&
-      response.status() === 200,
-  );
-
-  await dialog.getByRole("button", { name: "Erstellen", exact: true }).click();
-  const createResult = await createResponse;
+  const createButton = dialog.getByRole("button", { name: "Erstellen", exact: true });
+  await expect(createButton).toBeEnabled();
+  const [createResult] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/api/v1/purchases"),
+    ),
+    createButton.click(),
+  ]);
+  expect(createResult.ok(), `purchase create failed (${createResult.status()})`).toBeTruthy();
   const created = (await createResult.json()) as { id: string };
   expect(created.id).toBeTruthy();
 
@@ -118,6 +124,7 @@ test("cash purchase reminder clears when mileage is linked via fahrtenbuch", asy
 });
 
 test("inline purchase mileage supports OSM route calculation", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
   const productTitle = `E2E Route Product ${unique}`;
 

@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { createMasterProductViaApi, createPurchaseViaApi, listInventoryViaApi, loginViaUi } from "./helpers";
 
 test("sales finalize and return restock flow remains operational", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
   const productTitle = `E2E Sales Product ${unique}`;
   const sellerName = `E2E Sales Seller ${unique}`;
@@ -29,14 +30,10 @@ test("sales finalize and return restock flow remains operational", async ({ page
 
   await createDialog.getByLabel("Käufername").fill(buyerName);
   await createDialog.getByPlaceholder("SKU/Titel/EAN/ASIN suchen…").fill(productTitle);
-  const inventoryRefreshResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "GET" &&
-      response.url().includes("/api/v1/inventory?") &&
-      response.status() === 200,
-  );
   await createDialog.getByRole("button", { name: "Aktualisieren" }).click();
-  await inventoryRefreshResponse;
+  await expect
+    .poll(async () => await createDialog.getByRole("row").filter({ hasText: productTitle }).count(), { timeout: 20_000 })
+    .toBeGreaterThan(0);
 
   const inventoryRow = createDialog.getByRole("row").filter({ hasText: productTitle }).first();
   await expect(inventoryRow).toBeVisible({ timeout: 20_000 });

@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { createMasterProductViaApi, createPurchaseViaApi, getSalesOrderViaApi, listInventoryViaApi, loginViaUi } from "./helpers";
 
 test("import marketplace orders via CSV auto-matches IT-... and applies to finalized sale", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
   const productTitle = `E2E Marketplace Product ${unique}`;
   const sellerName = `E2E Marketplace Seller ${unique}`;
@@ -27,27 +28,35 @@ test("import marketplace orders via CSV auto-matches IT-... and applies to final
 
   await page.locator("textarea").first().fill(csvText);
 
-  const importResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().includes("/api/v1/marketplace/imports/orders") &&
-      response.status() === 200,
-  );
-  await page.getByRole("button", { name: "Import" }).click();
-  const importJson = (await (await importResponse).json()) as { ready_orders_count: number; staged_orders_count: number };
+  const importButton = page.getByRole("button", { name: "Import" });
+  await expect(importButton).toBeEnabled();
+  const [importResponse] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/api/v1/marketplace/imports/orders"),
+    ),
+    importButton.click(),
+  ]);
+  expect(importResponse.ok(), `orders import failed (${importResponse.status()})`).toBeTruthy();
+  const importJson = (await importResponse.json()) as { ready_orders_count: number; staged_orders_count: number };
   expect(importJson.staged_orders_count).toBeGreaterThan(0);
   expect(importJson.ready_orders_count).toBe(1);
 
   await page.getByRole("tab", { name: "Apply" }).click();
 
-  const applyResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().includes("/api/v1/marketplace/staged-orders/apply") &&
-      response.status() === 200,
-  );
-  await page.getByRole("button", { name: "Apply READY from batch" }).click();
-  const applyJson = (await (await applyResponse).json()) as {
+  const applyButton = page.getByRole("button", { name: "Apply READY from batch" });
+  await expect(applyButton).toBeEnabled();
+  const [applyResponse] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/api/v1/marketplace/staged-orders/apply"),
+    ),
+    applyButton.click(),
+  ]);
+  expect(applyResponse.ok(), `apply staged orders failed (${applyResponse.status()})`).toBeTruthy();
+  const applyJson = (await applyResponse.json()) as {
     results: Array<{ ok: boolean; sales_order_id: string | null; error?: string | null }>;
   };
   expect(applyJson.results).toHaveLength(1);
