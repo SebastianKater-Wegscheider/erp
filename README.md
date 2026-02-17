@@ -14,10 +14,14 @@ Lean ERP für Gebrauchtwarenhandel (z.B. Videospiele) mit **FastAPI + PostgreSQL
 
 ## DB Migrations (Alembic)
 
-- Docker Compose startet den Backend-Service mit `alembic upgrade head` (Schema wird beim Container-Start aktualisiert).
-- Bestehende Datenbank (vor Einfuehrung von Alembic): einmalig stampen:
-  - `docker compose exec backend alembic -c /app/alembic.ini stamp e61db2bd6234`
-  - danach Backend neu starten: `docker compose restart backend`
+- Docker Compose fuehrt Migrationen als dedizierten One-Shot-Service `backend-migrations` aus, bevor `backend` startet.
+- Normallauf:
+  - `docker compose up -d --build`
+- Legacy-Bootstrap (nur fuer bereits befuellte DB ohne `alembic_version`):
+  - in `.env` einmalig setzen:
+    - `ALEMBIC_BOOTSTRAP_LEGACY=true`
+    - `ALEMBIC_BOOTSTRAP_REVISION=e61db2bd6234`
+  - danach Stack starten und Bootstrap wieder deaktivieren.
 
 Neue Migration erzeugen:
 
@@ -125,6 +129,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 
 - Incident-Runbook: `docs/incident-runbook.md`
 - Schnellcheck Produktion: `./scripts/prod_health_monitor.sh`
+- Deep Health (DB + Migration-Status): `GET /healthz/deep`
 - Amazon-Scraper drosseln (CPU/RAM/PID + slow mode): `./scripts/prod_apply_amazon_scraper_limits.sh`
 - Optionaler `agent-browser`-Sidecar ist als Compose-Profil `optional-agent-browser` hinterlegt.
   - Start mit Sidecar: `docker compose --profile optional-agent-browser up -d --build`

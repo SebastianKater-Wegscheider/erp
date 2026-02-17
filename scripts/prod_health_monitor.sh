@@ -14,6 +14,12 @@ echo "-- HTTP checks --"
 curl -sS --max-time "${CURL_TIMEOUT_SECONDS}" -w "backend healthz: %{http_code} in %{time_total}s\n" -o /tmp/erp_healthz.json "http://${HOST}:18000/healthz"
 cat /tmp/erp_healthz.json
 echo
+if curl -sS --max-time "${CURL_TIMEOUT_SECONDS}" -w "backend deep healthz: %{http_code} in %{time_total}s\n" -o /tmp/erp_healthz_deep.json "http://${HOST}:18000/healthz/deep"; then
+  cat /tmp/erp_healthz_deep.json
+else
+  echo "backend deep healthz: WARN (unavailable)"
+fi
+echo
 curl -sS -I --max-time "${CURL_TIMEOUT_SECONDS}" -w "frontend root: %{http_code} in %{time_total}s\n" -o /tmp/erp_front_headers.txt "http://${HOST}:15173/"
 head -n 1 /tmp/erp_front_headers.txt
 if ssh -o ConnectTimeout=10 "${SSH_TARGET}" "cd /home/seb/amazon-scraper && docker compose exec -T backend python -c \"import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:4236/healthz', timeout=5).read().decode())\"" >/tmp/scraper_health_payload.txt 2>/tmp/scraper_health_err.txt; then

@@ -37,12 +37,34 @@ services:
       - ./backend/alembic:/app/alembic
       # Ensure pytest config is available inside the container (avoids pytest-asyncio warnings).
       - ./pytest.ini:/app/pytest.ini:ro
-    command: sh -lc "alembic -c /app/alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -lc "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     depends_on:
       db:
         condition: service_healthy
+      backend-migrations:
+        condition: service_completed_successfully
     ports:
       - "${BACKEND_PORT:-18000}:8000"
+
+  backend-migrations:
+    build:
+      context: ./backend
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://erp:erp@db:5432/erp}
+      ALEMBIC_BOOTSTRAP_LEGACY: ${ALEMBIC_BOOTSTRAP_LEGACY:-false}
+      ALEMBIC_BOOTSTRAP_REVISION: ${ALEMBIC_BOOTSTRAP_REVISION:-}
+      ALEMBIC_CONFIG_PATH: /app/alembic.ini
+    volumes:
+      - ./backend/scripts:/app/scripts
+      - ./backend/alembic.ini:/app/alembic.ini:ro
+      - ./backend/alembic:/app/alembic
+    command: sh -lc "python /app/scripts/migrate_with_bootstrap.py"
+    depends_on:
+      db:
+        condition: service_healthy
 
   sourcing-scraper:
     build:

@@ -1,19 +1,38 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import suppress
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import text
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.db import engine
 from app.core.security import require_basic_auth
 from app.services.amazon_scrape_scheduler import amazon_scrape_scheduler_loop
 from app.services.sourcing_scheduler import sourcing_scheduler_loop
+
+
+@lru_cache
+def _repo_head_revision() -> str | None:
+    default_alembic_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+    alembic_path = Path(os.getenv("ALEMBIC_CONFIG_PATH", str(default_alembic_path)))
+    if not alembic_path.exists():
+        return None
+
+    cfg = Config(str(alembic_path))
+    script = ScriptDirectory.from_config(cfg)
+    return script.get_current_head()
 
 
 def create_app() -> FastAPI:
@@ -39,6 +58,66 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/healthz/deep")
+    async def deep_healthz() -> JSONResponse:
+        payload: dict[str, Any] = {
+            "status": "ok",
+            "checks": {
+                "database": "ok",
+            },
+        }
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+                table_count = int(
+                    (
+                        await conn.scalar(
+                            text(
+                                """
+                                SELECT count(*)
+                                FROM information_schema.tables
+                                WHERE table_schema = 'public'
+                                  AND table_name <> 'alembic_version'
+                                """
+                            )
+                        )
+                    )
+                    or 0
+                )
+                has_alembic_version = bool(
+                    await conn.scalar(text("SELECT to_regclass('public.alembic_version') IS NOT NULL"))
+                )
+                current_revision: str | None = None
+                if has_alembic_version:
+                    current_revision = await conn.scalar(text("SELECT version_num FROM alembic_version LIMIT 1"))
+        except Exception as exc:
+            payload["status"] = "error"
+            payload["checks"]["database"] = "error"
+            payload["error"] = f"{exc.__class__.__name__}: {exc}"
+            return JSONResponse(status_code=503, content=payload)
+
+        repo_head = _repo_head_revision()
+        if not has_alembic_version:
+            migration_state = "empty_schema" if table_count == 0 else "missing_alembic_version"
+        elif repo_head is None:
+            migration_state = "unknown_repo_head"
+        elif current_revision == repo_head:
+            migration_state = "up_to_date"
+        else:
+            migration_state = "behind_head"
+
+        payload["checks"]["migration"] = {
+            "state": migration_state,
+            "table_count": table_count,
+            "has_alembic_version": has_alembic_version,
+            "current_revision": current_revision,
+            "repo_head_revision": repo_head,
+        }
+
+        healthy = migration_state in {"up_to_date", "empty_schema"}
+        payload["status"] = "ok" if healthy else "degraded"
+        return JSONResponse(status_code=200 if healthy else 503, content=payload)
 
     @app.get("/public/master-product-images/{file_path:path}", include_in_schema=False)
     async def public_master_product_image(file_path: str) -> FileResponse:

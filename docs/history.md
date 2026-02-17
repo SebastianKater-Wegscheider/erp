@@ -1,5 +1,28 @@
 # History
 
+## 2026-02-17 - Phase 0 Umsetzung: Migration Bootstrap + Startup Entkopplung + Deep Health
+
+### Ausgangslage
+- Der Standard-Startup (`alembic upgrade head && app start`) ist auf Legacy-Schemas nicht robust und fuehrt in Restart-Loops.
+- Ops-Health deckt bisher keine DB-/Migrationslage ab.
+
+### Business-Entscheidungen
+- Verfuegbarkeit hat Prioritaet vor Komfort:
+  - Migration wird als expliziter Schritt vor App-Start ausgefuehrt.
+  - Legacy-Bootstrap wird nur mit explizitem Operator-Opt-in erlaubt.
+- Health soll Deployment-Risiken sichtbar machen (nicht nur Prozess lebt / lebt nicht).
+
+### Technische Entscheidungen
+- Neue Bootstrap-Migrationsroutine mit Guardrails:
+  - erkennt `alembic_version`-Fehlen bei nicht-leerem Schema
+  - erfordert explizite Freigabe fuer `stamp`
+  - fuehrt danach immer `upgrade head` aus
+- Compose wird um einen dedizierten Migrations-Service erweitert; Backend startet erst nach erfolgreichem Migrationslauf.
+- Neuer `/healthz/deep` liefert DB- und Migrationsstatus fuer Ops-Gating.
+
+### Trade-offs
+- Setup wird etwas komplexer (zusaetzlicher Migrations-Container), reduziert dafuer Ausfallrisiko und unklare Startzustandsfehler deutlich.
+
 ## 2026-02-17 - End-to-End Tech Review: Production-Continuity Priorisierung
 
 ### Ausgangslage
