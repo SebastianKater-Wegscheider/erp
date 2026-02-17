@@ -46,10 +46,11 @@ router = APIRouter()
 async def _begin_tx(session: AsyncSession):
     # Endpoint handlers are sometimes called directly in tests using a shared session.
     # That session may already have an autobegun transaction (even after a SELECT),
-    # so we fall back to SAVEPOINT semantics in that case.
+    # so we fall back to SAVEPOINT semantics in that case and then commit outer tx.
     if session.in_transaction():
         async with session.begin_nested():
             yield
+        await session.commit()
     else:
         async with session.begin():
             yield
