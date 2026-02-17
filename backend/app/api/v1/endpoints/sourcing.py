@@ -61,8 +61,10 @@ router = APIRouter()
 @asynccontextmanager
 async def _begin_tx(session: AsyncSession):
     if session.in_transaction():
+        # Reads can autobegin a transaction; nested writes need an explicit outer commit.
         async with session.begin_nested():
             yield
+        await session.commit()
     else:
         async with session.begin():
             yield

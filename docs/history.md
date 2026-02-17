@@ -570,3 +570,12 @@
 
 ### Fix
 - Endpoint status changed to `200` (same pragmatic approach already used for sourcing discard route) to avoid startup assertion and keep behavior stable.
+
+## 2026-02-17 - Transaction persistence fix for sourcing API nested writes
+
+### Issue
+- Manual agent run path showed run execution but did not persist `last_run_at/next_run_at` updates due nested transaction handling when a read had already auto-begun a transaction.
+
+### Fix
+- `_begin_tx()` now commits the outer transaction after nested block completion when session is already in transaction.
+- This ensures write persistence for sourcing API flows that read then write in a single request.
