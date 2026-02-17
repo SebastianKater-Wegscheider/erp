@@ -378,7 +378,7 @@ async def convert_item(
     return out
 
 
-@router.post("/items/{item_id}/discard", status_code=204)
+@router.post("/items/{item_id}/discard", status_code=200)
 async def discard_sourcing_item(
     item_id: uuid.UUID,
     data: SourcingDiscardIn,

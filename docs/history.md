@@ -413,3 +413,18 @@
 ### Tradeoff
 - Bei kurzen Upstream-Flaps kann ein Fail minimal frueher persistiert werden als mit 3 Versuchen.
 - Dafuer sinkt das Risiko, dass wiederholte Fehler den Upstream dauerhaft in einen schlechten Zustand treiben.
+
+## 2026-02-17 - Hotfix: Sourcing discard endpoint startup assertion
+
+### Ausgangslage
+- Nach Deploy schlug der Backend-Startup fehl (FastAPI Assertion: `Status code 204 must not have a response body`) am Endpoint `POST /sourcing/items/{item_id}/discard`.
+
+### Entscheidung
+- Minimaler Runtime-Hotfix, um den Service sofort wieder stabil zu booten.
+
+### Technische Umsetzung
+- Endpoint-Status von `204` auf `200` gesetzt.
+- Fachlogik bleibt unveraendert (`discard_item` wird wie bisher ausgefuehrt).
+
+### Tradeoff
+- Semantisch ist `204` fuer "no content" strikter, aber `200` ist hier operativ sicherer mit der aktuellen FastAPI-Route-Konfiguration.
