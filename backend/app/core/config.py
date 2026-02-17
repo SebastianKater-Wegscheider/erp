@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     amazon_scraper_busy_retry_min_seconds: int = Field(90, alias="AMAZON_SCRAPER_BUSY_RETRY_MIN_SECONDS")
     amazon_scraper_busy_retry_max_seconds: int = Field(240, alias="AMAZON_SCRAPER_BUSY_RETRY_MAX_SECONDS")
     amazon_scraper_busy_global_cooldown_seconds: int = Field(45, alias="AMAZON_SCRAPER_BUSY_GLOBAL_COOLDOWN_SECONDS")
+    amazon_scraper_fetch_max_attempts: int = Field(2, alias="AMAZON_SCRAPER_FETCH_MAX_ATTEMPTS")
 
     # --- Sourcing radar ---
     sourcing_enabled: bool = Field(False, alias="SOURCING_ENABLED")

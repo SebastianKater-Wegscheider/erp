@@ -394,3 +394,22 @@
 ### Tradeoffs
 - V1-UI priorisiert operative Geschwindigkeit und Transparenz gegenueber Design-Feinschliff.
 - Live-Kalkulation erfolgt serverseitig via Match-Patch/Recalc, statt komplexe parallele Client-Formel im Frontend zu duplizieren.
+
+## 2026-02-17 - Amazon-Scraper Stabilitaet: Retry-Amplifikation im ERP reduziert
+
+### Ausgangslage
+- Auf Produktion war der externe Scraper zeitweise instabil (`503`), waehrend der ERP-Scheduler weiter due ASINs abarbeitet.
+- Mit 3 Fetch-Versuchen pro Request entstand Last-Amplifikation auf einen bereits degradierten Scraper.
+
+### Entscheidung
+- Fetch-Retries im ERP werden konfigurierbar gemacht und standardmaessig auf `2` reduziert.
+- Ziel: weniger Druck auf den Scraper in Störphasen, ohne die Robustheit bei transienten Einzel-Fehlern ganz zu verlieren.
+
+### Technische Umsetzung
+- Neues Setting `AMAZON_SCRAPER_FETCH_MAX_ATTEMPTS` (Default `2`) in `Settings`.
+- `fetch_scraper_json()` nutzt das Setting statt eines harten Konstantenwerts.
+- `.env.example` dokumentiert den neuen Schalter.
+
+### Tradeoff
+- Bei kurzen Upstream-Flaps kann ein Fail minimal frueher persistiert werden als mit 3 Versuchen.
+- Dafuer sinkt das Risiko, dass wiederholte Fehler den Upstream dauerhaft in einen schlechten Zustand treiben.

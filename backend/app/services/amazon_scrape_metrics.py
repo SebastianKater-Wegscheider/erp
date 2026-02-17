@@ -61,7 +61,6 @@ USED_BUCKETS: tuple[ConditionBucket, ...] = (
 
 REFERENCE_IMAGE_FETCH_MAX_ATTEMPTS = 3
 REFERENCE_IMAGE_FETCH_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({408, 425, 429, 500, 502, 503, 504})
-SCRAPER_FETCH_MAX_ATTEMPTS = 3
 SCRAPER_FETCH_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({408, 425, 500, 502, 503, 504})
 
 
@@ -184,7 +183,8 @@ class BestPrice:
 async def fetch_scraper_json(*, settings: Settings, asin: str) -> dict[str, Any]:
     timeout = httpx.Timeout(timeout=settings.amazon_scraper_timeout_seconds)
     url = f"{settings.amazon_scraper_base_url.rstrip('/')}/api/scrape"
-    for attempt in range(1, SCRAPER_FETCH_MAX_ATTEMPTS + 1):
+    max_attempts = max(1, int(settings.amazon_scraper_fetch_max_attempts))
+    for attempt in range(1, max_attempts + 1):
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 r = await client.get(url, params={"asin": asin})
@@ -204,11 +204,11 @@ async def fetch_scraper_json(*, settings: Settings, asin: str) -> dict[str, Any]
         except ScraperBusyError:
             raise
         except Exception as exc:
-            can_retry = attempt < SCRAPER_FETCH_MAX_ATTEMPTS and _is_retryable_scraper_fetch_error(exc)
+            can_retry = attempt < max_attempts and _is_retryable_scraper_fetch_error(exc)
             log_payload: dict[str, Any] = {
                 "asin": asin,
                 "attempt": attempt,
-                "max_attempts": SCRAPER_FETCH_MAX_ATTEMPTS,
+                "max_attempts": max_attempts,
             }
             if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
                 log_payload["status_code"] = int(exc.response.status_code)
