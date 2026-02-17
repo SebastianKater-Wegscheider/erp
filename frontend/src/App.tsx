@@ -12,6 +12,7 @@ const PurchasesPage = lazy(() => import("./pages/Purchases").then((m) => ({ defa
 const SourcingPage = lazy(() => import("./pages/Sourcing").then((m) => ({ default: m.SourcingPage })));
 const SourcingDetailPage = lazy(() => import("./pages/SourcingDetail").then((m) => ({ default: m.SourcingDetailPage })));
 const SourcingSettingsPage = lazy(() => import("./pages/SourcingSettings").then((m) => ({ default: m.SourcingSettingsPage })));
+const SourcingAgentsPage = lazy(() => import("./pages/SourcingAgents").then((m) => ({ default: m.SourcingAgentsPage })));
 const SalesPage = lazy(() => import("./pages/Sales").then((m) => ({ default: m.SalesPage })));
 const MarketplacePage = lazy(() => import("./pages/Marketplace").then((m) => ({ default: m.MarketplacePage })));
 const CostAllocationsPage = lazy(() => import("./pages/CostAllocations").then((m) => ({ default: m.CostAllocationsPage })));
@@ -43,6 +44,7 @@ export function App() {
               <Route path="/sourcing" element={<SourcingPage />} />
               <Route path="/sourcing/:id" element={<SourcingDetailPage />} />
               <Route path="/sourcing/settings" element={<SourcingSettingsPage />} />
+              <Route path="/sourcing/agents" element={<SourcingAgentsPage />} />
               <Route path="/sales" element={<SalesPage />} />
               <Route path="/marketplace" element={<MarketplacePage />} />
               <Route path="/cost-allocations" element={<CostAllocationsPage />} />

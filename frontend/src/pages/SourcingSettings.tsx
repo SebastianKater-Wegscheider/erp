@@ -29,6 +29,8 @@ type FormState = {
   scrape_interval_seconds: string;
   handling_cost_per_item_cents: string;
   shipping_cost_cents: string;
+  ebay_bid_buffer_cents: string;
+  bidbag_deeplink_template: string;
   search_terms_json: string;
 };
 
@@ -65,6 +67,8 @@ export function SourcingSettingsPage() {
       scrape_interval_seconds: String(mapped.get("scrape_interval_seconds")?.value_int ?? 1800),
       handling_cost_per_item_cents: String(mapped.get("handling_cost_per_item_cents")?.value_int ?? 150),
       shipping_cost_cents: String(mapped.get("shipping_cost_cents")?.value_int ?? 690),
+      ebay_bid_buffer_cents: String(mapped.get("ebay_bid_buffer_cents")?.value_int ?? 0),
+      bidbag_deeplink_template: String(mapped.get("bidbag_deeplink_template")?.value_text ?? ""),
       search_terms_json: JSON.stringify(searchTerms ?? ["videospiele konvolut"], null, 2),
     });
   }, [form, mapped, settingsQuery.data]);
@@ -86,6 +90,8 @@ export function SourcingSettingsPage() {
             scrape_interval_seconds: { value_int: toInt(form.scrape_interval_seconds) },
             handling_cost_per_item_cents: { value_int: toInt(form.handling_cost_per_item_cents) },
             shipping_cost_cents: { value_int: toInt(form.shipping_cost_cents) },
+            ebay_bid_buffer_cents: { value_int: toInt(form.ebay_bid_buffer_cents) },
+            bidbag_deeplink_template: { value_text: form.bidbag_deeplink_template },
             search_terms: { value_json: parsedSearchTerms },
           },
         },
@@ -120,6 +126,17 @@ export function SourcingSettingsPage() {
               <Field label="Scrape Intervall (s)" value={form.scrape_interval_seconds} onChange={(v) => setForm({ ...form, scrape_interval_seconds: v })} />
               <Field label="Handling pro Item (cents)" value={form.handling_cost_per_item_cents} onChange={(v) => setForm({ ...form, handling_cost_per_item_cents: v })} />
               <Field label="Versandkosten (cents)" value={form.shipping_cost_cents} onChange={(v) => setForm({ ...form, shipping_cost_cents: v })} />
+              <Field label="eBay Bid Buffer (cents)" value={form.ebay_bid_buffer_cents} onChange={(v) => setForm({ ...form, ebay_bid_buffer_cents: v })} />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="bidbag_deeplink_template">Bidbag Deeplink Template</Label>
+              <Input
+                id="bidbag_deeplink_template"
+                value={form.bidbag_deeplink_template}
+                onChange={(e) => setForm({ ...form, bidbag_deeplink_template: e.target.value })}
+                placeholder="https://bidbag.de/...{listing_url}...{max_bid_eur}"
+              />
             </div>
 
             <div className="space-y-1">

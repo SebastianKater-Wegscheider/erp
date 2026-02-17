@@ -1,5 +1,5 @@
-import { ArrowLeft, Check, ExternalLink, RefreshCw, X } from "lucide-react";
-import { useMemo } from "react";
+import { ArrowLeft, Check, ExternalLink, RefreshCw, Send, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -36,6 +36,8 @@ type MatchRow = {
 type SourcingDetailOut = {
   id: string;
   platform: string;
+  agent_id?: string | null;
+  agent_query_id?: string | null;
   title: string;
   description?: string | null;
   price_cents: number;
@@ -47,11 +49,24 @@ type SourcingDetailOut = {
   estimated_revenue_cents?: number | null;
   estimated_profit_cents?: number | null;
   estimated_roi_bp?: number | null;
+  auction_end_at?: string | null;
+  auction_current_price_cents?: number | null;
+  auction_bid_count?: number | null;
+  max_purchase_price_cents?: number | null;
+  bidbag_sent_at?: string | null;
+  bidbag_last_payload?: Record<string, unknown> | null;
   scraped_at: string;
   posted_at?: string | null;
   analyzed_at?: string | null;
   url: string;
   matches: MatchRow[];
+};
+
+type BidbagHandoffOut = {
+  item_id: string;
+  deep_link_url?: string | null;
+  payload: Record<string, unknown>;
+  sent_at: string;
 };
 
 type ConversionPreviewOut = {
@@ -83,6 +98,7 @@ export function SourcingDetailPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const [bidbagMessage, setBidbagMessage] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ["sourcing-item", id],
@@ -142,6 +158,29 @@ export function SourcingDetailPage() {
     },
   });
 
+  const bidbag = useMutation({
+    mutationFn: () =>
+      api.request<BidbagHandoffOut>(`/sourcing/items/${id}/bidbag-handoff`, {
+        method: "POST",
+      }),
+    onSuccess: async (out) => {
+      await qc.invalidateQueries({ queryKey: ["sourcing-item", id] });
+      await qc.invalidateQueries({ queryKey: ["sourcing-items"] });
+      if (out.deep_link_url) {
+        window.open(out.deep_link_url, "_blank", "noopener,noreferrer");
+        setBidbagMessage("Bidbag-Link geöffnet.");
+        return;
+      }
+      const text = JSON.stringify(out.payload, null, 2);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        setBidbagMessage("Bidbag-Payload in die Zwischenablage kopiert.");
+      } else {
+        setBidbagMessage("Bidbag-Payload erstellt (Copy nicht verfügbar).");
+      }
+    },
+  });
+
   const item = detail.data;
 
   if (!id) {
@@ -183,6 +222,17 @@ export function SourcingDetailPage() {
               <div>Geschätzter Umsatz: {typeof item.estimated_revenue_cents === "number" ? formatEur(item.estimated_revenue_cents) : "—"}</div>
               <div>Geschätzter Profit: {typeof item.estimated_profit_cents === "number" ? formatEur(item.estimated_profit_cents) : "—"}</div>
               <div>ROI: {typeof item.estimated_roi_bp === "number" ? `${(item.estimated_roi_bp / 100).toFixed(0)}%` : "—"}</div>
+              {item.platform === "EBAY_DE" ? (
+                <>
+                  <div>Aktuelles Gebot: {typeof item.auction_current_price_cents === "number" ? formatEur(item.auction_current_price_cents) : "—"}</div>
+                  <div>Auktionsende: {fmtDate(item.auction_end_at)}</div>
+                  <div>Gebote: {typeof item.auction_bid_count === "number" ? item.auction_bid_count : "—"}</div>
+                  <div>Max. Kaufpreis: {typeof item.max_purchase_price_cents === "number" ? formatEur(item.max_purchase_price_cents) : "—"}</div>
+                  <div>
+                    Headroom: {typeof item.max_purchase_price_cents === "number" && typeof item.auction_current_price_cents === "number" ? formatEur(item.max_purchase_price_cents - item.auction_current_price_cents) : "—"}
+                  </div>
+                </>
+              ) : null}
               <div className="flex items-center gap-2 pt-1">
                 <Button type="button" variant="outline" onClick={() => window.open(item.url, "_blank", "noopener,noreferrer")}>
                   <ExternalLink className="h-4 w-4" />
@@ -202,7 +252,20 @@ export function SourcingDetailPage() {
                 <Button type="button" variant="outline" onClick={() => discard.mutate()} disabled={discard.isPending}>
                   Verwerfen
                 </Button>
+                {item.platform === "EBAY_DE" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => bidbag.mutate()}
+                    disabled={bidbag.isPending || !item.max_purchase_price_cents}
+                  >
+                    {bidbag.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Send to bidbag
+                  </Button>
+                ) : null}
               </div>
+              {bidbagMessage ? <InlineMessage tone="info">{bidbagMessage}</InlineMessage> : null}
+              {bidbag.error ? <InlineMessage tone="error">{String((bidbag.error as Error).message)}</InlineMessage> : null}
             </CardContent>
           </Card>
 

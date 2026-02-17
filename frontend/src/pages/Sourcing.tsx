@@ -1,4 +1,4 @@
-import { ExternalLink, Play, RefreshCw, Settings2 } from "lucide-react";
+import { ExternalLink, Play, RefreshCw, Settings2, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
@@ -16,13 +16,20 @@ import { formatEur } from "../lib/money";
 
 type SourcingItem = {
   id: string;
-  platform: "KLEINANZEIGEN" | "WILLHABEN" | "EBAY_KLEINANZEIGEN";
+  platform: "KLEINANZEIGEN" | "WILLHABEN" | "EBAY_KLEINANZEIGEN" | "EBAY_DE";
+  agent_id?: string | null;
+  agent_query_id?: string | null;
   title: string;
   price_cents: number;
   location_city?: string | null;
   primary_image_url?: string | null;
   estimated_profit_cents?: number | null;
   estimated_roi_bp?: number | null;
+  auction_end_at?: string | null;
+  auction_current_price_cents?: number | null;
+  auction_bid_count?: number | null;
+  max_purchase_price_cents?: number | null;
+  bidbag_sent_at?: string | null;
   status: "NEW" | "ANALYZING" | "READY" | "LOW_VALUE" | "CONVERTED" | "DISCARDED" | "ERROR";
   scraped_at: string;
   posted_at?: string | null;
@@ -49,6 +56,7 @@ type SourcingHealthOut = {
 const STATUS_OPTIONS = ["ALL", "NEW", "ANALYZING", "READY", "LOW_VALUE", "CONVERTED", "DISCARDED", "ERROR"] as const;
 const MIN_PROFIT_OPTIONS = ["ANY", "2000", "3000", "5000"] as const;
 const SORT_OPTIONS = ["scraped_at", "posted_at", "profit", "roi"] as const;
+const PLATFORM_OPTIONS = ["ALL", "KLEINANZEIGEN", "EBAY_DE", "WILLHABEN", "EBAY_KLEINANZEIGEN"] as const;
 
 function formatDateTime(value?: string | null): string {
   if (!value) return "—";
@@ -63,17 +71,19 @@ export function SourcingPage() {
   const navigate = useNavigate();
 
   const [status, setStatus] = useState<(typeof STATUS_OPTIONS)[number]>("ALL");
+  const [platform, setPlatform] = useState<(typeof PLATFORM_OPTIONS)[number]>("ALL");
   const [minProfit, setMinProfit] = useState<(typeof MIN_PROFIT_OPTIONS)[number]>("ANY");
   const [sortBy, setSortBy] = useState<(typeof SORT_OPTIONS)[number]>("scraped_at");
 
   const list = useQuery({
-    queryKey: ["sourcing-items", status, minProfit, sortBy],
+    queryKey: ["sourcing-items", status, platform, minProfit, sortBy],
     queryFn: () => {
       const params = new URLSearchParams();
       params.set("limit", "100");
       params.set("offset", "0");
       params.set("sort_by", sortBy);
       if (status !== "ALL") params.set("status", status);
+      if (platform !== "ALL") params.set("platform", platform);
       if (minProfit !== "ANY") params.set("min_profit_cents", minProfit);
       return api.request<SourcingListOut>(`/sourcing/items?${params.toString()}`);
     },
@@ -126,6 +136,12 @@ export function SourcingPage() {
                 Settings
               </Link>
             </Button>
+            <Button type="button" variant="outline" asChild>
+              <Link to="/sourcing/agents">
+                <UsersRound className="h-4 w-4" />
+                Agents
+              </Link>
+            </Button>
             <Button type="button" onClick={() => triggerScrape.mutate()} disabled={triggerScrape.isPending}>
               {triggerScrape.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               Jetzt suchen
@@ -146,13 +162,24 @@ export function SourcingPage() {
         <CardHeader>
           <CardTitle>Filter</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
+        <CardContent className="grid gap-3 md:grid-cols-5">
           <div className="space-y-1">
             <Label>Status</Label>
             <Select value={status} onValueChange={(v) => setStatus(v as (typeof STATUS_OPTIONS)[number])}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Plattform</Label>
+            <Select value={platform} onValueChange={(v) => setPlatform(v as (typeof PLATFORM_OPTIONS)[number])}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PLATFORM_OPTIONS.map((opt) => (
                   <SelectItem key={opt} value={opt}>{opt}</SelectItem>
                 ))}
               </SelectContent>
@@ -202,12 +229,21 @@ export function SourcingPage() {
                 <Badge variant={item.status === "READY" ? "success" : "secondary"}>{item.status}</Badge>
                 <span className="text-xs text-[color:var(--app-text-muted)]">Scraped: {formatDateTime(item.scraped_at)}</span>
               </div>
+              <div className="text-xs text-[color:var(--app-text-muted)]">{item.platform}</div>
               <CardTitle className="text-base">{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="text-sm text-[color:var(--app-text-muted)]">Inseriert: {formatDateTime(item.posted_at)}</div>
               <div className="text-sm text-[color:var(--app-text-muted)]">{item.location_city || "Ort unbekannt"}</div>
               <div className="text-sm">Preis: {formatEur(item.price_cents)}</div>
+              {item.platform === "EBAY_DE" ? (
+                <>
+                  <div className="text-sm">Aktuelles Gebot: {typeof item.auction_current_price_cents === "number" ? formatEur(item.auction_current_price_cents) : "—"}</div>
+                  <div className="text-sm">Auktionsende: {formatDateTime(item.auction_end_at)}</div>
+                  <div className="text-sm">Max. Kaufpreis: {typeof item.max_purchase_price_cents === "number" ? formatEur(item.max_purchase_price_cents) : "—"}</div>
+                  <div className="text-sm">Headroom: {typeof item.max_purchase_price_cents === "number" && typeof item.auction_current_price_cents === "number" ? formatEur(item.max_purchase_price_cents - item.auction_current_price_cents) : "—"}</div>
+                </>
+              ) : null}
               <div className="text-sm">Profit: {typeof item.estimated_profit_cents === "number" ? formatEur(item.estimated_profit_cents) : "—"}</div>
               <div className="text-sm">ROI: {typeof item.estimated_roi_bp === "number" ? `${(item.estimated_roi_bp / 100).toFixed(0)}%` : "—"}</div>
               <div className="text-sm">Matches: {item.match_count}</div>
