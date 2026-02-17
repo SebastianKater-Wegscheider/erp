@@ -615,3 +615,4 @@
 - Backend tests added for degraded streak behavior and retention pruning boundaries.
 - Scheduler tests updated to assert degraded status escalation.
 - Targeted backend tests green and frontend production build green.
+- Production validation: pilot agent run shows `KLEINANZEIGEN=completed` and `EBAY_DE=degraded` when eBay keeps returning zero listings; scheduler now surfaces this as agent error (`RuntimeError`) for operational visibility.
