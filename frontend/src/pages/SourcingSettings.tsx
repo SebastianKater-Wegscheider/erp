@@ -30,6 +30,9 @@ type FormState = {
   handling_cost_per_item_cents: string;
   shipping_cost_cents: string;
   ebay_bid_buffer_cents: string;
+  ebay_empty_results_degraded_after_runs: string;
+  sourcing_retention_days: string;
+  sourcing_retention_max_delete_per_tick: string;
   bidbag_deeplink_template: string;
   search_terms_json: string;
 };
@@ -68,6 +71,9 @@ export function SourcingSettingsPage() {
       handling_cost_per_item_cents: String(mapped.get("handling_cost_per_item_cents")?.value_int ?? 150),
       shipping_cost_cents: String(mapped.get("shipping_cost_cents")?.value_int ?? 690),
       ebay_bid_buffer_cents: String(mapped.get("ebay_bid_buffer_cents")?.value_int ?? 0),
+      ebay_empty_results_degraded_after_runs: String(mapped.get("ebay_empty_results_degraded_after_runs")?.value_int ?? 3),
+      sourcing_retention_days: String(mapped.get("sourcing_retention_days")?.value_int ?? 180),
+      sourcing_retention_max_delete_per_tick: String(mapped.get("sourcing_retention_max_delete_per_tick")?.value_int ?? 500),
       bidbag_deeplink_template: String(mapped.get("bidbag_deeplink_template")?.value_text ?? ""),
       search_terms_json: JSON.stringify(searchTerms ?? ["videospiele konvolut"], null, 2),
     });
@@ -91,6 +97,9 @@ export function SourcingSettingsPage() {
             handling_cost_per_item_cents: { value_int: toInt(form.handling_cost_per_item_cents) },
             shipping_cost_cents: { value_int: toInt(form.shipping_cost_cents) },
             ebay_bid_buffer_cents: { value_int: toInt(form.ebay_bid_buffer_cents) },
+            ebay_empty_results_degraded_after_runs: { value_int: toInt(form.ebay_empty_results_degraded_after_runs) },
+            sourcing_retention_days: { value_int: toInt(form.sourcing_retention_days) },
+            sourcing_retention_max_delete_per_tick: { value_int: toInt(form.sourcing_retention_max_delete_per_tick) },
             bidbag_deeplink_template: { value_text: form.bidbag_deeplink_template },
             search_terms: { value_json: parsedSearchTerms },
           },
@@ -127,6 +136,9 @@ export function SourcingSettingsPage() {
               <Field label="Handling pro Item (cents)" value={form.handling_cost_per_item_cents} onChange={(v) => setForm({ ...form, handling_cost_per_item_cents: v })} />
               <Field label="Versandkosten (cents)" value={form.shipping_cost_cents} onChange={(v) => setForm({ ...form, shipping_cost_cents: v })} />
               <Field label="eBay Bid Buffer (cents)" value={form.ebay_bid_buffer_cents} onChange={(v) => setForm({ ...form, ebay_bid_buffer_cents: v })} />
+              <Field label="eBay Empty->Degraded (runs)" value={form.ebay_empty_results_degraded_after_runs} onChange={(v) => setForm({ ...form, ebay_empty_results_degraded_after_runs: v })} />
+              <Field label="Retention (days)" value={form.sourcing_retention_days} onChange={(v) => setForm({ ...form, sourcing_retention_days: v })} />
+              <Field label="Retention delete cap/tick" value={form.sourcing_retention_max_delete_per_tick} onChange={(v) => setForm({ ...form, sourcing_retention_max_delete_per_tick: v })} />
             </div>
 
             <div className="space-y-1">

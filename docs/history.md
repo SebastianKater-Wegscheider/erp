@@ -579,3 +579,38 @@
 ### Fix
 - `_begin_tx()` now commits the outer transaction after nested block completion when session is already in transaction.
 - This ensures write persistence for sourcing API flows that read then write in a single request.
+
+## 2026-02-17 - Planned hardening: eBay empty-result degradation + conservative sourcing retention
+
+### Objective
+- Make repeated eBay zero-result runs operationally visible as degraded rather than silently completed.
+- Add bounded retention to prevent long-term unbounded sourcing table growth without deleting high-value decision data.
+
+### Implementation intent
+- eBay degrade rule: mark run as degraded when zero listings repeat for a threshold streak on the same query context.
+- Retention rule: prune only low-signal statuses (`LOW_VALUE`, `DISCARDED`, `ERROR`) older than configured days, with per-tick max delete cap.
+- Keep defaults conservative and configurable via sourcing settings.
+
+## 2026-02-17 - Implemented hardening: eBay degraded empty-runs + bounded retention
+
+### Business perspective
+- Repeated empty eBay runs are now operationally visible and no longer look like healthy completions.
+- Sourcing table growth is now bounded by policy instead of unbounded accumulation of low-signal historical rows.
+
+### Technical implementation
+- Added sourcing settings (with migration defaults):
+  - `ebay_empty_results_degraded_after_runs` (default `3`)
+  - `sourcing_retention_days` (default `180`)
+  - `sourcing_retention_max_delete_per_tick` (default `500`)
+- `execute_sourcing_run` now marks eBay runs as `degraded` when zero listings repeat for the configured consecutive streak in the same query context.
+- Scheduler now treats `degraded` query runs as agent-level failures (`last_error_type/last_error_message`), making issues visible in agent monitoring.
+- Added retention pruning in scheduler tick:
+  - deletes only `LOW_VALUE`, `DISCARDED`, `ERROR`
+  - only older than retention window
+  - capped per tick to avoid DB load spikes.
+- Frontend sourcing settings page extended with the three new controls.
+
+### Verification
+- Backend tests added for degraded streak behavior and retention pruning boundaries.
+- Scheduler tests updated to assert degraded status escalation.
+- Targeted backend tests green and frontend production build green.
