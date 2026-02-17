@@ -829,3 +829,16 @@
 
 ### Risk handling
 - Added/updated UI regression test to exercise pagination with async delay and assert `Seite 2 von 2` rendering.
+
+## 2026-02-17 - Incident analysis: eBay.DE scraper returning zero listings
+
+### Business perspective
+- eBay sourcing signal collapsed to zero (`items_scraped=0`), reducing acquisition throughput and hiding auction opportunities.
+
+### Technical diagnosis intent
+- Validate whether failure is transport/captcha vs extraction/parser drift.
+- Fix extraction against current eBay DE result-card markup while preserving fallback behavior.
+
+### Risk handling
+- Prioritize parser compatibility hotfix first; keep scope narrow to eBay extraction paths.
+- Verify against live scrape endpoint and production run metrics before closing incident.

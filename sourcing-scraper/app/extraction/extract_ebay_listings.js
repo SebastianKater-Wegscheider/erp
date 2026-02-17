@@ -1,5 +1,9 @@
 (() => {
   const clean = (value) => (value || "").replace(/\u200b/g, "").replace(/\s+/g, " ").trim();
+  const cleanTitle = (value) =>
+    clean(value)
+      .replace(/\s*Wird in neuem Fenster oder Tab geöffnet$/i, "")
+      .replace(/\s*Opens in a new window or tab$/i, "");
 
   const parsePriceCents = (raw) => {
     const text = clean(raw).toLowerCase().replace("eur", "").replace("€", "");
@@ -29,19 +33,32 @@
     return null;
   };
 
-  return Array.from(document.querySelectorAll("li.s-item"))
+  const findTextByRegex = (container, pattern) => {
+    const nodes = Array.from(container.querySelectorAll("span, div"));
+    for (const node of nodes) {
+      const txt = clean(node.textContent);
+      if (pattern.test(txt)) return txt;
+    }
+    return null;
+  };
+
+  return Array.from(document.querySelectorAll("li.s-card, li.s-item"))
     .map((item) => {
-      const link = item.querySelector("a.s-item__link");
-      const titleNode = item.querySelector(".s-item__title");
-      const priceNode = item.querySelector(".s-item__price");
-      const shippingNode = item.querySelector(".s-item__shipping, .s-item__logisticsCost");
-      const bidNode = item.querySelector(".s-item__bids, .s-item__bidCount");
-      const timeNode = item.querySelector(".s-item__time-left, .s-item__time-end");
+      const link = item.querySelector("a.s-item__link, a.s-card__link, a[href*='/itm/']");
+      const titleNode = item.querySelector(".s-item__title, .s-card__title, h3");
+      const priceNode = item.querySelector(".s-item__price, .s-card__price");
+      const shippingNode = item.querySelector(".s-item__shipping, .s-item__logisticsCost, .s-card__shipping");
+      const bidNode = item.querySelector(".s-item__bids, .s-item__bidCount, .s-card__bidCount");
+      const timeNode = item.querySelector(".s-item__time-left, .s-item__time-end, .s-card__time-left, .s-card__time-end");
       const image = item.querySelector("img");
 
-      const title = clean(titleNode?.textContent);
+      const title = cleanTitle(titleNode?.textContent);
       const url = absoluteUrl(clean(link?.getAttribute("href")));
       const externalId = extractExternalId(url);
+      const bidsText = clean(bidNode?.textContent) || findTextByRegex(item, /\b\d+\s+Gebote\b/i) || null;
+      const timeText =
+        clean(timeNode?.textContent) || findTextByRegex(item, /\b(Noch|Heute|Morgen)\b/i) || null;
+      const imageSrc = clean(image?.getAttribute("src") || image?.getAttribute("data-src"));
 
       return {
         external_id: externalId,
@@ -51,13 +68,13 @@
         price_cents: parsePriceCents(priceNode?.textContent),
         shipping_raw: clean(shippingNode?.textContent) || null,
         shipping_cents: parsePriceCents(shippingNode?.textContent),
-        bids_raw: clean(bidNode?.textContent) || null,
-        auction_bid_count: clean(bidNode?.textContent) || null,
-        time_left_raw: clean(timeNode?.textContent) || null,
-        auction_end_at_text: clean(timeNode?.textContent) || null,
-        image_urls: clean(image?.getAttribute("src")) ? [clean(image.getAttribute("src"))] : [],
-        primary_image_url: clean(image?.getAttribute("src")) || null,
+        bids_raw: bidsText,
+        auction_bid_count: bidsText,
+        time_left_raw: timeText,
+        auction_end_at_text: timeText,
+        image_urls: imageSrc ? [imageSrc] : [],
+        primary_image_url: imageSrc || null,
       };
     })
-    .filter((entry) => entry.external_id && entry.title && entry.url && !/^Shop auf eBay/i.test(entry.title));
+    .filter((entry) => entry.external_id && entry.title && entry.url && !/^Shop (auf|on) eBay/i.test(entry.title));
 })();

@@ -54,6 +54,13 @@ def _strip_tags(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(without_tags)).strip()
 
 
+def _clean_listing_title(value: str) -> str:
+    text = _strip_tags(value)
+    text = re.sub(r"\s*Wird in neuem Fenster oder Tab geoffnet\s*$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*Opens in a new window or tab\s*$", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 def _parse_price_cents(raw: str) -> int | None:
     text = _strip_tags(raw).lower().replace("eur", "").replace("€", "").replace("ca.", "")
     text = re.sub(r"[^0-9,\.]", "", text)
@@ -153,7 +160,7 @@ def _normalize_listing(entry: dict) -> dict | None:
     raw_url = str(entry.get("url") or "").strip()
     url = _absolute_url(raw_url)
     external_id = str(entry.get("external_id") or "").strip() or (_extract_external_id(url) or "")
-    title = str(entry.get("title") or "").strip()
+    title = _clean_listing_title(str(entry.get("title") or ""))
     if not external_id or not title:
         return None
 
@@ -340,21 +347,49 @@ def _extract_detail_via_agent_browser(
 def _extract_from_html(doc: str) -> list[dict]:
     entries: list[dict] = []
     pattern = re.compile(
-        r"<li[^>]*class=\"[^\"]*s-item[^\"]*\"[^>]*>(?P<body>.*?)</li>",
+        r"<li[^>]*class=\"[^\"]*(?:s-item|s-card)[^\"]*\"[^>]*>(?P<body>.*?)</li>",
         flags=re.IGNORECASE | re.DOTALL,
     )
 
     for match in pattern.finditer(doc):
         body = match.group("body")
-        link_match = re.search(r"<a[^>]*class=\"[^\"]*s-item__link[^\"]*\"[^>]*href=\"(?P<href>[^\"]+)\"", body, flags=re.IGNORECASE)
-        title_match = re.search(r"<div[^>]*class=\"[^\"]*s-item__title[^\"]*\"[^>]*>(?P<title>.*?)</div>", body, flags=re.IGNORECASE | re.DOTALL)
-        price_match = re.search(r"<span[^>]*class=\"[^\"]*s-item__price[^\"]*\"[^>]*>(?P<price>.*?)</span>", body, flags=re.IGNORECASE | re.DOTALL)
-        bids_match = re.search(r"<span[^>]*class=\"[^\"]*s-item__bids[^\"]*\"[^>]*>(?P<bids>.*?)</span>", body, flags=re.IGNORECASE | re.DOTALL)
-        time_match = re.search(r"<span[^>]*class=\"[^\"]*s-item__time-left[^\"]*\"[^>]*>(?P<time>.*?)</span>", body, flags=re.IGNORECASE | re.DOTALL)
-        shipping_match = re.search(r"<span[^>]*class=\"[^\"]*(s-item__shipping|s-item__logisticsCost)[^\"]*\"[^>]*>(?P<shipping>.*?)</span>", body, flags=re.IGNORECASE | re.DOTALL)
+        link_match = re.search(
+            r"<a[^>]*(?:s-item__link|s-card__link)[^>]*href=(?P<q>[\"']?)(?P<href>[^\"'\s>]+)(?P=q)",
+            body,
+            flags=re.IGNORECASE,
+        )
+        title_match = re.search(
+            r"<[^>]*(?:s-item__title|s-card__title)[^>]*>(?P<title>.*?)</[^>]+>",
+            body,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        price_match = re.search(
+            r"<[^>]*(?:s-item__price|s-card__price)[^>]*>(?P<price>.*?)</[^>]+>",
+            body,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        bids_match = re.search(
+            r"<[^>]*(?:s-item__bids|s-item__bidCount|s-card__bidCount)[^>]*>(?P<bids>.*?)</[^>]+>",
+            body,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        time_match = re.search(
+            r"<[^>]*(?:s-item__time-left|s-item__time-end|s-card__time-left|s-card__time-end)[^>]*>(?P<time>.*?)</[^>]+>",
+            body,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not bids_match:
+            bids_match = re.search(r"(\d+\s+Gebote)", body, flags=re.IGNORECASE)
+        if not time_match:
+            time_match = re.search(r"\b(Noch[^<]{0,24}|Heute[^<]{0,24}|Morgen[^<]{0,24})\b", body, flags=re.IGNORECASE)
+        shipping_match = re.search(
+            r"<[^>]*(?:s-item__shipping|s-item__logisticsCost|s-card__shipping)[^>]*>(?P<shipping>.*?)</[^>]+>",
+            body,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
 
-        raw_title = _strip_tags(title_match.group("title")) if title_match else ""
-        if not raw_title or raw_title.lower().startswith("shop on ebay"):
+        raw_title = _clean_listing_title(title_match.group("title")) if title_match else ""
+        if not raw_title or raw_title.lower().startswith(("shop on ebay", "shop auf ebay")):
             continue
 
         entry = {
@@ -362,8 +397,8 @@ def _extract_from_html(doc: str) -> list[dict]:
             "title": raw_title,
             "price_raw": price_match.group("price") if price_match else "",
             "shipping_raw": shipping_match.group("shipping") if shipping_match else "",
-            "bids_raw": bids_match.group("bids") if bids_match else "",
-            "time_left_raw": _strip_tags(time_match.group("time")) if time_match else "",
+            "bids_raw": _strip_tags(bids_match.group("bids")) if bids_match and "bids" in bids_match.groupdict() else _strip_tags(bids_match.group(1)) if bids_match else "",
+            "time_left_raw": _strip_tags(time_match.group("time")) if time_match and "time" in time_match.groupdict() else _strip_tags(time_match.group(1)) if time_match else "",
         }
         normalized = _normalize_listing(entry)
         if normalized is not None:
