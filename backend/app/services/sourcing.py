@@ -11,7 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -62,6 +62,9 @@ class _ResolvedSettings:
     handling_cost_per_item_cents: int
     shipping_cost_cents: int
     ebay_bid_buffer_cents: int
+    ebay_empty_results_degraded_after_runs: int
+    retention_days: int
+    retention_max_delete_per_tick: int
     bidbag_deeplink_template: str | None
     search_terms: list[str]
 
@@ -88,6 +91,12 @@ _POST_FILTER_BLACKLIST = (
 _KLEINANZEIGEN_TZ = ZoneInfo("Europe/Berlin")
 _DETAIL_ENRICHMENT_MAX_ITEMS_PER_RUN = 12
 _DETAIL_ENRICHMENT_THRESHOLD_FACTOR_BP = 8000
+_EBAY_EMPTY_RESULTS_DEGRADED_ERROR_TYPE = "empty_results_degraded"
+_PRUNEABLE_SOURCING_STATUSES = (
+    SourcingStatus.LOW_VALUE,
+    SourcingStatus.DISCARDED,
+    SourcingStatus.ERROR,
+)
 
 
 def utcnow() -> datetime:
@@ -202,6 +211,9 @@ async def _load_resolved_settings(session: AsyncSession, app_settings: Settings)
         handling_cost_per_item_cents=int_setting("handling_cost_per_item_cents", 150),
         shipping_cost_cents=int_setting("shipping_cost_cents", 690),
         ebay_bid_buffer_cents=int_setting("ebay_bid_buffer_cents", 0),
+        ebay_empty_results_degraded_after_runs=max(1, int_setting("ebay_empty_results_degraded_after_runs", 3)),
+        retention_days=max(1, int_setting("sourcing_retention_days", 180)),
+        retention_max_delete_per_tick=max(0, int_setting("sourcing_retention_max_delete_per_tick", 500)),
         bidbag_deeplink_template=text_setting("bidbag_deeplink_template"),
         search_terms=json_setting(
             "search_terms",
@@ -419,6 +431,51 @@ def _compute_max_purchase_price_cents(
         max_by_roi = float(revenue_cents) / (1.0 + roi_min) - float(fixed_costs)
 
     return max(0, int(math.floor(min(max_by_profit, max_by_roi))))
+
+
+def _run_is_empty_without_errors(run: SourcingRun) -> bool:
+    return not run.blocked and not run.error_type and int(run.items_scraped or 0) == 0
+
+
+async def _count_prior_consecutive_empty_runs(
+    *,
+    session: AsyncSession,
+    platform: SourcingPlatform,
+    current_run_id: uuid.UUID,
+    max_runs: int,
+    agent_query_id: uuid.UUID | None,
+    search_terms: list[str],
+) -> int:
+    if max_runs <= 0:
+        return 0
+
+    stmt = (
+        select(SourcingRun)
+        .where(
+            SourcingRun.id != current_run_id,
+            SourcingRun.platform == platform,
+        )
+        .order_by(SourcingRun.started_at.desc())
+        .limit(max_runs * 4)
+    )
+    if agent_query_id is not None:
+        stmt = stmt.where(SourcingRun.agent_query_id == agent_query_id)
+    else:
+        stmt = stmt.where(
+            SourcingRun.agent_query_id.is_(None),
+            SourcingRun.search_terms == search_terms,
+        )
+
+    rows = (await session.execute(stmt)).scalars().all()
+    streak = 0
+    for row in rows:
+        if _run_is_empty_without_errors(row):
+            streak += 1
+            if streak >= max_runs:
+                break
+            continue
+        break
+    return streak
 
 
 def _render_bidbag_deeplink(template: str, payload: dict[str, Any]) -> str:
@@ -978,6 +1035,26 @@ async def execute_sourcing_run(
             run.finished_at = utcnow()
             run.blocked = blocked
 
+            if (
+                run_platform == SourcingPlatform.EBAY_DE
+                and not blocked
+                and not err_type
+                and len(listings) == 0
+            ):
+                threshold = max(1, int(cfg.ebay_empty_results_degraded_after_runs))
+                prior_streak = await _count_prior_consecutive_empty_runs(
+                    session=session,
+                    platform=run_platform,
+                    current_run_id=run.id,
+                    max_runs=max(0, threshold - 1),
+                    agent_query_id=agent_query_id,
+                    search_terms=terms,
+                )
+                streak = 1 + prior_streak
+                if streak >= threshold:
+                    err_type = _EBAY_EMPTY_RESULTS_DEGRADED_ERROR_TYPE
+                    err_msg = f"No listings returned for {streak} consecutive eBay runs"
+
             if err_type or err_msg:
                 run.ok = False
                 run.error_type = err_type
@@ -1022,7 +1099,9 @@ async def execute_sourcing_run(
                     _merge_detail_payload_into_item(item=item, detail=detail)
 
     status = "completed"
-    if err_type:
+    if err_type == _EBAY_EMPTY_RESULTS_DEGRADED_ERROR_TYPE:
+        status = "degraded"
+    elif err_type:
         status = "error"
     elif blocked:
         status = "blocked"
@@ -1125,6 +1204,36 @@ async def load_resolved_settings(
     app_settings: Settings | None = None,
 ) -> _ResolvedSettings:
     return await _load_resolved_settings(session, app_settings or get_settings())
+
+
+async def prune_old_sourcing_items(
+    *,
+    session: AsyncSession,
+    app_settings: Settings | None = None,
+) -> int:
+    cfg = await _load_resolved_settings(session, app_settings or get_settings())
+    batch_size = max(0, int(cfg.retention_max_delete_per_tick))
+    if batch_size <= 0:
+        return 0
+
+    cutoff = utcnow() - timedelta(days=max(1, int(cfg.retention_days)))
+    item_ids = (
+        await session.execute(
+            select(SourcingItem.id)
+            .where(
+                SourcingItem.scraped_at < cutoff,
+                SourcingItem.status.in_(_PRUNEABLE_SOURCING_STATUSES),
+            )
+            .order_by(SourcingItem.scraped_at.asc())
+            .limit(batch_size)
+        )
+    ).scalars().all()
+    if not item_ids:
+        return 0
+
+    await session.execute(delete(SourcingMatch).where(SourcingMatch.sourcing_item_id.in_(item_ids)))
+    await session.execute(delete(SourcingItem).where(SourcingItem.id.in_(item_ids)))
+    return len(item_ids)
 
 
 async def update_settings_values(

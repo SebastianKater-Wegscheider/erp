@@ -92,6 +92,9 @@ async def test_run_agent_queries_executes_enabled_queries_only(monkeypatch: pyte
 
     async def _fake_execute(**kwargs):
         calls.append(kwargs)
+        class _RunResult:
+            status = "completed"
+        return _RunResult()
 
     monkeypatch.setattr("app.services.sourcing_scheduler.execute_sourcing_run", _fake_execute)
 
@@ -131,3 +134,37 @@ async def test_run_agent_queries_executes_enabled_queries_only(monkeypatch: pyte
     assert calls[0]["search_terms"] == ["nintendo"]
     assert calls[0]["platform"] == SourcingPlatform.KLEINANZEIGEN
     assert calls[0]["agent_id"] == agent.id
+
+
+@pytest.mark.asyncio
+async def test_run_agent_queries_raises_when_query_is_degraded(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_execute(**kwargs):  # noqa: ARG001
+        class _RunResult:
+            status = "degraded"
+        return _RunResult()
+
+    monkeypatch.setattr("app.services.sourcing_scheduler.execute_sourcing_run", _fake_execute)
+
+    agent = SourcingAgent(
+        id=uuid.uuid4(),
+        name="Test",
+        enabled=True,
+        interval_seconds=21_600,
+    )
+    agent.queries = [
+        SourcingAgentQuery(
+            id=uuid.uuid4(),
+            agent_id=agent.id,
+            platform=SourcingPlatform.EBAY_DE,
+            keyword="nintendo",
+            enabled=True,
+            max_pages=2,
+            detail_enrichment_enabled=False,
+        )
+    ]
+
+    class _FakeSettings:
+        pass
+
+    with pytest.raises(RuntimeError, match="degraded"):
+        await sourcing_scheduler._run_agent_queries(agent=agent, settings=_FakeSettings())

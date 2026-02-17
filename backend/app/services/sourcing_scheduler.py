@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import Settings
 from app.models.sourcing import SourcingAgent
-from app.services.sourcing import execute_sourcing_run, utcnow
+from app.services.sourcing import execute_sourcing_run, prune_old_sourcing_items, utcnow
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,11 @@ async def sourcing_scheduler_loop(settings: Settings) -> None:
                 continue
 
             due_agents = await _load_due_agents()
+            async with _get_session_local()() as session:
+                async with session.begin():
+                    pruned = await prune_old_sourcing_items(session=session, app_settings=settings)
+                if pruned > 0:
+                    logger.info("Sourcing retention pruned %s low-signal items", pruned)
             if due_agents:
                 for agent in due_agents:
                     try:
@@ -151,9 +156,10 @@ async def _has_enabled_agents() -> bool:
 
 async def _run_agent_queries(*, agent: SourcingAgent, settings: Settings) -> None:
     enabled_queries = [q for q in agent.queries if q.enabled]
+    failures: list[str] = []
     for query in enabled_queries:
         options = query.options_json if isinstance(query.options_json, dict) else {}
-        await execute_sourcing_run(
+        result = await execute_sourcing_run(
             force=True,
             search_terms=[query.keyword],
             trigger="scheduler",
@@ -165,6 +171,10 @@ async def _run_agent_queries(*, agent: SourcingAgent, settings: Settings) -> Non
             max_pages=query.max_pages,
             detail_enrichment_enabled=query.detail_enrichment_enabled,
         )
+        if result.status in {"error", "blocked", "degraded"}:
+            failures.append(f"{query.id}:{result.status}")
+    if failures:
+        raise RuntimeError(f"Agent query run issues: {', '.join(failures)}")
 
 
 async def _mark_agent_run_success(*, agent_id: uuid.UUID) -> None:

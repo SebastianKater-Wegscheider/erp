@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -23,6 +23,7 @@ from app.services.sourcing import (
     convert_item_to_purchase,
     execute_sourcing_run,
     load_resolved_settings,
+    prune_old_sourcing_items,
     recalculate_item_from_matches,
     update_settings_values,
 )
@@ -339,6 +340,9 @@ def test_compute_max_purchase_price_respects_profit_and_roi_constraints() -> Non
         handling_cost_per_item_cents=150,
         shipping_cost_cents=690,
         ebay_bid_buffer_cents=200,
+        ebay_empty_results_degraded_after_runs=3,
+        retention_days=180,
+        retention_max_delete_per_tick=500,
         bidbag_deeplink_template=None,
         search_terms=["nintendo"],
     )
@@ -384,3 +388,143 @@ async def test_bidbag_handoff_builds_payload_and_template(db_session: AsyncSessi
     assert handoff.deep_link_url is not None
     assert "eid=ebay-123" in handoff.deep_link_url
     assert handoff.sent_at.tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_sourcing_run_marks_ebay_empty_runs_degraded_after_threshold(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with session_factory() as session:
+        session.add(
+            SourcingSetting(
+                key="ebay_empty_results_degraded_after_runs",
+                value_int=3,
+            )
+        )
+        await session.commit()
+
+    async def _fake_scrape_fetch(*, app_settings, platform, search_terms, options=None, max_pages=None):  # noqa: ARG001
+        return {
+            "blocked": False,
+            "error_type": None,
+            "error_message": None,
+            "listings": [],
+        }
+
+    monkeypatch.setattr("app.services.sourcing.SessionLocal", session_factory)
+    monkeypatch.setattr("app.services.sourcing._scraper_fetch", _fake_scrape_fetch)
+
+    first = await execute_sourcing_run(
+        force=True,
+        search_terms=["nintendo"],
+        trigger="test",
+        platform=SourcingPlatform.EBAY_DE,
+    )
+    second = await execute_sourcing_run(
+        force=True,
+        search_terms=["nintendo"],
+        trigger="test",
+        platform=SourcingPlatform.EBAY_DE,
+    )
+    third = await execute_sourcing_run(
+        force=True,
+        search_terms=["nintendo"],
+        trigger="test",
+        platform=SourcingPlatform.EBAY_DE,
+    )
+
+    assert first.status == "completed"
+    assert second.status == "completed"
+    assert third.status == "degraded"
+
+    async with session_factory() as session:
+        latest = (
+            await session.execute(
+                select(SourcingRun)
+                .where(SourcingRun.id == third.run_id)
+            )
+        ).scalar_one()
+        assert latest.ok is False
+        assert latest.error_type == "empty_results_degraded"
+
+
+@pytest.mark.asyncio
+async def test_prune_old_sourcing_items_respects_status_age_and_batch_limit(db_session: AsyncSession) -> None:
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            SourcingSetting(key="sourcing_retention_days", value_int=30),
+            SourcingSetting(key="sourcing_retention_max_delete_per_tick", value_int=2),
+        ]
+    )
+    db_session.add_all(
+        [
+            SourcingItem(
+                platform=SourcingPlatform.EBAY_DE,
+                external_id="old-low-1",
+                url="https://www.ebay.de/itm/old-low-1",
+                title="Old Low 1",
+                price_cents=1_000,
+                status=SourcingStatus.LOW_VALUE,
+                scraped_at=now - timedelta(days=60),
+            ),
+            SourcingItem(
+                platform=SourcingPlatform.EBAY_DE,
+                external_id="old-low-2",
+                url="https://www.ebay.de/itm/old-low-2",
+                title="Old Low 2",
+                price_cents=1_000,
+                status=SourcingStatus.DISCARDED,
+                scraped_at=now - timedelta(days=61),
+            ),
+            SourcingItem(
+                platform=SourcingPlatform.EBAY_DE,
+                external_id="old-low-3",
+                url="https://www.ebay.de/itm/old-low-3",
+                title="Old Low 3",
+                price_cents=1_000,
+                status=SourcingStatus.ERROR,
+                scraped_at=now - timedelta(days=62),
+            ),
+            SourcingItem(
+                platform=SourcingPlatform.EBAY_DE,
+                external_id="old-ready",
+                url="https://www.ebay.de/itm/old-ready",
+                title="Old Ready",
+                price_cents=1_000,
+                status=SourcingStatus.READY,
+                scraped_at=now - timedelta(days=90),
+            ),
+            SourcingItem(
+                platform=SourcingPlatform.EBAY_DE,
+                external_id="recent-low",
+                url="https://www.ebay.de/itm/recent-low",
+                title="Recent Low",
+                price_cents=1_000,
+                status=SourcingStatus.LOW_VALUE,
+                scraped_at=now - timedelta(days=5),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    deleted_first = await prune_old_sourcing_items(session=db_session)
+    await db_session.commit()
+    assert deleted_first == 2
+
+    deleted_second = await prune_old_sourcing_items(session=db_session)
+    await db_session.commit()
+    assert deleted_second == 1
+
+    remaining_ids = {
+        row[0]
+        for row in (
+            await db_session.execute(select(SourcingItem.external_id))
+        ).all()
+    }
+    assert "old-ready" in remaining_ids
+    assert "recent-low" in remaining_ids
+    assert "old-low-1" not in remaining_ids
+    assert "old-low-2" not in remaining_ids
+    assert "old-low-3" not in remaining_ids
