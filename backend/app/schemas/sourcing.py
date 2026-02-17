@@ -53,6 +53,7 @@ class SourcingItemListOut(BaseModel):
     estimated_roi_bp: int | None
     status: SourcingStatus
     scraped_at: datetime
+    posted_at: datetime | None
     url: str
     match_count: int = 0
 
@@ -105,6 +106,7 @@ class SourcingItemDetailOut(BaseModel):
     estimated_profit_cents: int | None
     estimated_roi_bp: int | None
     scraped_at: datetime
+    posted_at: datetime | None
     analyzed_at: datetime | None
     url: str
     matches: list[SourcingMatchOut] = Field(default_factory=list)

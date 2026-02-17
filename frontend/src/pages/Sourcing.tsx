@@ -25,6 +25,7 @@ type SourcingItem = {
   estimated_roi_bp?: number | null;
   status: "NEW" | "ANALYZING" | "READY" | "LOW_VALUE" | "CONVERTED" | "DISCARDED" | "ERROR";
   scraped_at: string;
+  posted_at?: string | null;
   url: string;
   match_count: number;
 };
@@ -47,7 +48,7 @@ type SourcingHealthOut = {
 
 const STATUS_OPTIONS = ["ALL", "NEW", "ANALYZING", "READY", "LOW_VALUE", "CONVERTED", "DISCARDED", "ERROR"] as const;
 const MIN_PROFIT_OPTIONS = ["ANY", "2000", "3000", "5000"] as const;
-const SORT_OPTIONS = ["scraped_at", "profit", "roi"] as const;
+const SORT_OPTIONS = ["scraped_at", "posted_at", "profit", "roi"] as const;
 
 function formatDateTime(value?: string | null): string {
   if (!value) return "—";
@@ -175,6 +176,7 @@ export function SourcingPage() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="scraped_at">Neueste</SelectItem>
+                <SelectItem value="posted_at">Inseriert (neu)</SelectItem>
                 <SelectItem value="profit">Profit</SelectItem>
                 <SelectItem value="roi">ROI</SelectItem>
               </SelectContent>
@@ -198,11 +200,12 @@ export function SourcingPage() {
             <CardHeader className="space-y-1">
               <div className="flex items-center justify-between gap-2">
                 <Badge variant={item.status === "READY" ? "success" : "secondary"}>{item.status}</Badge>
-                <span className="text-xs text-[color:var(--app-text-muted)]">{formatDateTime(item.scraped_at)}</span>
+                <span className="text-xs text-[color:var(--app-text-muted)]">Scraped: {formatDateTime(item.scraped_at)}</span>
               </div>
               <CardTitle className="text-base">{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              <div className="text-sm text-[color:var(--app-text-muted)]">Inseriert: {formatDateTime(item.posted_at)}</div>
               <div className="text-sm text-[color:var(--app-text-muted)]">{item.location_city || "Ort unbekannt"}</div>
               <div className="text-sm">Preis: {formatEur(item.price_cents)}</div>
               <div className="text-sm">Profit: {typeof item.estimated_profit_cents === "number" ? formatEur(item.estimated_profit_cents) : "—"}</div>

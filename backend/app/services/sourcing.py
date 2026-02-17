@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import func, select
@@ -81,6 +82,10 @@ _POST_FILTER_BLACKLIST = (
     "nhl 20",
     "madden",
 )
+
+_KLEINANZEIGEN_TZ = ZoneInfo("Europe/Berlin")
+_DETAIL_ENRICHMENT_MAX_ITEMS_PER_RUN = 12
+_DETAIL_ENRICHMENT_THRESHOLD_FACTOR_BP = 8000
 
 
 def utcnow() -> datetime:
@@ -178,6 +183,50 @@ def _post_filter_reason(*, item: SourcingItem, cfg: _ResolvedSettings) -> str | 
     return None
 
 
+def _parse_kleinanzeigen_posted_at(raw: str | None, *, now: datetime | None = None) -> datetime | None:
+    text = re.sub(r"\s+", " ", str(raw or "").replace("\u200b", " ")).strip()
+    if not text:
+        return None
+
+    now_utc = now or utcnow()
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=UTC)
+    local_now = now_utc.astimezone(_KLEINANZEIGEN_TZ)
+
+    lowered = text.lower()
+    time_match = re.search(r"\b(\d{1,2}):(\d{2})\b", lowered)
+    hour = int(time_match.group(1)) if time_match else 0
+    minute = int(time_match.group(2)) if time_match else 0
+    if hour > 23 or minute > 59:
+        return None
+
+    try:
+        if "heute" in lowered:
+            base = local_now.date()
+        elif "gestern" in lowered:
+            base = (local_now - timedelta(days=1)).date()
+        else:
+            date_match = re.search(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", lowered)
+            if not date_match:
+                return None
+            day = int(date_match.group(1))
+            month = int(date_match.group(2))
+            year = int(date_match.group(3))
+            base = datetime(year=year, month=month, day=day, tzinfo=_KLEINANZEIGEN_TZ).date()
+        localized = datetime(
+            year=base.year,
+            month=base.month,
+            day=base.day,
+            hour=hour,
+            minute=minute,
+            tzinfo=_KLEINANZEIGEN_TZ,
+        )
+    except ValueError:
+        return None
+
+    return localized.astimezone(UTC)
+
+
 async def _scraper_fetch(*, app_settings: Settings, search_terms: list[str]) -> dict[str, Any]:
     timeout = httpx.Timeout(timeout=app_settings.sourcing_scraper_timeout_seconds)
     url = f"{app_settings.sourcing_scraper_base_url.rstrip('/')}/scrape"
@@ -188,6 +237,73 @@ async def _scraper_fetch(*, app_settings: Settings, search_terms: list[str]) -> 
     if not isinstance(payload, dict):
         raise RuntimeError("Invalid sourcing scraper payload")
     return payload
+
+
+async def _scraper_fetch_listing_detail(*, app_settings: Settings, url: str) -> dict[str, Any]:
+    timeout = httpx.Timeout(timeout=app_settings.sourcing_scraper_timeout_seconds)
+    endpoint = f"{app_settings.sourcing_scraper_base_url.rstrip('/')}/listing-detail"
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(endpoint, json={"platform": "kleinanzeigen", "url": url})
+    resp.raise_for_status()
+    payload = resp.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Invalid sourcing detail payload")
+    return payload
+
+
+def _is_detail_enrichment_candidate(*, item: SourcingItem, cfg: _ResolvedSettings) -> bool:
+    if not str(item.url or "").strip():
+        return False
+    if item.status == SourcingStatus.READY:
+        return True
+    profit = int(item.estimated_profit_cents or 0)
+    roi_bp = int(item.estimated_roi_bp or 0)
+    profit_threshold = int(cfg.profit_min_cents * _DETAIL_ENRICHMENT_THRESHOLD_FACTOR_BP / 10_000)
+    roi_threshold = int(cfg.roi_min_bp * _DETAIL_ENRICHMENT_THRESHOLD_FACTOR_BP / 10_000)
+    return profit >= profit_threshold and roi_bp >= roi_threshold
+
+
+def _merge_detail_payload_into_item(*, item: SourcingItem, detail: dict[str, Any]) -> None:
+    if not detail:
+        return
+
+    description_full = str(detail.get("description_full") or "").strip()
+    if description_full and (not item.description or len(description_full) > len(item.description)):
+        item.description = description_full
+
+    detail_price = detail.get("price_cents")
+    if isinstance(detail_price, int) and detail_price >= 0:
+        item.price_cents = int(detail_price)
+
+    detail_images_raw = detail.get("image_urls")
+    detail_images: list[str] = []
+    if isinstance(detail_images_raw, list):
+        detail_images = [str(v).strip() for v in detail_images_raw if str(v).strip()]
+    if detail_images:
+        deduped = list(dict.fromkeys(detail_images))
+        item.image_urls = deduped
+        if not item.primary_image_url or item.primary_image_url not in deduped:
+            item.primary_image_url = deduped[0]
+
+    detail_seller_type = str(detail.get("seller_type") or "").strip().lower()
+    if detail_seller_type in {"private", "commercial"}:
+        item.seller_type = detail_seller_type
+
+    posted_at_text = str(detail.get("posted_at_text") or "").strip()
+    if posted_at_text:
+        parsed_posted_at = _parse_kleinanzeigen_posted_at(posted_at_text)
+        if parsed_posted_at is not None:
+            item.posted_at = parsed_posted_at
+
+    merged_raw = dict(item.raw_data or {})
+    for key, value in detail.items():
+        if value is None:
+            continue
+        if isinstance(value, list) and len(value) == 0:
+            continue
+        merged_raw[key] = value
+    merged_raw["detail_enriched_at"] = utcnow().isoformat()
+    item.raw_data = merged_raw
 
 
 def _used_market_price_cents(metrics: AmazonProductMetricsLatest | None) -> int | None:
@@ -599,6 +715,7 @@ async def execute_sourcing_run(
 
     items_new = 0
     items_ready = 0
+    detail_candidates: list[tuple[uuid.UUID, str]] = []
 
     async with _get_session_local()() as session:
         async with session.begin():
@@ -654,6 +771,7 @@ async def execute_sourcing_run(
                     else None,
                     primary_image_url=str(listing.get("primary_image_url") or "").strip() or None,
                     raw_data=listing,
+                    posted_at=_parse_kleinanzeigen_posted_at(str(listing.get("posted_at_text") or "").strip() or None),
                     last_run_id=run.id,
                 )
                 session.add(item)
@@ -670,6 +788,8 @@ async def execute_sourcing_run(
                 )
                 if item.status == SourcingStatus.READY:
                     items_ready += 1
+                if _is_detail_enrichment_candidate(item=item, cfg=cfg):
+                    detail_candidates.append((item.id, item.url))
 
             run.items_scraped = len(listings)
             run.items_new = items_new
@@ -685,6 +805,33 @@ async def execute_sourcing_run(
                 run.ok = True
                 run.error_type = None
                 run.error_message = None
+
+    detail_payloads: dict[uuid.UUID, dict[str, Any]] = {}
+    for item_id, item_url in detail_candidates[:_DETAIL_ENRICHMENT_MAX_ITEMS_PER_RUN]:
+        try:
+            detail_payload = await _scraper_fetch_listing_detail(app_settings=app_settings, url=item_url)
+        except Exception:
+            continue
+        if detail_payload.get("blocked") is True:
+            continue
+        listing_detail = detail_payload.get("listing")
+        if isinstance(listing_detail, dict) and listing_detail:
+            detail_payloads[item_id] = listing_detail
+
+    if detail_payloads:
+        async with _get_session_local()() as session:
+            async with session.begin():
+                rows = (
+                    await session.execute(
+                        select(SourcingItem).where(SourcingItem.id.in_(list(detail_payloads.keys())))
+                    )
+                ).scalars().all()
+                by_id = {row.id: row for row in rows}
+                for item_id, detail in detail_payloads.items():
+                    item = by_id.get(item_id)
+                    if item is None:
+                        continue
+                    _merge_detail_payload_into_item(item=item, detail=detail)
 
     status = "completed"
     if err_type:

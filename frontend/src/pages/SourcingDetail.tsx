@@ -48,6 +48,7 @@ type SourcingDetailOut = {
   estimated_profit_cents?: number | null;
   estimated_roi_bp?: number | null;
   scraped_at: string;
+  posted_at?: string | null;
   analyzed_at?: string | null;
   url: string;
   matches: MatchRow[];
@@ -174,7 +175,7 @@ export function SourcingDetailPage() {
                 <Badge variant={item.status === "READY" ? "success" : "secondary"}>{item.status}</Badge>
               </div>
               <div className="text-sm text-[color:var(--app-text-muted)]">
-                Scraped: {fmtDate(item.scraped_at)} • Analyzed: {fmtDate(item.analyzed_at)} • {item.location_city || "Ort unbekannt"}
+                Inseriert: {fmtDate(item.posted_at)} • Scraped: {fmtDate(item.scraped_at)} • Analyzed: {fmtDate(item.analyzed_at)} • {item.location_city || "Ort unbekannt"}
               </div>
             </CardHeader>
             <CardContent className="space-y-2">

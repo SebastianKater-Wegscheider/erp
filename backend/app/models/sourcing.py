@@ -45,6 +45,7 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("platform", "external_id", name="uq_sourcing_item_platform_external"),
         Index("ix_sourcing_items_status", "status"),
         Index("ix_sourcing_items_scraped_at", "scraped_at"),
+        Index("ix_sourcing_items_posted_at", "posted_at"),
         Index("ix_sourcing_items_run_id", "last_run_id"),
     )
 
@@ -71,6 +72,7 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     converted_purchase_id: Mapped[uuid.UUID | None] = mapped_column(

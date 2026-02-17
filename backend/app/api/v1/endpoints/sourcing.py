@@ -178,6 +178,8 @@ async def list_sourcing_items(
         stmt = stmt.order_by(SourcingItem.estimated_profit_cents.desc().nullslast(), SourcingItem.scraped_at.desc())
     elif sort_by == "roi":
         stmt = stmt.order_by(SourcingItem.estimated_roi_bp.desc().nullslast(), SourcingItem.scraped_at.desc())
+    elif sort_by == "posted_at":
+        stmt = stmt.order_by(SourcingItem.posted_at.desc().nullslast(), SourcingItem.scraped_at.desc())
     else:
         stmt = stmt.order_by(SourcingItem.scraped_at.desc())
 
@@ -201,6 +203,7 @@ async def list_sourcing_items(
                 estimated_roi_bp=item.estimated_roi_bp,
                 status=item.status,
                 scraped_at=item.scraped_at,
+                posted_at=item.posted_at,
                 url=item.url,
                 match_count=int(match_count),
             )
@@ -259,6 +262,7 @@ async def get_sourcing_item(item_id: uuid.UUID, session: AsyncSession = Depends(
         estimated_profit_cents=item.estimated_profit_cents,
         estimated_roi_bp=item.estimated_roi_bp,
         scraped_at=item.scraped_at,
+        posted_at=item.posted_at,
         analyzed_at=item.analyzed_at,
         url=item.url,
         matches=matches,

@@ -11,10 +11,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.core.enums import PurchaseKind, SourcingPlatform, SourcingStatus
+from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.master_product import MasterProduct, master_product_sku_from_id
 from app.models.purchase import Purchase
 from app.models.sourcing import SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
 from app.services.sourcing import (
+    _parse_kleinanzeigen_posted_at,
     convert_item_to_purchase,
     execute_sourcing_run,
     load_resolved_settings,
@@ -204,3 +206,119 @@ async def test_update_settings_supports_value_json_and_unique_identity(db_sessio
     db_session.add(item2)
     with pytest.raises(IntegrityError):
         await db_session.commit()
+
+
+def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
+    now = datetime(2026, 2, 17, 8, 0, tzinfo=UTC)
+
+    today = _parse_kleinanzeigen_posted_at("Heute, 07:53", now=now)
+    assert today is not None
+    assert today == datetime(2026, 2, 17, 6, 53, tzinfo=UTC)
+
+    yesterday = _parse_kleinanzeigen_posted_at("Gestern, 23:10", now=now)
+    assert yesterday is not None
+    assert yesterday == datetime(2026, 2, 16, 22, 10, tzinfo=UTC)
+
+    absolute = _parse_kleinanzeigen_posted_at("13.02.2026, 21:30", now=now)
+    assert absolute is not None
+    assert absolute == datetime(2026, 2, 13, 20, 30, tzinfo=UTC)
+
+    absolute_no_time = _parse_kleinanzeigen_posted_at("13.02.2026", now=now)
+    assert absolute_no_time is not None
+    assert absolute_no_time == datetime(2026, 2, 12, 23, 0, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_execute_sourcing_run_enriches_detail_payload(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with session_factory() as session:
+        mp_id = uuid.uuid4()
+        session.add(
+            MasterProduct(
+                id=mp_id,
+                sku=master_product_sku_from_id(mp_id),
+                kind="GAME",
+                title="Nintendo Switch Konsole",
+                platform="SWITCH",
+                region="EU",
+                variant="",
+                asin="B08NINTENDO",
+            )
+        )
+        await session.flush()
+        session.add(
+            AmazonProductMetricsLatest(
+                master_product_id=mp_id,
+                last_attempt_at=datetime.now(UTC),
+                last_success_at=datetime.now(UTC),
+                rank_overall=1500,
+                price_used_good_cents=10000,
+                price_used_acceptable_cents=9800,
+            )
+        )
+        await session.commit()
+
+    async def _fake_scrape_fetch(*, app_settings, search_terms):  # noqa: ARG001
+        return {
+            "blocked": False,
+            "error_type": None,
+            "error_message": None,
+            "listings": [
+                {
+                    "external_id": "detail-1",
+                    "title": "Nintendo Switch Konsole",
+                    "description": "Kurztext",
+                    "price_cents": 1000,
+                    "url": "https://www.kleinanzeigen.de/s-anzeige/nintendo-switch-konsole/123-279-1",
+                    "image_urls": ["https://img.kleinanzeigen.de/a.jpg"],
+                    "primary_image_url": "https://img.kleinanzeigen.de/a.jpg",
+                    "location_zip": "10115",
+                    "location_city": "Berlin",
+                    "seller_type": "private",
+                    "posted_at_text": "Heute, 07:53",
+                }
+            ],
+        }
+
+    async def _fake_detail_fetch(*, app_settings, url):  # noqa: ARG001
+        return {
+            "blocked": False,
+            "error_type": None,
+            "error_message": None,
+            "listing": {
+                "description_full": "Lange Beschreibung mit Lieferumfang und Zustand.",
+                "posted_at_text": "Heute, 07:53",
+                "image_urls": [
+                    "https://img.kleinanzeigen.de/a.jpg",
+                    "https://img.kleinanzeigen.de/b.jpg",
+                ],
+                "image_count": 2,
+                "shipping_possible": True,
+                "direct_buy": False,
+                "view_count": 321,
+                "seller_name": "Max Mustermann",
+            },
+        }
+
+    monkeypatch.setattr("app.services.sourcing.SessionLocal", session_factory)
+    monkeypatch.setattr("app.services.sourcing._scraper_fetch", _fake_scrape_fetch)
+    monkeypatch.setattr("app.services.sourcing._scraper_fetch_listing_detail", _fake_detail_fetch)
+
+    result = await execute_sourcing_run(force=True, search_terms=["nintendo"], trigger="test")
+    assert result.items_new == 1
+
+    async with session_factory() as session:
+        item = (
+            await session.execute(
+                select(SourcingItem).where(SourcingItem.external_id == "detail-1")
+            )
+        ).scalar_one()
+        assert item.status == SourcingStatus.READY
+        assert item.description == "Lange Beschreibung mit Lieferumfang und Zustand."
+        assert item.posted_at is not None
+        assert item.image_urls is not None and len(item.image_urls) == 2
+        assert isinstance(item.raw_data, dict)
+        assert item.raw_data.get("view_count") == 321
+        assert item.raw_data.get("seller_name") == "Max Mustermann"
