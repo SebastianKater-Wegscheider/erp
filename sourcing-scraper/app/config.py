@@ -20,7 +20,7 @@ class Settings(BaseSettings):
         alias="SOURCING_SCRAPER_AGENT_BROWSER_SESSION_NAME",
     )
     sourcing_scraper_timeout_seconds: int = Field(60, alias="SOURCING_SCRAPER_TIMEOUT_SECONDS")
-    sourcing_scraper_max_pages_per_term: int = Field(1, alias="SOURCING_SCRAPER_MAX_PAGES_PER_TERM")
+    sourcing_scraper_max_pages_per_term: int = Field(3, alias="SOURCING_SCRAPER_MAX_PAGES_PER_TERM")
     sourcing_scraper_min_delay_seconds: float = Field(2.0, alias="SOURCING_SCRAPER_MIN_DELAY_SECONDS")
     sourcing_scraper_max_delay_seconds: float = Field(5.0, alias="SOURCING_SCRAPER_MAX_DELAY_SECONDS")
 

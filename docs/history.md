@@ -463,3 +463,5 @@
 ### Offene Betriebsbeobachtung
 - Compose-Image `ghcr.io/zackiles/agent-browser:latest` ist aktuell per Registry denied. Runtime bleibt deshalb robust durch CLI/Fallback-Pfad, bis Sidecar-Image verifizierbar verfuegbar ist.
 - Compose-Hardening: `agent-browser` als optionales Profil markiert, damit `docker compose up -d --build` trotz zeitweiser GHCR-Denials lauffaehig bleibt.
+- Folgeentscheidung (Live-Audit): Default-Pagination wird erhoeht und Listing-Metadaten (Posted-Time, Versand/Direktkauf, VB/Altpreis, Bildanzahl) werden bereits im Scrape normalisiert, da die bisherigen Snippet-Daten fuer belastbare Kaufentscheidungen zu duenn sind.
+- Umsetzung (Live): Default `SOURCING_SCRAPER_MAX_PAGES_PER_TERM` auf 3 erhoeht; Listing-Rawdata erweitert um `posted_at_text`, `shipping_possible`, `direct_buy`, `price_negotiable`, `old_price_cents`, `image_count` fuer bessere Kaufentscheidung im Feed/Detail.

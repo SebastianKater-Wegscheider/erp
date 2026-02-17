@@ -113,6 +113,31 @@ def _normalize_listing(entry: dict) -> dict | None:
     if primary_image_url and primary_image_url not in normalized_images:
         normalized_images.insert(0, primary_image_url)
 
+    old_price_cents = None
+    if isinstance(entry.get("old_price_cents"), int):
+        old_price_cents = int(entry["old_price_cents"])
+    elif entry.get("old_price_raw") is not None:
+        old_price_cents = _parse_price_cents(str(entry.get("old_price_raw") or ""))
+
+    def _maybe_bool(value: object) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if text in {"true", "1", "yes", "ja"}:
+            return True
+        if text in {"false", "0", "no", "nein"}:
+            return False
+        return None
+
+    image_count = None
+    if isinstance(entry.get("image_count"), int):
+        image_count = int(entry["image_count"])
+    elif entry.get("image_count"):
+        m = re.search(r"\d+", str(entry["image_count"]))
+        image_count = int(m.group(0)) if m else None
+
     return {
         "external_id": external_id,
         "title": title,
@@ -124,6 +149,12 @@ def _normalize_listing(entry: dict) -> dict | None:
         "location_zip": location_zip,
         "location_city": location_city,
         "seller_type": str(entry.get("seller_type") or "private").strip().lower() or "private",
+        "posted_at_text": str(entry.get("posted_at_text") or "").strip() or None,
+        "shipping_possible": _maybe_bool(entry.get("shipping_possible")),
+        "direct_buy": _maybe_bool(entry.get("direct_buy")),
+        "price_negotiable": _maybe_bool(entry.get("price_negotiable")),
+        "old_price_cents": old_price_cents,
+        "image_count": image_count,
     }
 
 
