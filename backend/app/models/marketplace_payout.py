@@ -20,7 +20,7 @@ class MarketplacePayout(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     channel: Mapped[OrderChannel] = mapped_column(order_channel_enum, nullable=False)
     external_payout_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    payout_date: Mapped[date] = mapped_column(Date, nullable=False)
+    payout_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     net_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
 
     ledger_entry_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -29,4 +29,3 @@ class MarketplacePayout(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         unique=True,
     )
-

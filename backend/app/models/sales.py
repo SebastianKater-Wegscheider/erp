@@ -28,7 +28,7 @@ class SalesOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cash_recognition_enum, nullable=False, default=CashRecognition.AT_FINALIZE
     )
 
-    external_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    external_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
 
     buyer_name: Mapped[str] = mapped_column(String(200), nullable=False)
     buyer_address: Mapped[str | None] = mapped_column(Text, nullable=True)

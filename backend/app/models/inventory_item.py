@@ -37,7 +37,13 @@ def _item_code_default(context) -> str:
 class InventoryItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "inventory_items"
 
-    item_code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, default=_item_code_default)
+    item_code: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        index=True,
+        unique=True,
+        default=_item_code_default,
+    )
 
     master_product_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("master_products.id"), nullable=False)
     purchase_line_id: Mapped[uuid.UUID | None] = mapped_column(

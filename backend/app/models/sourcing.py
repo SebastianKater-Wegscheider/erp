@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import SourcingPlatform, SourcingStatus
@@ -54,7 +54,7 @@ class SourcingAgentQuery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     max_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     detail_enrichment_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    options_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    options_json: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
 
     agent: Mapped[SourcingAgent] = relationship(back_populates="queries")
     runs: Mapped[list["SourcingRun"]] = relationship(back_populates="agent_query")
@@ -88,7 +88,7 @@ class SourcingRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     items_new: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     items_ready: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    search_terms: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    search_terms: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     items: Mapped[list["SourcingItem"]] = relationship(back_populates="run")
     agent: Mapped[SourcingAgent | None] = relationship(back_populates="runs")
@@ -104,6 +104,13 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_sourcing_items_posted_at", "posted_at"),
         Index("ix_sourcing_items_run_id", "last_run_id"),
         Index("ix_sourcing_items_auction_end_at", "auction_end_at"),
+        Index(
+            "ix_sourcing_items_ebay_ready_auction_end",
+            "platform",
+            "status",
+            "auction_end_at",
+            postgresql_where=text("platform = 'EBAY_DE'"),
+        ),
     )
 
     platform: Mapped[SourcingPlatform] = mapped_column(sourcing_platform_enum, nullable=False)
@@ -117,7 +124,7 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     location_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     seller_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    image_urls: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    image_urls: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     primary_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[SourcingStatus] = mapped_column(sourcing_status_enum, nullable=False, default=SourcingStatus.NEW)
@@ -128,14 +135,14 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     estimated_roi_bp: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_purchase_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auction_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auction_current_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     auction_bid_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bidbag_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    bidbag_last_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    bidbag_last_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     converted_purchase_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -210,7 +217,7 @@ class SourcingSetting(Base):
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value_int: Mapped[int | None] = mapped_column(Integer, nullable=True)
     value_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    value_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    value_json: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
