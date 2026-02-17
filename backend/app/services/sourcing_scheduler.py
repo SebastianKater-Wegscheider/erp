@@ -5,11 +5,14 @@ import logging
 import os
 import random
 import socket
+import uuid
 from datetime import timedelta
 
-from sqlalchemy import text
+from sqlalchemy import or_, select, text
+from sqlalchemy.orm import selectinload
 
 from app.core.config import Settings
+from app.models.sourcing import SourcingAgent
 from app.services.sourcing import execute_sourcing_run, utcnow
 
 
@@ -60,7 +63,7 @@ async def sourcing_scheduler_loop(settings: Settings) -> None:
 
     while True:
         try:
-            if not settings.sourcing_enabled or not settings.sourcing_kleinanzeigen_enabled:
+            if not settings.sourcing_enabled:
                 await asyncio.sleep(tick)
                 continue
 
@@ -79,15 +82,25 @@ async def sourcing_scheduler_loop(settings: Settings) -> None:
                 await asyncio.sleep(tick)
                 continue
 
-            result = await execute_sourcing_run(
-                force=False,
-                search_terms=None,
-                trigger="scheduler",
-                app_settings=settings,
-            )
-
-            if result.status in {"error", "blocked"}:
-                cooldown_until = utcnow() + timedelta(seconds=max(30, settings.sourcing_error_backoff_seconds))
+            due_agents = await _load_due_agents()
+            if due_agents:
+                for agent in due_agents:
+                    try:
+                        await _run_agent_queries(agent=agent, settings=settings)
+                        await _mark_agent_run_success(agent_id=agent.id)
+                    except Exception as exc:
+                        logger.exception("Sourcing agent run failed for %s", agent.id)
+                        await _mark_agent_run_error(agent_id=agent.id, error=exc)
+                        cooldown_until = utcnow() + timedelta(seconds=max(30, settings.sourcing_error_backoff_seconds))
+            elif settings.sourcing_kleinanzeigen_enabled and not await _has_enabled_agents():
+                result = await execute_sourcing_run(
+                    force=False,
+                    search_terms=None,
+                    trigger="scheduler",
+                    app_settings=settings,
+                )
+                if result.status in {"error", "blocked"}:
+                    cooldown_until = utcnow() + timedelta(seconds=max(30, settings.sourcing_error_backoff_seconds))
 
         except asyncio.CancelledError:
             raise
@@ -105,3 +118,76 @@ def _get_session_local():
 
         SessionLocal = _SessionLocal
     return SessionLocal
+
+
+async def _load_due_agents() -> list[SourcingAgent]:
+    now = utcnow()
+    async with _get_session_local()() as session:
+        rows = (
+            await session.execute(
+                select(SourcingAgent)
+                .where(
+                    SourcingAgent.enabled.is_(True),
+                    or_(SourcingAgent.next_run_at.is_(None), SourcingAgent.next_run_at <= now),
+                )
+                .options(selectinload(SourcingAgent.queries))
+                .order_by(SourcingAgent.next_run_at.asc().nullsfirst(), SourcingAgent.created_at.asc())
+            )
+        ).scalars().all()
+    return list(rows)
+
+
+async def _has_enabled_agents() -> bool:
+    async with _get_session_local()() as session:
+        agent_id = (
+            await session.execute(
+                select(SourcingAgent.id)
+                .where(SourcingAgent.enabled.is_(True))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    return agent_id is not None
+
+
+async def _run_agent_queries(*, agent: SourcingAgent, settings: Settings) -> None:
+    enabled_queries = [q for q in agent.queries if q.enabled]
+    for query in enabled_queries:
+        options = query.options_json if isinstance(query.options_json, dict) else {}
+        await execute_sourcing_run(
+            force=True,
+            search_terms=[query.keyword],
+            trigger="scheduler",
+            app_settings=settings,
+            platform=query.platform,
+            options=options,
+            agent_id=agent.id,
+            agent_query_id=query.id,
+            max_pages=query.max_pages,
+            detail_enrichment_enabled=query.detail_enrichment_enabled,
+        )
+
+
+async def _mark_agent_run_success(*, agent_id: uuid.UUID) -> None:
+    now = utcnow()
+    async with _get_session_local()() as session:
+        async with session.begin():
+            agent = await session.get(SourcingAgent, agent_id)
+            if agent is None:
+                return
+            agent.last_run_at = now
+            agent.next_run_at = now + timedelta(seconds=max(3600, int(agent.interval_seconds)))
+            agent.last_error_type = None
+            agent.last_error_message = None
+
+
+async def _mark_agent_run_error(*, agent_id: uuid.UUID, error: Exception) -> None:
+    now = utcnow()
+    async with _get_session_local()() as session:
+        async with session.begin():
+            agent = await session.get(SourcingAgent, agent_id)
+            if agent is None:
+                return
+            agent.last_run_at = now
+            agent.next_run_at = now + timedelta(seconds=max(3600, int(agent.interval_seconds)))
+            agent.last_error_type = type(error).__name__
+            agent.last_error_message = str(error)

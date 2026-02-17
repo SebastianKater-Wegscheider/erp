@@ -2,19 +2,27 @@ from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
-from datetime import UTC
+from datetime import UTC, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.core.enums import SourcingStatus
+from app.core.enums import SourcingPlatform, SourcingStatus
 from app.core.security import require_basic_auth
-from app.models.sourcing import SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
+from app.models.sourcing import SourcingAgent, SourcingAgentQuery, SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
 from app.schemas.sourcing import (
+    SourcingAgentCreateIn,
+    SourcingAgentOut,
+    SourcingAgentPatchIn,
+    SourcingAgentQueryOut,
+    SourcingAgentRunOut,
+    SourcingAgentRunQueryOut,
+    SourcingBidbagHandoffOut,
     SourcingConversionPreviewIn,
     SourcingConversionPreviewOut,
     SourcingConvertIn,
@@ -35,12 +43,14 @@ from app.schemas.sourcing import (
     SourcingStatsOut,
 )
 from app.services.sourcing import (
+    build_bidbag_handoff,
     build_conversion_preview,
     convert_item_to_purchase,
     discard_item,
     execute_sourcing_run,
     load_resolved_settings,
     recalculate_item_from_matches,
+    utcnow,
     update_settings_values,
 )
 
@@ -69,6 +79,10 @@ async def trigger_sourcing_scrape(data: SourcingScrapeTriggerIn) -> SourcingScra
         search_terms=data.search_terms,
         trigger="manual",
         app_settings=settings,
+        platform=data.platform,
+        options=data.options,
+        agent_id=data.agent_id,
+        agent_query_id=data.agent_query_id,
     )
     return SourcingScrapeTriggerOut(
         run_id=result.run_id,
@@ -158,6 +172,8 @@ async def sourcing_stats(session: AsyncSession = Depends(get_session)) -> Sourci
 @router.get("/items", response_model=SourcingItemListResponse)
 async def list_sourcing_items(
     status: SourcingStatus | None = None,
+    platform: SourcingPlatform | None = None,
+    agent_id: uuid.UUID | None = None,
     min_profit_cents: int | None = Query(default=None, ge=0),
     sort_by: str = Query(default="scraped_at"),
     limit: int = Query(default=50, ge=1, le=200),
@@ -170,6 +186,12 @@ async def list_sourcing_items(
     if status is not None:
         stmt = stmt.where(SourcingItem.status == status)
         count_stmt = count_stmt.where(SourcingItem.status == status)
+    if platform is not None:
+        stmt = stmt.where(SourcingItem.platform == platform)
+        count_stmt = count_stmt.where(SourcingItem.platform == platform)
+    if agent_id is not None:
+        stmt = stmt.where(SourcingItem.agent_id == agent_id)
+        count_stmt = count_stmt.where(SourcingItem.agent_id == agent_id)
     if min_profit_cents is not None:
         stmt = stmt.where(SourcingItem.estimated_profit_cents >= min_profit_cents)
         count_stmt = count_stmt.where(SourcingItem.estimated_profit_cents >= min_profit_cents)
@@ -195,12 +217,19 @@ async def list_sourcing_items(
             SourcingItemListOut(
                 id=item.id,
                 platform=item.platform,
+                agent_id=item.agent_id,
+                agent_query_id=item.agent_query_id,
                 title=item.title,
                 price_cents=item.price_cents,
                 location_city=item.location_city,
                 primary_image_url=item.primary_image_url,
                 estimated_profit_cents=item.estimated_profit_cents,
                 estimated_roi_bp=item.estimated_roi_bp,
+                auction_end_at=item.auction_end_at,
+                auction_current_price_cents=item.auction_current_price_cents,
+                auction_bid_count=item.auction_bid_count,
+                max_purchase_price_cents=item.max_purchase_price_cents,
+                bidbag_sent_at=item.bidbag_sent_at,
                 status=item.status,
                 scraped_at=item.scraped_at,
                 posted_at=item.posted_at,
@@ -250,6 +279,8 @@ async def get_sourcing_item(item_id: uuid.UUID, session: AsyncSession = Depends(
     return SourcingItemDetailOut(
         id=item.id,
         platform=item.platform,
+        agent_id=item.agent_id,
+        agent_query_id=item.agent_query_id,
         title=item.title,
         description=item.description,
         price_cents=item.price_cents,
@@ -261,6 +292,12 @@ async def get_sourcing_item(item_id: uuid.UUID, session: AsyncSession = Depends(
         estimated_revenue_cents=item.estimated_revenue_cents,
         estimated_profit_cents=item.estimated_profit_cents,
         estimated_roi_bp=item.estimated_roi_bp,
+        auction_end_at=item.auction_end_at,
+        auction_current_price_cents=item.auction_current_price_cents,
+        auction_bid_count=item.auction_bid_count,
+        max_purchase_price_cents=item.max_purchase_price_cents,
+        bidbag_sent_at=item.bidbag_sent_at,
+        bidbag_last_payload=item.bidbag_last_payload if isinstance(item.bidbag_last_payload, dict) else None,
         scraped_at=item.scraped_at,
         posted_at=item.posted_at,
         analyzed_at=item.analyzed_at,
@@ -395,6 +432,281 @@ async def discard_sourcing_item(
 
     async with _begin_tx(session):
         await discard_item(session=session, actor=actor, item=item, reason=data.reason)
+
+
+@router.post("/items/{item_id}/bidbag-handoff", response_model=SourcingBidbagHandoffOut)
+async def bidbag_handoff(
+    item_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _actor: str = Depends(require_basic_auth),
+) -> SourcingBidbagHandoffOut:
+    item = await session.get(SourcingItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    try:
+        async with _begin_tx(session):
+            return await build_bidbag_handoff(session=session, item=item)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/agents", response_model=list[SourcingAgentOut])
+async def list_sourcing_agents(session: AsyncSession = Depends(get_session)) -> list[SourcingAgentOut]:
+    rows = (
+        await session.execute(
+            select(SourcingAgent)
+            .options(selectinload(SourcingAgent.queries))
+            .order_by(SourcingAgent.created_at.desc())
+        )
+    ).scalars().all()
+    return [
+        SourcingAgentOut(
+            id=row.id,
+            name=row.name,
+            enabled=row.enabled,
+            interval_seconds=row.interval_seconds,
+            last_run_at=row.last_run_at,
+            next_run_at=row.next_run_at,
+            last_error_type=row.last_error_type,
+            last_error_message=row.last_error_message,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            queries=[
+                SourcingAgentQueryOut(
+                    id=query.id,
+                    platform=query.platform,
+                    keyword=query.keyword,
+                    enabled=query.enabled,
+                    max_pages=query.max_pages,
+                    detail_enrichment_enabled=query.detail_enrichment_enabled,
+                    options_json=query.options_json,
+                    created_at=query.created_at,
+                    updated_at=query.updated_at,
+                )
+                for query in sorted(row.queries, key=lambda q: (q.created_at, q.keyword))
+            ],
+        )
+        for row in rows
+    ]
+
+
+@router.post("/agents", response_model=SourcingAgentOut)
+async def create_sourcing_agent(
+    data: SourcingAgentCreateIn,
+    session: AsyncSession = Depends(get_session),
+    _actor: str = Depends(require_basic_auth),
+) -> SourcingAgentOut:
+    try:
+        async with _begin_tx(session):
+            next_run_at = utcnow() if data.enabled else None
+            agent = SourcingAgent(
+                name=data.name.strip(),
+                enabled=data.enabled,
+                interval_seconds=int(data.interval_seconds),
+                next_run_at=next_run_at,
+            )
+            session.add(agent)
+            await session.flush()
+
+            for query in data.queries:
+                session.add(
+                    SourcingAgentQuery(
+                        agent_id=agent.id,
+                        platform=query.platform,
+                        keyword=query.keyword.strip(),
+                        enabled=query.enabled,
+                        max_pages=int(query.max_pages),
+                        detail_enrichment_enabled=query.detail_enrichment_enabled,
+                        options_json=query.options_json,
+                    )
+                )
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Duplicate query for platform+keyword") from exc
+
+    row = (
+        await session.execute(
+            select(SourcingAgent)
+            .where(SourcingAgent.id == agent.id)
+            .options(selectinload(SourcingAgent.queries))
+        )
+    ).scalar_one()
+    return SourcingAgentOut(
+        id=row.id,
+        name=row.name,
+        enabled=row.enabled,
+        interval_seconds=row.interval_seconds,
+        last_run_at=row.last_run_at,
+        next_run_at=row.next_run_at,
+        last_error_type=row.last_error_type,
+        last_error_message=row.last_error_message,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        queries=[
+            SourcingAgentQueryOut(
+                id=query.id,
+                platform=query.platform,
+                keyword=query.keyword,
+                enabled=query.enabled,
+                max_pages=query.max_pages,
+                detail_enrichment_enabled=query.detail_enrichment_enabled,
+                options_json=query.options_json,
+                created_at=query.created_at,
+                updated_at=query.updated_at,
+            )
+            for query in sorted(row.queries, key=lambda q: (q.created_at, q.keyword))
+        ],
+    )
+
+
+@router.patch("/agents/{agent_id}", response_model=SourcingAgentOut)
+async def patch_sourcing_agent(
+    agent_id: uuid.UUID,
+    data: SourcingAgentPatchIn,
+    session: AsyncSession = Depends(get_session),
+    _actor: str = Depends(require_basic_auth),
+) -> SourcingAgentOut:
+    row = (
+        await session.execute(
+            select(SourcingAgent)
+            .where(SourcingAgent.id == agent_id)
+            .options(selectinload(SourcingAgent.queries))
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    try:
+        async with _begin_tx(session):
+            if data.name is not None:
+                row.name = data.name.strip()
+            if data.enabled is not None:
+                row.enabled = bool(data.enabled)
+                if row.enabled and row.next_run_at is None:
+                    row.next_run_at = utcnow()
+                if not row.enabled:
+                    row.next_run_at = None
+            if data.interval_seconds is not None:
+                row.interval_seconds = int(data.interval_seconds)
+
+            if data.queries is not None:
+                row.queries.clear()
+                await session.flush()
+                for query in data.queries:
+                    row.queries.append(
+                        SourcingAgentQuery(
+                            agent_id=row.id,
+                            platform=query.platform,
+                            keyword=query.keyword.strip(),
+                            enabled=query.enabled,
+                            max_pages=int(query.max_pages),
+                            detail_enrichment_enabled=query.detail_enrichment_enabled,
+                            options_json=query.options_json,
+                        )
+                    )
+    except IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Duplicate query for platform+keyword") from exc
+
+    refreshed = (
+        await session.execute(
+            select(SourcingAgent)
+            .where(SourcingAgent.id == agent_id)
+            .options(selectinload(SourcingAgent.queries))
+        )
+    ).scalar_one()
+    return SourcingAgentOut(
+        id=refreshed.id,
+        name=refreshed.name,
+        enabled=refreshed.enabled,
+        interval_seconds=refreshed.interval_seconds,
+        last_run_at=refreshed.last_run_at,
+        next_run_at=refreshed.next_run_at,
+        last_error_type=refreshed.last_error_type,
+        last_error_message=refreshed.last_error_message,
+        created_at=refreshed.created_at,
+        updated_at=refreshed.updated_at,
+        queries=[
+            SourcingAgentQueryOut(
+                id=query.id,
+                platform=query.platform,
+                keyword=query.keyword,
+                enabled=query.enabled,
+                max_pages=query.max_pages,
+                detail_enrichment_enabled=query.detail_enrichment_enabled,
+                options_json=query.options_json,
+                created_at=query.created_at,
+                updated_at=query.updated_at,
+            )
+            for query in sorted(refreshed.queries, key=lambda q: (q.created_at, q.keyword))
+        ],
+    )
+
+
+@router.delete("/agents/{agent_id}", status_code=204)
+async def delete_sourcing_agent(
+    agent_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _actor: str = Depends(require_basic_auth),
+) -> None:
+    row = await session.get(SourcingAgent, agent_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    async with _begin_tx(session):
+        await session.delete(row)
+
+
+@router.post("/agents/{agent_id}/run", response_model=SourcingAgentRunOut)
+async def run_sourcing_agent_now(
+    agent_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _actor: str = Depends(require_basic_auth),
+) -> SourcingAgentRunOut:
+    agent = (
+        await session.execute(
+            select(SourcingAgent)
+            .where(SourcingAgent.id == agent_id)
+            .options(selectinload(SourcingAgent.queries))
+        )
+    ).scalar_one_or_none()
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    started = utcnow()
+    results: list[SourcingAgentRunQueryOut] = []
+    app_settings = get_settings()
+    for query in [q for q in agent.queries if q.enabled]:
+        run_result = await execute_sourcing_run(
+            force=True,
+            search_terms=[query.keyword],
+            trigger="manual-agent",
+            app_settings=app_settings,
+            platform=query.platform,
+            options=query.options_json if isinstance(query.options_json, dict) else None,
+            agent_id=agent.id,
+            agent_query_id=query.id,
+            max_pages=query.max_pages,
+            detail_enrichment_enabled=query.detail_enrichment_enabled,
+        )
+        results.append(
+            SourcingAgentRunQueryOut(
+                agent_query_id=query.id,
+                run_id=run_result.run_id,
+                status=run_result.status,
+                items_scraped=run_result.items_scraped,
+                items_new=run_result.items_new,
+                items_ready=run_result.items_ready,
+            )
+        )
+
+    async with _begin_tx(session):
+        agent.last_run_at = utcnow()
+        agent.next_run_at = agent.last_run_at
+        if agent.interval_seconds:
+            agent.next_run_at = agent.last_run_at + timedelta(seconds=max(3600, int(agent.interval_seconds)))
+        agent.last_error_type = None
+        agent.last_error_message = None
+
+    return SourcingAgentRunOut(agent_id=agent.id, run_started_at=started, results=results)
 
 
 @router.get("/settings", response_model=list[SourcingSettingOut])

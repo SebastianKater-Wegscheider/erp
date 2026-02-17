@@ -12,6 +12,10 @@ from app.core.enums import SourcingPlatform, SourcingStatus
 class SourcingScrapeTriggerIn(BaseModel):
     force: bool = False
     search_terms: list[str] | None = None
+    platform: SourcingPlatform | None = None
+    options: dict[str, Any] | None = None
+    agent_id: UUID | None = None
+    agent_query_id: UUID | None = None
 
 
 class SourcingScrapeTriggerOut(BaseModel):
@@ -45,12 +49,19 @@ class SourcingItemListOut(BaseModel):
 
     id: UUID
     platform: SourcingPlatform
+    agent_id: UUID | None
+    agent_query_id: UUID | None
     title: str
     price_cents: int
     location_city: str | None
     primary_image_url: str | None
     estimated_profit_cents: int | None
     estimated_roi_bp: int | None
+    auction_end_at: datetime | None
+    auction_current_price_cents: int | None
+    auction_bid_count: int | None
+    max_purchase_price_cents: int | None
+    bidbag_sent_at: datetime | None
     status: SourcingStatus
     scraped_at: datetime
     posted_at: datetime | None
@@ -94,6 +105,8 @@ class SourcingItemDetailOut(BaseModel):
 
     id: UUID
     platform: SourcingPlatform
+    agent_id: UUID | None
+    agent_query_id: UUID | None
     title: str
     description: str | None
     price_cents: int
@@ -105,6 +118,12 @@ class SourcingItemDetailOut(BaseModel):
     estimated_revenue_cents: int | None
     estimated_profit_cents: int | None
     estimated_roi_bp: int | None
+    auction_end_at: datetime | None
+    auction_current_price_cents: int | None
+    auction_bid_count: int | None
+    max_purchase_price_cents: int | None
+    bidbag_sent_at: datetime | None
+    bidbag_last_payload: dict[str, Any] | None
     scraped_at: datetime
     posted_at: datetime | None
     analyzed_at: datetime | None
@@ -162,6 +181,13 @@ class SourcingDiscardIn(BaseModel):
     reason: str | None = None
 
 
+class SourcingBidbagHandoffOut(BaseModel):
+    item_id: UUID
+    deep_link_url: str | None
+    payload: dict[str, Any]
+    sent_at: datetime
+
+
 class SourcingSettingOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -181,3 +207,71 @@ class SourcingSettingUpdateValue(BaseModel):
 
 class SourcingSettingsUpdateIn(BaseModel):
     values: dict[str, SourcingSettingUpdateValue]
+
+
+class SourcingAgentQueryIn(BaseModel):
+    platform: SourcingPlatform
+    keyword: str = Field(min_length=1, max_length=200)
+    enabled: bool = True
+    max_pages: int = Field(default=3, ge=1, le=20)
+    detail_enrichment_enabled: bool = True
+    options_json: dict[str, Any] | list[Any] | None = None
+
+
+class SourcingAgentCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    enabled: bool = True
+    interval_seconds: int = Field(default=21600, ge=3600)
+    queries: list[SourcingAgentQueryIn] = Field(default_factory=list)
+
+
+class SourcingAgentPatchIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    enabled: bool | None = None
+    interval_seconds: int | None = Field(default=None, ge=3600)
+    queries: list[SourcingAgentQueryIn] | None = None
+
+
+class SourcingAgentQueryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    platform: SourcingPlatform
+    keyword: str
+    enabled: bool
+    max_pages: int
+    detail_enrichment_enabled: bool
+    options_json: dict[str, Any] | list[Any] | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SourcingAgentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    enabled: bool
+    interval_seconds: int
+    last_run_at: datetime | None
+    next_run_at: datetime | None
+    last_error_type: str | None
+    last_error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+    queries: list[SourcingAgentQueryOut] = Field(default_factory=list)
+
+
+class SourcingAgentRunQueryOut(BaseModel):
+    agent_query_id: UUID
+    run_id: UUID
+    status: str
+    items_scraped: int
+    items_new: int
+    items_ready: int
+
+
+class SourcingAgentRunOut(BaseModel):
+    agent_id: UUID
+    run_started_at: datetime
+    results: list[SourcingAgentRunQueryOut] = Field(default_factory=list)

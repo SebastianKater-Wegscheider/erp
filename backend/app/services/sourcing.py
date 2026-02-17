@@ -21,7 +21,7 @@ from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.master_product import MasterProduct
 from app.models.sourcing import SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
 from app.schemas.purchase import PurchaseCreate, PurchaseLineCreate
-from app.schemas.sourcing import SourcingConversionLineOut, SourcingConversionPreviewOut, SourcingConvertOut
+from app.schemas.sourcing import SourcingBidbagHandoffOut, SourcingConversionLineOut, SourcingConversionPreviewOut, SourcingConvertOut
 from app.services.audit import audit_log
 from app.services.purchases import create_purchase, normalize_source_platform_label
 from app.services.target_pricing import fba_payout_cents
@@ -61,6 +61,8 @@ class _ResolvedSettings:
     scrape_interval_seconds: int
     handling_cost_per_item_cents: int
     shipping_cost_cents: int
+    ebay_bid_buffer_cents: int
+    bidbag_deeplink_template: str | None
     search_terms: list[str]
 
 
@@ -121,12 +123,49 @@ def _to_str_list(raw: Any, fallback: list[str]) -> list[str]:
     return fallback
 
 
+def _to_dict(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return {str(k): v for k, v in raw.items()}
+    return {}
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _platform_scraper_name(platform: SourcingPlatform) -> str:
+    if platform in {SourcingPlatform.KLEINANZEIGEN, SourcingPlatform.EBAY_KLEINANZEIGEN}:
+        return "kleinanzeigen"
+    if platform == SourcingPlatform.EBAY_DE:
+        return "ebay_de"
+    raise ValueError(f"Unsupported sourcing platform: {platform.value}")
+
+
 def _platform_label(platform: SourcingPlatform) -> str:
     if platform == SourcingPlatform.KLEINANZEIGEN:
         return "Kleinanzeigen"
+    if platform == SourcingPlatform.EBAY_DE:
+        return "eBay.de"
     if platform == SourcingPlatform.WILLHABEN:
         return "willhaben.at"
-    return "Kleinanzeigen"
+    return platform.value
 
 
 async def _load_resolved_settings(session: AsyncSession, app_settings: Settings) -> _ResolvedSettings:
@@ -145,6 +184,13 @@ async def _load_resolved_settings(session: AsyncSession, app_settings: Settings)
             return fallback
         return _to_str_list(row.value_json, fallback)
 
+    def text_setting(key: str, default: str | None = None) -> str | None:
+        row = by_key.get(key)
+        if row is None:
+            return default
+        text = str(row.value_text or "").strip()
+        return text or default
+
     return _ResolvedSettings(
         bsr_max_threshold=int_setting("bsr_max_threshold", 50_000),
         price_min_cents=int_setting("price_min_cents", 500),
@@ -155,6 +201,8 @@ async def _load_resolved_settings(session: AsyncSession, app_settings: Settings)
         scrape_interval_seconds=int_setting("scrape_interval_seconds", app_settings.sourcing_default_interval_seconds),
         handling_cost_per_item_cents=int_setting("handling_cost_per_item_cents", 150),
         shipping_cost_cents=int_setting("shipping_cost_cents", 690),
+        ebay_bid_buffer_cents=int_setting("ebay_bid_buffer_cents", 0),
+        bidbag_deeplink_template=text_setting("bidbag_deeplink_template"),
         search_terms=json_setting(
             "search_terms",
             ["videospiele konvolut", "retro spiele sammlung", "nintendo spiele paket"],
@@ -227,11 +275,25 @@ def _parse_kleinanzeigen_posted_at(raw: str | None, *, now: datetime | None = No
     return localized.astimezone(UTC)
 
 
-async def _scraper_fetch(*, app_settings: Settings, search_terms: list[str]) -> dict[str, Any]:
+async def _scraper_fetch(
+    *,
+    app_settings: Settings,
+    platform: SourcingPlatform,
+    search_terms: list[str],
+    options: dict[str, Any] | None = None,
+    max_pages: int | None = None,
+) -> dict[str, Any]:
     timeout = httpx.Timeout(timeout=app_settings.sourcing_scraper_timeout_seconds)
     url = f"{app_settings.sourcing_scraper_base_url.rstrip('/')}/scrape"
+    payload_options = dict(options or {})
+    if isinstance(max_pages, int) and max_pages > 0:
+        payload_options["max_pages"] = int(max_pages)
+    scraper_platform = _platform_scraper_name(platform)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, json={"platform": "kleinanzeigen", "search_terms": search_terms})
+        resp = await client.post(
+            url,
+            json={"platform": scraper_platform, "search_terms": search_terms, "options": payload_options},
+        )
     resp.raise_for_status()
     payload = resp.json()
     if not isinstance(payload, dict):
@@ -239,11 +301,17 @@ async def _scraper_fetch(*, app_settings: Settings, search_terms: list[str]) -> 
     return payload
 
 
-async def _scraper_fetch_listing_detail(*, app_settings: Settings, url: str) -> dict[str, Any]:
+async def _scraper_fetch_listing_detail(
+    *,
+    app_settings: Settings,
+    platform: SourcingPlatform,
+    url: str,
+) -> dict[str, Any]:
     timeout = httpx.Timeout(timeout=app_settings.sourcing_scraper_timeout_seconds)
     endpoint = f"{app_settings.sourcing_scraper_base_url.rstrip('/')}/listing-detail"
+    scraper_platform = _platform_scraper_name(platform)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(endpoint, json={"platform": "kleinanzeigen", "url": url})
+        resp = await client.post(endpoint, json={"platform": scraper_platform, "url": url})
     resp.raise_for_status()
     payload = resp.json()
     if not isinstance(payload, dict):
@@ -290,10 +358,23 @@ def _merge_detail_payload_into_item(*, item: SourcingItem, detail: dict[str, Any
         item.seller_type = detail_seller_type
 
     posted_at_text = str(detail.get("posted_at_text") or "").strip()
-    if posted_at_text:
+    if item.platform == SourcingPlatform.KLEINANZEIGEN and posted_at_text:
         parsed_posted_at = _parse_kleinanzeigen_posted_at(posted_at_text)
         if parsed_posted_at is not None:
             item.posted_at = parsed_posted_at
+
+    detail_auction_price = detail.get("auction_current_price_cents")
+    if isinstance(detail_auction_price, int) and detail_auction_price >= 0:
+        item.auction_current_price_cents = int(detail_auction_price)
+        item.price_cents = int(detail_auction_price)
+
+    detail_bid_count = detail.get("auction_bid_count")
+    if isinstance(detail_bid_count, int) and detail_bid_count >= 0:
+        item.auction_bid_count = int(detail_bid_count)
+
+    parsed_auction_end = _parse_iso_datetime(detail.get("auction_end_at"))
+    if parsed_auction_end is not None:
+        item.auction_end_at = parsed_auction_end
 
     merged_raw = dict(item.raw_data or {})
     for key, value in detail.items():
@@ -317,6 +398,42 @@ def _used_market_price_cents(metrics: AmazonProductMetricsLatest | None) -> int 
     ]
     ints = [int(v) for v in vals if isinstance(v, int)]
     return min(ints) if ints else None
+
+
+def _compute_max_purchase_price_cents(
+    *,
+    revenue_cents: int,
+    cfg: _ResolvedSettings,
+    sellable_count: int,
+) -> int:
+    fixed_costs = int(cfg.shipping_cost_cents) + (int(cfg.handling_cost_per_item_cents) * int(sellable_count))
+    fixed_costs += int(cfg.ebay_bid_buffer_cents)
+
+    min_profit = max(0, int(cfg.profit_min_cents))
+    roi_min = max(0.0, float(cfg.roi_min_bp) / 10_000.0)
+
+    max_by_profit = float(revenue_cents - fixed_costs - min_profit)
+    if roi_min <= 0:
+        max_by_roi = float(revenue_cents - fixed_costs)
+    else:
+        max_by_roi = float(revenue_cents) / (1.0 + roi_min) - float(fixed_costs)
+
+    return max(0, int(math.floor(min(max_by_profit, max_by_roi))))
+
+
+def _render_bidbag_deeplink(template: str, payload: dict[str, Any]) -> str:
+    out = template
+    replacements = {
+        "{listing_url}": str(payload.get("listing_url") or ""),
+        "{title}": str(payload.get("title") or ""),
+        "{external_id}": str(payload.get("external_id") or ""),
+        "{max_bid_eur}": str(payload.get("max_bid_eur") or ""),
+        "{max_bid_cents}": str(payload.get("max_bid_cents") or ""),
+        "{auction_end_iso}": str(payload.get("auction_end_at_iso") or ""),
+    }
+    for key, value in replacements.items():
+        out = out.replace(key, value)
+    return out
 
 
 def _rf_match(title: str, candidates: list[str], score_cutoff: int, limit: int = 10) -> list[tuple[str, int, int]]:
@@ -389,6 +506,7 @@ async def _recalculate_item(
         item.estimated_revenue_cents = 0
         item.estimated_profit_cents = 0
         item.estimated_roi_bp = 0
+        item.max_purchase_price_cents = None
         item.status = SourcingStatus.LOW_VALUE
         item.status_reason = "No sellable items"
         item.analyzed_at = utcnow()
@@ -407,10 +525,26 @@ async def _recalculate_item(
     item.estimated_roi_bp = roi_bp
     item.analyzed_at = utcnow()
 
-    if profit >= cfg.profit_min_cents and roi_bp >= cfg.roi_min_bp:
+    if item.platform == SourcingPlatform.EBAY_DE:
+        max_purchase = _compute_max_purchase_price_cents(
+            revenue_cents=total_revenue_cents,
+            cfg=cfg,
+            sellable_count=sellable_count,
+        )
+        item.max_purchase_price_cents = max_purchase
+        current_bid = int(item.auction_current_price_cents if isinstance(item.auction_current_price_cents, int) else item.price_cents)
+        if max_purchase > current_bid and profit > 0:
+            item.status = SourcingStatus.READY
+            item.status_reason = f"Auction headroom: {(max_purchase - current_bid) / 100:.2f} EUR"
+        else:
+            item.status = SourcingStatus.LOW_VALUE
+            item.status_reason = "Auction current bid exceeds max purchase cap"
+    elif profit >= cfg.profit_min_cents and roi_bp >= cfg.roi_min_bp:
+        item.max_purchase_price_cents = None
         item.status = SourcingStatus.READY
         item.status_reason = f"{sellable_count} sellable item(s)"
     else:
+        item.max_purchase_price_cents = None
         item.status = SourcingStatus.LOW_VALUE
         item.status_reason = f"Profit too low: {profit / 100:.2f} EUR ({roi_bp / 100:.2f}% ROI)"
 
@@ -653,13 +787,20 @@ async def execute_sourcing_run(
     search_terms: list[str] | None,
     trigger: str,
     app_settings: Settings | None = None,
+    platform: SourcingPlatform | None = None,
+    options: dict[str, Any] | None = None,
+    agent_id: uuid.UUID | None = None,
+    agent_query_id: uuid.UUID | None = None,
+    max_pages: int | None = None,
+    detail_enrichment_enabled: bool | None = None,
 ) -> SourcingRunResult:
     app_settings = app_settings or get_settings()
     started_at = utcnow()
+    run_platform = platform or SourcingPlatform.KLEINANZEIGEN
 
     async with _get_session_local()() as session:
         cfg = await _load_resolved_settings(session, app_settings)
-        if not force:
+        if not force and agent_id is None and agent_query_id is None:
             last_run = (
                 await session.execute(select(SourcingRun).order_by(SourcingRun.started_at.desc()).limit(1))
             ).scalar_one_or_none()
@@ -682,11 +823,17 @@ async def execute_sourcing_run(
             cfg = await _load_resolved_settings(session, app_settings)
             terms = cfg.search_terms
 
+    run_options = _to_dict(options)
+    if isinstance(max_pages, int) and max_pages > 0:
+        run_options["max_pages"] = int(max_pages)
+
     async with _get_session_local()() as session:
         async with session.begin():
             run = SourcingRun(
                 trigger=trigger,
-                platform=SourcingPlatform.KLEINANZEIGEN,
+                platform=run_platform,
+                agent_id=agent_id,
+                agent_query_id=agent_query_id,
                 started_at=started_at,
                 ok=False,
                 search_terms=terms,
@@ -702,13 +849,22 @@ async def execute_sourcing_run(
     listings: list[dict[str, Any]] = []
 
     try:
-        payload = await _scraper_fetch(app_settings=app_settings, search_terms=terms)
+        payload = await _scraper_fetch(
+            app_settings=app_settings,
+            platform=run_platform,
+            search_terms=terms,
+            options=run_options,
+            max_pages=max_pages,
+        )
         blocked = bool(payload.get("blocked") is True)
         err_type = str(payload.get("error_type") or "").strip() or None
         err_msg = str(payload.get("error_message") or "").strip() or None
         raw_listings = payload.get("listings")
         if isinstance(raw_listings, list):
             listings = [entry for entry in raw_listings if isinstance(entry, dict)]
+    except ValueError as exc:
+        err_type = "unsupported_platform"
+        err_msg = str(exc)
     except Exception as exc:
         err_type = "network"
         err_msg = str(exc)
@@ -748,7 +904,7 @@ async def execute_sourcing_run(
                 existing = (
                     await session.execute(
                         select(SourcingItem.id).where(
-                            SourcingItem.platform == SourcingPlatform.KLEINANZEIGEN,
+                            SourcingItem.platform == run_platform,
                             SourcingItem.external_id == external_id,
                         )
                     )
@@ -757,7 +913,7 @@ async def execute_sourcing_run(
                     continue
 
                 item = SourcingItem(
-                    platform=SourcingPlatform.KLEINANZEIGEN,
+                    platform=run_platform,
                     external_id=external_id,
                     url=str(listing.get("url") or "").strip(),
                     title=title,
@@ -771,8 +927,32 @@ async def execute_sourcing_run(
                     else None,
                     primary_image_url=str(listing.get("primary_image_url") or "").strip() or None,
                     raw_data=listing,
-                    posted_at=_parse_kleinanzeigen_posted_at(str(listing.get("posted_at_text") or "").strip() or None),
+                    posted_at=(
+                        _parse_kleinanzeigen_posted_at(str(listing.get("posted_at_text") or "").strip() or None)
+                        if run_platform == SourcingPlatform.KLEINANZEIGEN
+                        else None
+                    ),
+                    auction_end_at=(
+                        _parse_iso_datetime(listing.get("auction_end_at"))
+                        if run_platform == SourcingPlatform.EBAY_DE
+                        else None
+                    ),
+                    auction_current_price_cents=(
+                        _to_int(
+                            listing.get("auction_current_price_cents"),
+                            _to_int(listing.get("price_cents"), 0),
+                        )
+                        if run_platform == SourcingPlatform.EBAY_DE
+                        else None
+                    ),
+                    auction_bid_count=(
+                        _to_int(listing.get("auction_bid_count"), 0)
+                        if run_platform == SourcingPlatform.EBAY_DE and listing.get("auction_bid_count") is not None
+                        else None
+                    ),
                     last_run_id=run.id,
+                    agent_id=agent_id,
+                    agent_query_id=agent_query_id,
                 )
                 session.add(item)
                 await session.flush()
@@ -788,7 +968,8 @@ async def execute_sourcing_run(
                 )
                 if item.status == SourcingStatus.READY:
                     items_ready += 1
-                if _is_detail_enrichment_candidate(item=item, cfg=cfg):
+                enrich_enabled = True if detail_enrichment_enabled is None else bool(detail_enrichment_enabled)
+                if enrich_enabled and _is_detail_enrichment_candidate(item=item, cfg=cfg):
                     detail_candidates.append((item.id, item.url))
 
             run.items_scraped = len(listings)
@@ -807,9 +988,16 @@ async def execute_sourcing_run(
                 run.error_message = None
 
     detail_payloads: dict[uuid.UUID, dict[str, Any]] = {}
-    for item_id, item_url in detail_candidates[:_DETAIL_ENRICHMENT_MAX_ITEMS_PER_RUN]:
+    enrich_limit = _DETAIL_ENRICHMENT_MAX_ITEMS_PER_RUN
+    if isinstance(run_options.get("detail_enrichment_limit"), int):
+        enrich_limit = max(0, int(run_options["detail_enrichment_limit"]))
+    for item_id, item_url in detail_candidates[:enrich_limit]:
         try:
-            detail_payload = await _scraper_fetch_listing_detail(app_settings=app_settings, url=item_url)
+            detail_payload = await _scraper_fetch_listing_detail(
+                app_settings=app_settings,
+                platform=run_platform,
+                url=item_url,
+            )
         except Exception:
             continue
         if detail_payload.get("blocked") is True:
@@ -883,6 +1071,47 @@ async def discard_item(*, session: AsyncSession, actor: str, item: SourcingItem,
         action="discard",
         before={"status": before_status},
         after={"status": item.status.value, "reason": item.status_reason},
+    )
+
+
+async def build_bidbag_handoff(
+    *,
+    session: AsyncSession,
+    item: SourcingItem,
+    app_settings: Settings | None = None,
+) -> SourcingBidbagHandoffOut:
+    app_settings = app_settings or get_settings()
+    if item.platform != SourcingPlatform.EBAY_DE:
+        raise ValueError("Bidbag handoff is only supported for eBay.de items")
+    if not isinstance(item.max_purchase_price_cents, int) or item.max_purchase_price_cents <= 0:
+        raise ValueError("Missing max purchase price for bidbag handoff")
+
+    cfg = await _load_resolved_settings(session, app_settings)
+    auction_end_iso = item.auction_end_at.astimezone(UTC).isoformat() if item.auction_end_at else None
+    max_bid_cents = int(item.max_purchase_price_cents)
+    payload: dict[str, Any] = {
+        "listing_url": item.url,
+        "title": item.title,
+        "external_id": item.external_id,
+        "max_bid_cents": max_bid_cents,
+        "max_bid_eur": f"{max_bid_cents / 100:.2f}",
+        "auction_end_at_iso": auction_end_iso,
+    }
+
+    deep_link_url = None
+    if cfg.bidbag_deeplink_template:
+        deep_link_url = _render_bidbag_deeplink(cfg.bidbag_deeplink_template, payload)
+
+    now = utcnow()
+    item.bidbag_sent_at = now
+    item.bidbag_last_payload = payload
+    await session.flush()
+
+    return SourcingBidbagHandoffOut(
+        item_id=item.id,
+        deep_link_url=deep_link_url,
+        payload=payload,
+        sent_at=now,
     )
 
 

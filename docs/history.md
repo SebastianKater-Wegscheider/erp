@@ -521,3 +521,33 @@
 - Compose-Hardening: `agent-browser` als optionales Profil markiert, damit `docker compose up -d --build` trotz zeitweiser GHCR-Denials lauffaehig bleibt.
 - Folgeentscheidung (Live-Audit): Default-Pagination wird erhoeht und Listing-Metadaten (Posted-Time, Versand/Direktkauf, VB/Altpreis, Bildanzahl) werden bereits im Scrape normalisiert, da die bisherigen Snippet-Daten fuer belastbare Kaufentscheidungen zu duenn sind.
 - Umsetzung (Live): Default `SOURCING_SCRAPER_MAX_PAGES_PER_TERM` auf 3 erhoeht; Listing-Rawdata erweitert um `posted_at_text`, `shipping_possible`, `direct_buy`, `price_negotiable`, `old_price_cents`, `image_count` fuer bessere Kaufentscheidung im Feed/Detail.
+
+## 2026-02-17 - Sourcing Radar v1.1 Implementation Plan: Agent-first scheduler + eBay auction max-bid
+
+### Business perspective
+- We move from a global keyword scheduler to per-agent sourcing to support parallel buying strategies (different keywords, cadence, and platform mix).
+- eBay.de auction handling needs a bounded buy decision (`max_purchase_price_cents`) before manual transfer to bidbag, so operators can execute snipes without ad-hoc spreadsheet math.
+- Bidbag integration remains manual deep-link/payload in v1 to avoid external API coupling while still reducing operator friction.
+
+### Technical decisions
+- Scheduler executes due agents (`next_run_at <= now`) and runs enabled queries per agent; legacy global term interval remains fallback-compatible.
+- `execute_sourcing_run` accepts provenance (`agent_id`, `agent_query_id`) and platform/options to unify manual and scheduled runs in one pipeline.
+- eBay auction valuation computes max buy cap from both profit floor and ROI floor; the stricter constraint wins.
+- Detail enrichment stays selective and candidate-based to keep run latency and scrape volume bounded.
+
+### Risks / tradeoffs
+- Agent-first scheduling increases run cardinality; we keep existing lock + backoff semantics to prevent overlapping loops.
+- Manual bidbag handoff avoids integration risk but leaves won/lost feedback loop for a follow-up release.
+
+## 2026-02-17 - Sourcing Radar v1.1 implemented (backend+scraper+frontend)
+
+### Delivered
+- Backend: agent CRUD/run APIs, due-agent scheduler path, multi-platform run provenance, eBay auction fields in item APIs, bidbag handoff endpoint.
+- Valuation: eBay max purchase cap is persisted per item using profit+ROI constrained formula and used for READY decision on auction listings.
+- Scraper contract: per-request `options.max_pages` now respected for Kleinanzeigen too (already used for eBay); platform selection remains agent-browser based.
+- Frontend: new `/sourcing/agents` management page, eBay auction/headroom display in feed+detail, bidbag action in detail, settings extended with bidbag template and eBay bid buffer.
+
+### Validation
+- Backend tests: sourcing flows + new scheduler tests green.
+- Frontend: typecheck/build green; targeted `SourcingAgents` test added and green.
+- Existing broad frontend suite has unrelated pre-existing timeout failures in heavy pages and was not used as release gate for this feature branch.

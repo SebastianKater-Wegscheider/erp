@@ -16,7 +16,10 @@ from app.models.master_product import MasterProduct, master_product_sku_from_id
 from app.models.purchase import Purchase
 from app.models.sourcing import SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
 from app.services.sourcing import (
+    _ResolvedSettings,
+    _compute_max_purchase_price_cents,
     _parse_kleinanzeigen_posted_at,
+    build_bidbag_handoff,
     convert_item_to_purchase,
     execute_sourcing_run,
     load_resolved_settings,
@@ -260,7 +263,7 @@ async def test_execute_sourcing_run_enriches_detail_payload(
         )
         await session.commit()
 
-    async def _fake_scrape_fetch(*, app_settings, search_terms):  # noqa: ARG001
+    async def _fake_scrape_fetch(*, app_settings, platform, search_terms, options=None, max_pages=None):  # noqa: ARG001
         return {
             "blocked": False,
             "error_type": None,
@@ -282,7 +285,7 @@ async def test_execute_sourcing_run_enriches_detail_payload(
             ],
         }
 
-    async def _fake_detail_fetch(*, app_settings, url):  # noqa: ARG001
+    async def _fake_detail_fetch(*, app_settings, platform, url):  # noqa: ARG001
         return {
             "blocked": False,
             "error_type": None,
@@ -322,3 +325,62 @@ async def test_execute_sourcing_run_enriches_detail_payload(
         assert isinstance(item.raw_data, dict)
         assert item.raw_data.get("view_count") == 321
         assert item.raw_data.get("seller_name") == "Max Mustermann"
+
+
+def test_compute_max_purchase_price_respects_profit_and_roi_constraints() -> None:
+    cfg = _ResolvedSettings(
+        bsr_max_threshold=50_000,
+        price_min_cents=500,
+        price_max_cents=30_000,
+        confidence_min_score=80,
+        profit_min_cents=3_000,
+        roi_min_bp=5_000,
+        scrape_interval_seconds=1800,
+        handling_cost_per_item_cents=150,
+        shipping_cost_cents=690,
+        ebay_bid_buffer_cents=200,
+        bidbag_deeplink_template=None,
+        search_terms=["nintendo"],
+    )
+
+    value = _compute_max_purchase_price_cents(revenue_cents=20_000, cfg=cfg, sellable_count=2)
+    # Fixed costs: 690 + 300 + 200 = 1190
+    # profit cap: 20000 - 1190 - 3000 = 15810
+    # roi cap: 20000 / 1.5 - 1190 = 12143.33...
+    assert value == 12_143
+
+    floor_value = _compute_max_purchase_price_cents(revenue_cents=1_000, cfg=cfg, sellable_count=1)
+    assert floor_value == 0
+
+
+@pytest.mark.asyncio
+async def test_bidbag_handoff_builds_payload_and_template(db_session: AsyncSession) -> None:
+    item = SourcingItem(
+        platform=SourcingPlatform.EBAY_DE,
+        external_id="ebay-123",
+        url="https://www.ebay.de/itm/123",
+        title="Nintendo Auction",
+        price_cents=8_000,
+        auction_current_price_cents=8_000,
+        auction_end_at=datetime(2026, 2, 18, 10, 0, tzinfo=UTC),
+        max_purchase_price_cents=10_500,
+        status=SourcingStatus.READY,
+    )
+    db_session.add(item)
+    db_session.add(
+        SourcingSetting(
+            key="bidbag_deeplink_template",
+            value_text="https://bidbag.de/new?url={listing_url}&max={max_bid_eur}&eid={external_id}",
+        )
+    )
+    await db_session.commit()
+
+    handoff = await build_bidbag_handoff(session=db_session, item=item)
+    await db_session.commit()
+
+    assert handoff.item_id == item.id
+    assert handoff.payload["max_bid_cents"] == 10_500
+    assert handoff.payload["max_bid_eur"] == "105.00"
+    assert handoff.deep_link_url is not None
+    assert "eid=ebay-123" in handoff.deep_link_url
+    assert handoff.sent_at.tzinfo is not None

@@ -56,7 +56,7 @@ async def scrape(req: ScrapeRequest) -> ScrapeResponse:
         result = await scrape_kleinanzeigen(
             search_terms=terms,
             timeout_seconds=settings.sourcing_scraper_timeout_seconds,
-            max_pages_per_term=settings.sourcing_scraper_max_pages_per_term,
+            max_pages_per_term=int(req.options.get("max_pages", settings.sourcing_scraper_max_pages_per_term)),
             min_delay_seconds=settings.sourcing_scraper_min_delay_seconds,
             max_delay_seconds=settings.sourcing_scraper_max_delay_seconds,
             use_agent_browser=settings.sourcing_scraper_use_agent_browser,
