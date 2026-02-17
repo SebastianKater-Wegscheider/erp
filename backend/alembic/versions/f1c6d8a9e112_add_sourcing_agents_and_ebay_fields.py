@@ -20,7 +20,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TYPE sourcing_platform ADD VALUE IF NOT EXISTS 'EBAY_DE';")
+    # PostgreSQL requires enum value additions to be committed before first use.
+    # Run this in an autocommit block so following statements can reference EBAY_DE safely.
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE sourcing_platform ADD VALUE IF NOT EXISTS 'EBAY_DE';")
 
     op.create_table(
         "sourcing_agents",

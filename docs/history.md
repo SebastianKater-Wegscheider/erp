@@ -551,3 +551,14 @@
 - Backend tests: sourcing flows + new scheduler tests green.
 - Frontend: typecheck/build green; targeted `SourcingAgents` test added and green.
 - Existing broad frontend suite has unrelated pre-existing timeout failures in heavy pages and was not used as release gate for this feature branch.
+
+## 2026-02-17 - Production migration hotfix: sourcing_platform enum autocommit
+
+### Issue
+- Production backend crash-looped on startup migration with PostgreSQL `UnsafeNewEnumValueUsageError` when migration `f1c6d8a9e112` added enum value `EBAY_DE` and referenced it later in the same migration transaction.
+
+### Fix
+- Migration updated to run `ALTER TYPE sourcing_platform ADD VALUE IF NOT EXISTS 'EBAY_DE'` inside `autocommit_block()` so the enum value is committed before subsequent DDL uses it.
+
+### Operational impact
+- Prevents startup migration crash-loop and allows safe rollout on existing production databases.
