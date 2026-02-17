@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.platforms.kleinanzeigen import scrape_kleinanzeigen
+from app.platforms.kleinanzeigen import scrape_kleinanzeigen, scrape_kleinanzeigen_listing_detail
 
 
 class ScrapeRequest(BaseModel):
@@ -18,6 +18,19 @@ class ScrapeResponse(BaseModel):
     error_type: str | None
     error_message: str | None
     listings: list[dict]
+
+
+class ListingDetailRequest(BaseModel):
+    platform: str = Field(default="kleinanzeigen")
+    url: str
+
+
+class ListingDetailResponse(BaseModel):
+    platform: str
+    blocked: bool
+    error_type: str | None
+    error_message: str | None
+    listing: dict
 
 
 app = FastAPI(title="sourcing-scraper", version="1.0")
@@ -63,4 +76,34 @@ async def scrape(req: ScrapeRequest) -> ScrapeResponse:
         error_type=result.error_type,
         error_message=result.error_message,
         listings=result.listings,
+    )
+
+
+@app.post("/listing-detail", response_model=ListingDetailResponse)
+async def listing_detail(req: ListingDetailRequest) -> ListingDetailResponse:
+    settings = get_settings()
+
+    platform = (req.platform or "kleinanzeigen").strip().lower()
+    if platform != "kleinanzeigen":
+        return ListingDetailResponse(
+            platform=platform.upper(),
+            blocked=False,
+            error_type="unsupported_platform",
+            error_message=f"Unsupported platform: {platform}",
+            listing={},
+        )
+
+    result = await scrape_kleinanzeigen_listing_detail(
+        url=req.url,
+        timeout_seconds=settings.sourcing_scraper_timeout_seconds,
+        use_agent_browser=settings.sourcing_scraper_use_agent_browser,
+        agent_browser_profile_path=settings.sourcing_scraper_agent_browser_profile_path,
+        agent_browser_session_name=settings.sourcing_scraper_agent_browser_session_name,
+    )
+    return ListingDetailResponse(
+        platform="KLEINANZEIGEN",
+        blocked=result.blocked,
+        error_type=result.error_type,
+        error_message=result.error_message,
+        listing=result.listing,
     )

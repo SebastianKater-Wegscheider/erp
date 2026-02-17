@@ -1,5 +1,29 @@
 # History
 
+## 2026-02-17 - Sourcing Radar: Detail-Enrichment fuer Entscheidungsqualitaet + normalisiertes `posted_at`
+
+### Ausgangslage
+- Search-Page-Scraping lieferte zwar stabile Basisdaten, aber fuer echte Einkaufsentscheidungen fehlten zentrale Felder (vollstaendige Beschreibung, Seller-Infos, Bildanzahl/URLs, View-Count).
+- Der Zeitstempel lag bisher nur als Freitext (`Heute, 07:53`, `Gestern, ...`) vor und war nicht robust sortier-/filterbar.
+
+### Business-Entscheidungen
+- Detail-Scraping wird gezielt nur fuer chancenreiche Listings ausgefuehrt (`READY` plus near-READY), um Signalqualitaet zu erhoehen ohne Crawl-Latenz unnoetig zu explodieren.
+- Das Ergebnis bleibt "search-first, detail-second": schnelle Breite zuerst, danach Tiefenanreicherung fuer kaufrelevante Kandidaten.
+- `posted_at` wird als normalisierte UTC-Zeit persistiert und in API/UI verfuegbar gemacht.
+
+### Technische Entscheidungen
+- Neuer Scraper-Endpoint `/listing-detail` fuer Kleinanzeigen-Detailseiten inkl. Agent-Browser-Extraktion und HTTP-Fallback.
+- Backend fuehrt nach der Analyse eine Enrichment-Pipeline fuer Kandidaten aus und merged Detailfelder in `raw_data` (ohne die bestehende Match-Logik zu duplizieren).
+- Neue DB-Spalte `sourcing_items.posted_at` (+ Index) und Parser fuer Kleinanzeigen-Formate:
+  - `Heute, HH:MM`
+  - `Gestern, HH:MM`
+  - `dd.mm.yyyy` (optional mit Uhrzeit)
+- API- und Frontend-DTOs zeigen `posted_at` explizit, damit Sourcing-Operatoren nach Angebotsalter priorisieren koennen.
+
+### Trade-offs
+- Detail-Enrichment ist bewusst opportunistisch (best-effort) und darf Runs nicht hart fehlschlagen lassen.
+- Bei Textdaten ohne Uhrzeit wird ein Tageszeit-Default genutzt; das ist fuer Ranking ausreichend, aber nicht sekundengenau.
+
 ## 2026-02-16 - Per-Item Target Pricing + Recommendation Engine
 
 ### Ausgangslage
