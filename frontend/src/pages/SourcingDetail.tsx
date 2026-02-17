@@ -182,6 +182,8 @@ export function SourcingDetailPage() {
   });
 
   const item = detail.data;
+  const canConvert = item?.status === "READY" && confirmedMatchIds.length > 0;
+  const canDiscard = item ? item.status !== "DISCARDED" && item.status !== "CONVERTED" : false;
 
   if (!id) {
     return <InlineMessage tone="error">Ungültige Item-ID</InlineMessage>;
@@ -218,6 +220,23 @@ export function SourcingDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
+              {item.image_urls.length > 0 ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {item.image_urls.slice(0, 4).map((url, idx) => (
+                    <div key={`${url}-${idx}`} className="overflow-hidden rounded-md border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)]">
+                      <img
+                        src={url}
+                        alt={`Listingbild ${idx + 1} von ${item.title}`}
+                        className="h-40 w-full object-cover"
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <InlineMessage tone="info">Keine Listing-Bilder verfügbar.</InlineMessage>
+              )}
               <div>Preis: {formatEur(item.price_cents)}</div>
               <div>Geschätzter Umsatz: {typeof item.estimated_revenue_cents === "number" ? formatEur(item.estimated_revenue_cents) : "—"}</div>
               <div>Geschätzter Profit: {typeof item.estimated_profit_cents === "number" ? formatEur(item.estimated_profit_cents) : "—"}</div>
@@ -245,13 +264,15 @@ export function SourcingDetailPage() {
                 <Button
                   type="button"
                   onClick={() => convert.mutate()}
-                  disabled={convert.isPending || confirmedMatchIds.length === 0}
+                  disabled={convert.isPending || !canConvert}
                 >
                   Purchase erstellen
                 </Button>
-                <Button type="button" variant="outline" onClick={() => discard.mutate()} disabled={discard.isPending}>
-                  Verwerfen
-                </Button>
+                {canDiscard ? (
+                  <Button type="button" variant="outline" onClick={() => discard.mutate()} disabled={discard.isPending}>
+                    Verwerfen
+                  </Button>
+                ) : null}
                 {item.platform === "EBAY_DE" ? (
                   <Button
                     type="button"
@@ -266,6 +287,8 @@ export function SourcingDetailPage() {
               </div>
               {bidbagMessage ? <InlineMessage tone="info">{bidbagMessage}</InlineMessage> : null}
               {bidbag.error ? <InlineMessage tone="error">{String((bidbag.error as Error).message)}</InlineMessage> : null}
+              {convert.error ? <InlineMessage tone="error">{String((convert.error as Error).message)}</InlineMessage> : null}
+              {discard.error ? <InlineMessage tone="error">{String((discard.error as Error).message)}</InlineMessage> : null}
             </CardContent>
           </Card>
 
@@ -318,6 +341,7 @@ export function SourcingDetailPage() {
                             type="button"
                             size="sm"
                             variant={match.user_confirmed ? "default" : "outline"}
+                            aria-label={`Match bestätigen: ${match.master_product.title}`}
                             onClick={() => patchMatch.mutate({ matchId: match.id, body: { user_confirmed: !match.user_confirmed } })}
                           >
                             <Check className="h-4 w-4" />
@@ -326,6 +350,7 @@ export function SourcingDetailPage() {
                             type="button"
                             size="sm"
                             variant={match.user_rejected ? "default" : "outline"}
+                            aria-label={`Match ablehnen: ${match.master_product.title}`}
                             onClick={() => patchMatch.mutate({ matchId: match.id, body: { user_rejected: !match.user_rejected } })}
                           >
                             <X className="h-4 w-4" />

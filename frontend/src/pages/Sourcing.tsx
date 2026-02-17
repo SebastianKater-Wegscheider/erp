@@ -1,6 +1,6 @@
 import { ExternalLink, Play, RefreshCw, Settings2, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Badge } from "../components/ui/badge";
@@ -57,6 +57,7 @@ const STATUS_OPTIONS = ["ALL", "NEW", "ANALYZING", "READY", "LOW_VALUE", "CONVER
 const MIN_PROFIT_OPTIONS = ["ANY", "2000", "3000", "5000"] as const;
 const SORT_OPTIONS = ["scraped_at", "posted_at", "profit", "roi"] as const;
 const PLATFORM_OPTIONS = ["ALL", "KLEINANZEIGEN", "EBAY_DE", "WILLHABEN", "EBAY_KLEINANZEIGEN"] as const;
+const PAGE_SIZE = 100;
 
 function formatDateTime(value?: string | null): string {
   if (!value) return "—";
@@ -75,17 +76,22 @@ export function SourcingPage() {
   const [minProfit, setMinProfit] = useState<(typeof MIN_PROFIT_OPTIONS)[number]>("ANY");
   const [sortBy, setSortBy] = useState<(typeof SORT_OPTIONS)[number]>("scraped_at");
 
-  const list = useQuery({
+  const list = useInfiniteQuery({
     queryKey: ["sourcing-items", status, platform, minProfit, sortBy],
-    queryFn: () => {
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
       const params = new URLSearchParams();
-      params.set("limit", "100");
-      params.set("offset", "0");
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(pageParam * PAGE_SIZE));
       params.set("sort_by", sortBy);
       if (status !== "ALL") params.set("status", status);
       if (platform !== "ALL") params.set("platform", platform);
       if (minProfit !== "ANY") params.set("min_profit_cents", minProfit);
       return api.request<SourcingListOut>(`/sourcing/items?${params.toString()}`);
+    },
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce((acc, page) => acc + page.items.length, 0);
+      return loaded < lastPage.total ? pages.length : undefined;
     },
   });
 
@@ -107,7 +113,8 @@ export function SourcingPage() {
     },
   });
 
-  const items = list.data?.items ?? [];
+  const items = list.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = list.data?.pages[0]?.total ?? 0;
 
   const readyCount = useMemo(() => items.filter((item) => item.status === "READY").length, [items]);
 
@@ -212,7 +219,7 @@ export function SourcingPage() {
           <div className="space-y-1">
             <Label>Summary</Label>
             <div className="rounded-md border border-[color:var(--app-border)] p-2 text-sm text-[color:var(--app-text-muted)]">
-              Total: {list.data?.total ?? 0} • READY: {readyCount}
+              Loaded: {items.length}/{total} • READY: {readyCount}
             </div>
           </div>
         </CardContent>
@@ -233,6 +240,21 @@ export function SourcingPage() {
               <CardTitle className="text-base">{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              {item.primary_image_url ? (
+                <div className="overflow-hidden rounded-md border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)]">
+                  <img
+                    src={item.primary_image_url}
+                    alt={`Listingbild von ${item.title}`}
+                    className="h-40 w-full object-cover"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] p-3 text-sm text-[color:var(--app-text-muted)]">
+                  Kein Bild verfügbar
+                </div>
+              )}
               <div className="text-sm text-[color:var(--app-text-muted)]">Inseriert: {formatDateTime(item.posted_at)}</div>
               <div className="text-sm text-[color:var(--app-text-muted)]">{item.location_city || "Ort unbekannt"}</div>
               <div className="text-sm">Preis: {formatEur(item.price_cents)}</div>
@@ -258,6 +280,20 @@ export function SourcingPage() {
           </Card>
         ))}
       </div>
+
+      {items.length > 0 ? (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => list.fetchNextPage()}
+            disabled={!list.hasNextPage || list.isFetchingNextPage}
+          >
+            {list.isFetchingNextPage ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+            {list.hasNextPage ? "Mehr laden" : "Alle Einträge geladen"}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

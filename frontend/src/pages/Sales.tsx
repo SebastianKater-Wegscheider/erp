@@ -955,12 +955,12 @@ export function SalesPage() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Käufername</Label>
-                <Input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
+                <Label htmlFor="sales-buyer-name">Käufername</Label>
+                <Input id="sales-buyer-name" value={buyerName} onChange={(e) => setBuyerName(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Käuferadresse (optional)</Label>
-                <Input value={buyerAddress} onChange={(e) => setBuyerAddress(e.target.value)} />
+                <Label htmlFor="sales-buyer-address">Käuferadresse (optional)</Label>
+                <Input id="sales-buyer-address" value={buyerAddress} onChange={(e) => setBuyerAddress(e.target.value)} />
               </div>
             </div>
 
