@@ -2,6 +2,11 @@
 
 Lean ERP für Gebrauchtwarenhandel (z.B. Videospiele) mit **FastAPI + PostgreSQL**, integer-basierter Cent-Mathematik, Audit-Log, PDF-Belegen und Docker Compose.
 
+## Runtime Baseline
+
+- Python: `3.11` (CI + Docker baseline; siehe `.python-version`)
+- Node: `22` (CI + Docker baseline; siehe `.nvmrc`)
+
 ## Quickstart (Docker)
 
 1. `.env` anlegen:
@@ -9,6 +14,7 @@ Lean ERP für Gebrauchtwarenhandel (z.B. Videospiele) mit **FastAPI + PostgreSQL
    - Werte in `.env` anpassen (Basic Auth, Company Daten, DB Credentials).
 2. Start:
    - `docker compose up -d --build`
+   - optional fuer lokale Backend-Hot-Reloads: `BACKEND_DEV_RELOAD=true`
 3. Swagger UI:
    - `http://localhost:18000/docs` (HTTP Basic Auth aus `.env`)
 

@@ -1,5 +1,26 @@
 # History
 
+## 2026-02-17 - Phase 1 Umsetzung: Drift-Reconciliation + Teststabilitaet + Runtime-Paritaet
+
+### Ausgangslage
+- Nach Phase 0 bleiben zentrale Stabilisierungsthemen offen: noisy Schema-Drift-Signale, flaky Frontend-Tests und lokale Runtime-Abweichungen zu CI.
+
+### Business-Entscheidungen
+- Fokus auf **Release-Vertrauen**:
+  1) Drift-Gate wieder aussagekraeftig machen
+  2) Frontend-Testsignal stabilisieren
+  3) lokale Toolchain auf CI-Versionen ausrichten
+- Produktionshygiene wird schrittweise gehaertet (deterministischere Container-Starts, dev-spezifische Reload-Logik explizit opt-in).
+
+### Technische Entscheidungen
+- Modell-Definitionen werden auf bestehende Migrationsrealitaet abgeglichen (JSONB + explizite Indexe/Partial-Indexe), damit `check_schema_drift.py` wieder als Gate nutzbar ist.
+- Vitest-Lauf wird deterministischer konfiguriert (mehr Zeitbudget, Single-Fork), um Timeout-bedingte Flakes zu reduzieren.
+- Runtime-Pinning via Version-Files (`.nvmrc`, `.python-version`) und Dokumentation.
+
+### Trade-offs
+- Testlaeufe werden durch konservativere Runner-Einstellungen etwas langsamer, liefern dafuer stabilere Go/No-Go-Signale.
+- Striktere Runtime-Pins reduzieren implizite Flexibilitaet, vermeiden aber environment-spezifische Fehlerbilder.
+
 ## 2026-02-17 - Phase 0 Umsetzung: Migration Bootstrap + Startup Entkopplung + Deep Health
 
 ### Ausgangslage
