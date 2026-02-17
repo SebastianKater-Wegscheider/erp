@@ -27,6 +27,7 @@ const NAV_SECTIONS = [
     label: "Belege",
     items: [
       { to: "/purchases", label: "Einkäufe" },
+      { to: "/sourcing", label: "Sourcing" },
       { to: "/sales", label: "Verkäufe" },
       { to: "/marketplace", label: "Marktplatz" },
     ],

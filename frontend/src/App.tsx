@@ -9,6 +9,9 @@ const MasterProductsPage = lazy(() => import("./pages/MasterProducts").then((m) 
 const InventoryPage = lazy(() => import("./pages/Inventory").then((m) => ({ default: m.InventoryPage })));
 const FBAShipmentsPage = lazy(() => import("./pages/FBAShipments").then((m) => ({ default: m.FBAShipmentsPage })));
 const PurchasesPage = lazy(() => import("./pages/Purchases").then((m) => ({ default: m.PurchasesPage })));
+const SourcingPage = lazy(() => import("./pages/Sourcing").then((m) => ({ default: m.SourcingPage })));
+const SourcingDetailPage = lazy(() => import("./pages/SourcingDetail").then((m) => ({ default: m.SourcingDetailPage })));
+const SourcingSettingsPage = lazy(() => import("./pages/SourcingSettings").then((m) => ({ default: m.SourcingSettingsPage })));
 const SalesPage = lazy(() => import("./pages/Sales").then((m) => ({ default: m.SalesPage })));
 const MarketplacePage = lazy(() => import("./pages/Marketplace").then((m) => ({ default: m.MarketplacePage })));
 const CostAllocationsPage = lazy(() => import("./pages/CostAllocations").then((m) => ({ default: m.CostAllocationsPage })));
@@ -37,6 +40,9 @@ export function App() {
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/fba-shipments" element={<FBAShipmentsPage />} />
               <Route path="/purchases" element={<PurchasesPage />} />
+              <Route path="/sourcing" element={<SourcingPage />} />
+              <Route path="/sourcing/:id" element={<SourcingDetailPage />} />
+              <Route path="/sourcing/settings" element={<SourcingSettingsPage />} />
               <Route path="/sales" element={<SalesPage />} />
               <Route path="/marketplace" element={<MarketplacePage />} />
               <Route path="/cost-allocations" element={<CostAllocationsPage />} />
