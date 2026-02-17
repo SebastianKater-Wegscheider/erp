@@ -22,6 +22,7 @@ from app.models.purchase import Purchase, PurchaseLine
 from app.models.purchase_attachment import PurchaseAttachment
 from app.models.sales import SalesOrder, SalesOrderLine
 from app.models.sales_correction import SalesCorrection, SalesCorrectionLine
+from app.models.sourcing import SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
 
 __all__ = [
     "AmazonProductMetricsLatest",
@@ -52,4 +53,8 @@ __all__ = [
     "SalesOrderLine",
     "SalesCorrection",
     "SalesCorrectionLine",
+    "SourcingItem",
+    "SourcingMatch",
+    "SourcingRun",
+    "SourcingSetting",
 ]

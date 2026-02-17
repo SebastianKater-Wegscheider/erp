@@ -351,3 +351,46 @@
 - Scope bleibt Inventory-first; keine Preisbearbeitung auf Master-Produkt-Seite in dieser Iteration.
 - Bulk-Regeln bleiben one-time apply (kein persisted Rule Scheduling/Preset-Management).
 - Korrekturen/Refunds bleiben periodisiert im Korrekturmonat; keine nachtraegliche Reallokation.
+
+## 2026-02-17 - Sourcing Radar v3.0: Architektur-Festlegung vor Umsetzung
+
+### Ausgangslage
+- Es gibt eine neue Produktanforderung fuer automatisiertes Sourcing auf Kleinanzeigen.
+- Das ERP nutzt bereits einen monolithischen FastAPI-Backend-Stack mit bestehendem Scheduler-Lock-Pattern, zentralem Audit-Log und etablierter Purchase-Domain.
+- Die PRD-Annahmen (eigene Nginx-Proxy-Schicht, separates Audit-Log, eigenes Draft-Purchase-Modell) passen nicht 1:1 zum aktuellen Repo.
+
+### Business-Entscheidungen
+- Ziel bleibt ein 4-Wochen-Pilot mit schneller Time-to-Value und kontrolliertem Operations-Risiko.
+- V1-Scope wird auf Kleinanzeigen begrenzt; Matching startet konservativ (Confidence >= 80), um False Positives zu reduzieren.
+- Conversion bleibt explizit nutzerbestaetigt (Prefill + Confirm), keine automatische Kaufanlage ohne Review.
+
+### Technische Entscheidungen
+- Architektur: neues `sourcing-scraper` Container-Service + bestehender ERP-Backend-Domainmodul fuer Persistenz, Matching, Valuation, API und Scheduler-Orchestrierung.
+- API-Expose erfolgt unter bestehendem Prefix `/api/v1/sourcing` (kein neuer Reverse-Proxy-Layer im Repo).
+- Zentrales `audit_logs` bleibt Single Source of Truth; kein zweites Sourcing-spezifisches Audit-Table.
+- Sourcing-Status-Enum enthaelt zusaetzlich `ERROR`, damit technische Fehler explizit modelliert werden.
+- `sourcing_settings` bekommt `value_json`, damit `search_terms` und weitere strukturierte Settings robust gespeichert werden.
+- Conversion nutzt bestehende Purchase-Domain (`PRIVATE_DIFF`) und wiederverwendet etablierte Fee-/Payout-Logik aus `target_pricing`.
+- Scheduler bleibt im Backend (Lock/Backoff konsistent zum Amazon-Scheduler); Scraper-Service liefert normalisierte Listings ohne eigene Scheduling-Verantwortung.
+
+### Tradeoffs
+- Agent-browser Sidecar wird vorbereitet, aber fachliche Entscheidungen bleiben im ERP-Backend, um doppelte Business-Logik zu vermeiden.
+- Pilot-Fast Modus akzeptiert rechtliches Restrisiko; technische Gegenmassnahmen: konservatives Rate-Limit, Jitter, Blocked-State Monitoring, Kill-Switch via Env-Flag.
+
+## 2026-02-17 - Sourcing Radar v3.0: UI-Integrationsentscheidungen vor Frontend-Umsetzung
+
+### Ausgangslage
+- Backend-API fuer Sourcing wird unter `/api/v1/sourcing` bereitgestellt.
+- Bestehende Navigation ist in Module gruppiert (`Stammdaten`, `Belege`, `Finanzen`) und nutzt Lazy-Loaded Routes.
+
+### Entscheidungen
+- Sourcing wird als eigener Beleg-Workflow mit drei Routen umgesetzt:
+  - `/sourcing` (Feed + Trigger)
+  - `/sourcing/:id` (Detail + Match-Review + Conversion)
+  - `/sourcing/settings` (Threshold-/Search-Term-Verwaltung)
+- Navigationseintrag wird in `Belege` aufgenommen, um den Einkauf-nahen Entscheidungsfluss beizubehalten.
+- Conversion-Flow bleibt explizit zweistufig: Preview laden, danach bestaetigte Conversion ausloesen.
+
+### Tradeoffs
+- V1-UI priorisiert operative Geschwindigkeit und Transparenz gegenueber Design-Feinschliff.
+- Live-Kalkulation erfolgt serverseitig via Match-Patch/Recalc, statt komplexe parallele Client-Formel im Frontend zu duplizieren.

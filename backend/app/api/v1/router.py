@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     purchases,
     reports,
     sales,
+    sourcing,
     uploads,
 )
 from app.core.security import require_basic_auth
@@ -38,3 +39,4 @@ api_router.include_router(mileage.router, prefix="/mileage", tags=["mileage"])
 
 api_router.include_router(sales.router, prefix="/sales", tags=["sales"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+api_router.include_router(sourcing.router, prefix="/sourcing", tags=["sourcing"])

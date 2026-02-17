@@ -13,6 +13,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.security import require_basic_auth
 from app.services.amazon_scrape_scheduler import amazon_scrape_scheduler_loop
+from app.services.sourcing_scheduler import sourcing_scheduler_loop
 
 
 def create_app() -> FastAPI:
@@ -78,10 +79,17 @@ def create_app() -> FastAPI:
 
         if settings.amazon_scraper_enabled:
             app.state.amazon_scrape_task = asyncio.create_task(amazon_scrape_scheduler_loop(settings))
+        if settings.sourcing_enabled:
+            app.state.sourcing_task = asyncio.create_task(sourcing_scheduler_loop(settings))
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
         task = getattr(app.state, "amazon_scrape_task", None)
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        task = getattr(app.state, "sourcing_task", None)
         if task is not None:
             task.cancel()
             with suppress(asyncio.CancelledError):

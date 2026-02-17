@@ -44,6 +44,34 @@ services:
     ports:
       - "${BACKEND_PORT:-18000}:8000"
 
+  sourcing-scraper:
+    build:
+      context: ./sourcing-scraper
+    restart: unless-stopped
+    environment:
+      AGENT_BROWSER_URL: ${AGENT_BROWSER_URL:-http://agent-browser:3000}
+      SOURCING_SCRAPER_TIMEOUT_SECONDS: ${SOURCING_SCRAPER_TIMEOUT_SECONDS:-60}
+      SOURCING_SCRAPER_MAX_PAGES_PER_TERM: ${SOURCING_SCRAPER_MAX_PAGES_PER_TERM:-1}
+      SOURCING_SCRAPER_MIN_DELAY_SECONDS: ${SOURCING_SCRAPER_MIN_DELAY_SECONDS:-2.0}
+      SOURCING_SCRAPER_MAX_DELAY_SECONDS: ${SOURCING_SCRAPER_MAX_DELAY_SECONDS:-5.0}
+    depends_on:
+      - agent-browser
+    volumes:
+      - ./data/sourcing-profiles:/app/.agent-browser/profiles
+    ports:
+      - "${SOURCING_SCRAPER_PORT:-18001}:8000"
+
+  agent-browser:
+    image: ghcr.io/zackiles/agent-browser:latest
+    restart: unless-stopped
+    environment:
+      AGENT_BROWSER_MAX_CONCURRENT: ${AGENT_BROWSER_MAX_CONCURRENT:-1}
+      AGENT_BROWSER_HEADLESS: ${AGENT_BROWSER_HEADLESS:-true}
+    volumes:
+      - ./data/agent-browser:/app/data
+    ports:
+      - "${AGENT_BROWSER_PORT:-13000}:3000"
+
   frontend:
     image: node:22-alpine
     restart: unless-stopped

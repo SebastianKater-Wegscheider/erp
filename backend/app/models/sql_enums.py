@@ -20,6 +20,8 @@ from app.core.enums import (
     PurchaseKind,
     PurchaseType,
     ReturnAction,
+    SourcingPlatform,
+    SourcingStatus,
     TargetPriceMode,
 )
 
@@ -48,3 +50,5 @@ marketplace_staged_order_status_enum = Enum(MarketplaceStagedOrderStatus, name="
 marketplace_match_strategy_enum = Enum(MarketplaceMatchStrategy, name="marketplace_match_strategy")
 
 target_price_mode_enum = Enum(TargetPriceMode, name="target_price_mode")
+sourcing_status_enum = Enum(SourcingStatus, name="sourcing_status")
+sourcing_platform_enum = Enum(SourcingPlatform, name="sourcing_platform")

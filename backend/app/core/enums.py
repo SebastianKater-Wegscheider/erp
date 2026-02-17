@@ -139,3 +139,19 @@ class EffectiveTargetPriceSource(StrEnum):
     AUTO_AMAZON = "AUTO_AMAZON"
     AUTO_COST_FLOOR = "AUTO_COST_FLOOR"
     UNPRICED = "UNPRICED"
+
+
+class SourcingStatus(StrEnum):
+    NEW = "NEW"
+    ANALYZING = "ANALYZING"
+    READY = "READY"
+    LOW_VALUE = "LOW_VALUE"
+    CONVERTED = "CONVERTED"
+    DISCARDED = "DISCARDED"
+    ERROR = "ERROR"
+
+
+class SourcingPlatform(StrEnum):
+    KLEINANZEIGEN = "KLEINANZEIGEN"
+    WILLHABEN = "WILLHABEN"
+    EBAY_KLEINANZEIGEN = "EBAY_KLEINANZEIGEN"

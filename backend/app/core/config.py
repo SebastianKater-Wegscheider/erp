@@ -57,6 +57,18 @@ class Settings(BaseSettings):
     amazon_scraper_busy_retry_max_seconds: int = Field(240, alias="AMAZON_SCRAPER_BUSY_RETRY_MAX_SECONDS")
     amazon_scraper_busy_global_cooldown_seconds: int = Field(45, alias="AMAZON_SCRAPER_BUSY_GLOBAL_COOLDOWN_SECONDS")
 
+    # --- Sourcing radar ---
+    sourcing_enabled: bool = Field(False, alias="SOURCING_ENABLED")
+    sourcing_kleinanzeigen_enabled: bool = Field(True, alias="SOURCING_KLEINANZEIGEN_ENABLED")
+    sourcing_conversion_enabled: bool = Field(False, alias="SOURCING_CONVERSION_ENABLED")
+    sourcing_scraper_base_url: str = Field("http://sourcing-scraper:8000", alias="SOURCING_SCRAPER_BASE_URL")
+    sourcing_scraper_timeout_seconds: int = Field(60, alias="SOURCING_SCRAPER_TIMEOUT_SECONDS")
+    sourcing_loop_tick_seconds: int = Field(60, alias="SOURCING_LOOP_TICK_SECONDS")
+    sourcing_lock_ttl_seconds: int = Field(300, alias="SOURCING_LOCK_TTL_SECONDS")
+    sourcing_default_interval_seconds: int = Field(1800, alias="SOURCING_DEFAULT_INTERVAL_SECONDS")
+    sourcing_error_backoff_seconds: int = Field(300, alias="SOURCING_ERROR_BACKOFF_SECONDS")
+    sourcing_match_confidence_min_score: int = Field(80, alias="SOURCING_MATCH_CONFIDENCE_MIN_SCORE")
+
     # Amazon fee estimates (global defaults; for margin heuristics, not accounting).
     amazon_fba_referral_fee_bp: int = Field(1500, alias="AMAZON_FBA_REFERRAL_FEE_BP")
     amazon_fba_fulfillment_fee_cents: int = Field(350, alias="AMAZON_FBA_FULFILLMENT_FEE_CENTS")
