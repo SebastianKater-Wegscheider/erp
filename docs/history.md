@@ -817,3 +817,15 @@
 ### Risk handling
 - Data migration only touches keyword fields related to sourcing filters; no destructive schema changes.
 - Historical listing cleanup remains an explicit operational DB action (already executed on production) to avoid accidental data loss in non-production environments.
+
+## 2026-02-17 - Hotfix: Sourcing pagination page-reset race
+
+### Business perspective
+- Operators could not reliably move beyond page 1 in `/sourcing`, undermining the new high-volume triage workflow.
+
+### Technical intent
+- Preserve previous page payload during page transitions and only clamp page index when concrete data exists.
+- This prevents temporary `total=0` loading states from force-resetting `currentPage` back to 0.
+
+### Risk handling
+- Added/updated UI regression test to exercise pagination with async delay and assert `Seite 2 von 2` rendering.

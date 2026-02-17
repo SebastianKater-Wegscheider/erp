@@ -95,6 +95,7 @@ export function SourcingPage() {
       if (minProfit !== "ANY") params.set("min_profit_cents", minProfit);
       return api.request<SourcingListOut>(`/sourcing/items?${params.toString()}`);
     },
+    placeholderData: (previousData) => previousData,
   });
 
   const health = useQuery({
@@ -140,10 +141,10 @@ export function SourcingPage() {
   const readyCount = useMemo(() => items.filter((item) => item.status === "READY").length, [items]);
 
   useEffect(() => {
-    if (currentPage >= totalPages) {
+    if (list.data && currentPage >= totalPages) {
       setCurrentPage(Math.max(totalPages - 1, 0));
     }
-  }, [currentPage, totalPages]);
+  }, [currentPage, totalPages, list.data]);
 
   return (
     <div className="space-y-4">

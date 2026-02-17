@@ -80,6 +80,9 @@ it("uses 40-item pagination and supports inline discard", async () => {
       }
 
       if (offset === 40) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 60);
+        });
         return {
           items: [
             {
@@ -141,4 +144,5 @@ it("uses 40-item pagination and supports inline discard", async () => {
       )),
     ).toBe(true);
   });
+  await screen.findByText("Seite 2 von 2");
 }, 40_000);
