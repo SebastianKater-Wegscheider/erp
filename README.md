@@ -78,6 +78,13 @@ Minimaler Smoke-Test im Browser (Login + Dashboard laden):
    - `npx playwright install --with-deps chromium`
    - `npm test`
 
+## Sourcing Live Smoke (Kleinanzeigen)
+
+- Reales Live-Ingestion-Signal (Scraper -> Backend-Persistenz):
+  - `cd backend`
+  - `RUN_LIVE_KLEINANZEIGEN_TEST=1 pytest -q tests/test_sourcing_live_ingestion.py -s`
+- Test startet einen lokalen `sourcing-scraper`-Prozess, zieht echte Listings und validiert, dass sie in `sourcing_items` landen.
+
 ## API (V1)
 
 Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
@@ -119,7 +126,8 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Incident-Runbook: `docs/incident-runbook.md`
 - Schnellcheck Produktion: `./scripts/prod_health_monitor.sh`
 - Amazon-Scraper drosseln (CPU/RAM/PID + slow mode): `./scripts/prod_apply_amazon_scraper_limits.sh`
-- Optionaler Sourcing-Scraper-Stack ist in `docker-compose.yml` als `sourcing-scraper` + `agent-browser` enthalten.
+- Optionaler `agent-browser`-Sidecar ist als Compose-Profil `optional-agent-browser` hinterlegt.
+  - Start mit Sidecar: `docker compose --profile optional-agent-browser up -d --build`
 
 ## Steuer-Notizen
 

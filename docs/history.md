@@ -428,3 +428,38 @@
 
 ### Tradeoff
 - Semantisch ist `204` fuer "no content" strikter, aber `200` ist hier operativ sicherer mit der aktuellen FastAPI-Route-Konfiguration.
+
+## 2026-02-17 - Sourcing Radar Hotfix: Live Kleinanzeigen Parsing + agent-browser Runtime
+
+### Ausgangslage
+- Live Validierung zeigte 0 Listings im aktuellen Scraper, obwohl Zielseiten Ergebnisse liefern.
+- Ursache 1: Such-URL war fachlich falsch (`c278` = Notebooks statt Videospiele).
+- Ursache 2: Implementierung lief ohne agent-browser und damit ohne geplantes Browser-Runtime-Verhalten.
+
+### Entscheidungen
+- Suchpfad auf private Angebote normalisieren (`/s-anbieter:privat/anzeige:angebote/{term}/k0`, paginiert via `seite:n`).
+- Scraper auf agent-browser Runtime umstellen (CLI-basierte Navigation + DOM-Extraktion), mit HTTP-HTML-Fallback fuer Umgebungen ohne agent-browser Binary.
+- Extraktionsskript auf robuste `article.aditem[data-adid]`-Struktur mit korrekten Selektoren und normalisierten Feldern anpassen.
+- E2E-Verifikation wird als Muss behandelt: Live-Scrape muss echte Listings liefern und via Backend-Run in `sourcing_items` persistiert sichtbar sein.
+
+### Tradeoffs
+- Direkte Sidecar-Nutzung per Docker-Image bleibt vorerst fragil, da aktueller Image-Pull fehlschlaegt; CLI-Runtime sichert Funktionsfaehigkeit bis ein stabiles Sidecar-Image geklaert ist.
+
+## 2026-02-17 - Sourcing Radar Hotfix umgesetzt: agent-browser + Live-E2E Ingestion nachweisbar
+
+### Umgesetzte Aenderungen
+- Kleinanzeigen-Search-URLs korrigiert auf private Angebote (`/s-anbieter:privat/anzeige:angebote/{term}/k0`) statt falscher Kategorie-Pfade.
+- Scraper-Runtime auf agent-browser CLI erweitert (`open` + `eval`) mit persistentem Profil/Session.
+- DOM-Extraktion in `extract_listings.js` auf stabile `article.aditem[data-adid]`-Struktur inkl. Preis/Ort/Bild normalisiert.
+- Python-Fallback-Pfad (HTTP+HTML) behalten, damit Scrapes auch ohne agent-browser-Binary nicht komplett ausfallen.
+- Neue Env-Konfiguration fuer agent-browser runtime in `sourcing-scraper` + Compose/.env-Beispiel.
+- Live-Integrationstest hinzugefuegt: startet echten Scraper-Prozess, zieht Live-Kleinanzeigen-Daten, fuehrt Backend-Run aus und verifiziert Persistenz in `sourcing_items`.
+
+### Verifikation
+- Live-Scrape mit agent-browser liefert aktuell >25 Listings fuer Suchterm `nintendo`.
+- Backend-Run verarbeitet Live-Payload erfolgreich (Items werden in DB angelegt).
+- Teststatus: `test_sourcing_flows.py` gruen, `test_sourcing_live_ingestion.py` gruen (mit `RUN_LIVE_KLEINANZEIGEN_TEST=1`).
+
+### Offene Betriebsbeobachtung
+- Compose-Image `ghcr.io/zackiles/agent-browser:latest` ist aktuell per Registry denied. Runtime bleibt deshalb robust durch CLI/Fallback-Pfad, bis Sidecar-Image verifizierbar verfuegbar ist.
+- Compose-Hardening: `agent-browser` als optionales Profil markiert, damit `docker compose up -d --build` trotz zeitweiser GHCR-Denials lauffaehig bleibt.

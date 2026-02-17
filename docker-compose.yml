@@ -54,8 +54,9 @@ services:
       SOURCING_SCRAPER_MAX_PAGES_PER_TERM: ${SOURCING_SCRAPER_MAX_PAGES_PER_TERM:-1}
       SOURCING_SCRAPER_MIN_DELAY_SECONDS: ${SOURCING_SCRAPER_MIN_DELAY_SECONDS:-2.0}
       SOURCING_SCRAPER_MAX_DELAY_SECONDS: ${SOURCING_SCRAPER_MAX_DELAY_SECONDS:-5.0}
-    depends_on:
-      - agent-browser
+      SOURCING_SCRAPER_USE_AGENT_BROWSER: ${SOURCING_SCRAPER_USE_AGENT_BROWSER:-true}
+      SOURCING_SCRAPER_AGENT_BROWSER_PROFILE_PATH: ${SOURCING_SCRAPER_AGENT_BROWSER_PROFILE_PATH:-/app/.agent-browser/profiles/kleinanzeigen}
+      SOURCING_SCRAPER_AGENT_BROWSER_SESSION_NAME: ${SOURCING_SCRAPER_AGENT_BROWSER_SESSION_NAME:-sourcing-kleinanzeigen}
     volumes:
       - ./data/sourcing-profiles:/app/.agent-browser/profiles
     ports:
@@ -63,6 +64,8 @@ services:
 
   agent-browser:
     image: ghcr.io/zackiles/agent-browser:latest
+    profiles:
+      - optional-agent-browser
     restart: unless-stopped
     environment:
       AGENT_BROWSER_MAX_CONCURRENT: ${AGENT_BROWSER_MAX_CONCURRENT:-1}

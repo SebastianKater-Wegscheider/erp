@@ -52,6 +52,9 @@ async def scrape(req: ScrapeRequest) -> ScrapeResponse:
         max_pages_per_term=settings.sourcing_scraper_max_pages_per_term,
         min_delay_seconds=settings.sourcing_scraper_min_delay_seconds,
         max_delay_seconds=settings.sourcing_scraper_max_delay_seconds,
+        use_agent_browser=settings.sourcing_scraper_use_agent_browser,
+        agent_browser_profile_path=settings.sourcing_scraper_agent_browser_profile_path,
+        agent_browser_session_name=settings.sourcing_scraper_agent_browser_session_name,
     )
 
     return ScrapeResponse(
