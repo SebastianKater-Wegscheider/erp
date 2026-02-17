@@ -895,3 +895,34 @@
 
 ### Tradeoff
 - Fokus auf schnelles Enablen des manuellen Kernpfads ohne invasive Änderungen an Auto-Matching, Conversion- oder Datenmodell-Strukturen.
+
+## 2026-02-17 - Planned UX hardening for manual sourcing matching
+
+### Business perspective
+- Nach dem Enablement des manuellen Matchings fehlt noch direkte Nutzerführung für den nächsten Schritt (Conversion) und eindeutige Candidate-Identifikation.
+
+### Technical intent
+- Kandidatenliste um SKU erweitern, um gleichnamige Produkte besser zu unterscheiden.
+- Direktes Success-Feedback nach "Als Match hinzufügen" einblenden.
+- Für deaktivierte Conversion eine klare Begründung im Detail anzeigen (statt still disabled).
+
+### Risk handling
+- Nur additive API/UI-Anpassungen; keine Änderungen am Recalc-/Conversion-Domainverhalten.
+
+## 2026-02-17 - Implemented UX hardening for manual matching
+
+### Business outcome
+- Manuelles Matching ist jetzt für Operator besser steuerbar: Kandidaten sind eindeutig identifizierbar und der Conversion-Status ist selbsterklärend.
+
+### Technical changes
+- Backend/API:
+  - Manual-Candidates enthalten jetzt `sku` für eindeutige Identifikation.
+- Frontend/Sourcing Detail:
+  - Success-Feedback nach `Als Match hinzufügen`.
+  - Kandidatentabelle zeigt `SKU` als eigene Spalte.
+  - Deaktivierte Conversion erklärt den Grund explizit (fehlender bestätigter Match oder Status != READY).
+
+### Validation
+- `pytest -q backend/tests/test_sourcing_flows.py` -> 12 passed.
+- `npm run typecheck` -> erfolgreich.
+- `npm run build` -> erfolgreich.
