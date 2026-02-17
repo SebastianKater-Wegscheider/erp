@@ -16,6 +16,8 @@ import { useSearchParams } from "react-router-dom";
 
 import { useApi } from "../lib/api";
 import { computeUsedBest, estimateSellThroughFromBsr, formatSellThroughRange } from "../lib/amazon";
+import { normalizeChoice, readStoredChoice, writeStorageItem } from "../lib/browserStorage";
+import { copyToClipboard } from "../lib/clipboard";
 import { formatEur, parseEurToCents } from "../lib/money";
 import { paginateItems } from "../lib/pagination";
 import { amazonListingUrl, resolveReferenceImageSrc } from "../lib/referenceImages";
@@ -140,6 +142,7 @@ const EMPTY_FORM: MasterProductFormState = {
 };
 
 const MASTER_PRODUCTS_VIEW_KEY = "master-products:view";
+const MASTER_PRODUCTS_VIEW_MODES = ["catalog", "amazon"] as const;
 const RESALE_PRICE_GOOD_CENTS = 4_000;
 
 function kindLabel(kind: MasterProductKind): string {
@@ -599,61 +602,6 @@ function tryParseEurCents(input: string): number | null {
   }
 }
 
-function normalizeViewParam(value?: string | null): MasterProductsViewMode | null {
-  if (value === "catalog" || value === "amazon") return value;
-  return null;
-}
-
-function readPersistedViewMode(): MasterProductsViewMode | null {
-  if (typeof window === "undefined") return null;
-  const getItem = window.localStorage?.getItem;
-  if (typeof getItem !== "function") return null;
-  try {
-    return normalizeViewParam(getItem.call(window.localStorage, MASTER_PRODUCTS_VIEW_KEY));
-  } catch {
-    return null;
-  }
-}
-
-function persistViewMode(viewMode: MasterProductsViewMode): void {
-  if (typeof window === "undefined") return;
-  const setItem = window.localStorage?.setItem;
-  if (typeof setItem !== "function") return;
-  try {
-    setItem.call(window.localStorage, MASTER_PRODUCTS_VIEW_KEY, viewMode);
-  } catch {
-    // Ignore storage write failures (private mode, blocked storage, test shims).
-  }
-}
-
-function copyViaExecCommand(value: string): boolean {
-  if (typeof document === "undefined") return false;
-  const ta = document.createElement("textarea");
-  ta.value = value;
-  ta.setAttribute("readonly", "");
-  ta.style.position = "absolute";
-  ta.style.left = "-9999px";
-  document.body.appendChild(ta);
-  ta.select();
-  const ok = document.execCommand("copy");
-  document.body.removeChild(ta);
-  return ok;
-}
-
-async function copyToClipboard(value: string): Promise<boolean> {
-  const text = value.trim();
-  if (!text) return false;
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return copyViaExecCommand(text);
-    }
-  }
-  return copyViaExecCommand(text);
-}
-
 function ReferenceImageThumb({
   url,
   openHref,
@@ -748,14 +696,14 @@ export function MasterProductsPage() {
   const api = useApi();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const viewParam = normalizeViewParam(searchParams.get("view"));
+  const viewParam = normalizeChoice(searchParams.get("view"), MASTER_PRODUCTS_VIEW_MODES);
   const missingAsinOnly = searchParams.get("missing") === "asin";
   const createParam = searchParams.get("create");
   const handledCreateRef = useRef(false);
   const [viewMode, setViewMode] = useState<MasterProductsViewMode>(() => {
-    const fromUrl = normalizeViewParam(searchParams.get("view"));
+    const fromUrl = normalizeChoice(searchParams.get("view"), MASTER_PRODUCTS_VIEW_MODES);
     if (fromUrl) return fromUrl;
-    const fromStorage = readPersistedViewMode();
+    const fromStorage = readStoredChoice(MASTER_PRODUCTS_VIEW_KEY, MASTER_PRODUCTS_VIEW_MODES);
     if (fromStorage) return fromStorage;
     return "catalog";
   });
@@ -802,7 +750,7 @@ export function MasterProductsPage() {
   }, [missingAsinOnly]);
 
   useEffect(() => {
-    persistViewMode(viewMode);
+    writeStorageItem(MASTER_PRODUCTS_VIEW_KEY, viewMode);
   }, [viewMode]);
 
   useEffect(() => {

@@ -12,6 +12,9 @@ import {
   estimateSellThroughFromBsr,
   formatSellThroughRange,
 } from "../lib/amazon";
+import { normalizeChoice, readStoredChoice, writeStorageItem } from "../lib/browserStorage";
+import { copyToClipboard } from "../lib/clipboard";
+import { inventoryStatusLabel, inventoryStatusVariant } from "../lib/inventoryStatus";
 import { formatEur } from "../lib/money";
 import { paginateItems } from "../lib/pagination";
 import { resolveReferenceImageSrc } from "../lib/referenceImages";
@@ -141,6 +144,7 @@ type InventoryViewMode = "overview" | "ops";
 type InventoryQueue = "ALL" | "PHOTOS_MISSING" | "STORAGE_MISSING" | "AMAZON_STALE" | "OLD_STOCK_90D";
 
 const INVENTORY_VIEW_KEY = "inventory:view";
+const INVENTORY_VIEW_MODES = ["overview", "ops"] as const;
 const OVERVIEW_METRIC_CELL_CLASS = "w-[12rem] align-top text-right";
 const OVERVIEW_METRIC_CARD_CLASS =
   "inline-flex h-[5rem] w-full flex-col items-end justify-between rounded-xl border border-gray-200/90 bg-gray-50/80 px-3 py-2 text-right dark:border-gray-800 dark:bg-gray-900/50";
@@ -152,96 +156,12 @@ const INVENTORY_QUEUE_OPTIONS: Array<{ value: InventoryQueue; label: string }> =
   { value: "OLD_STOCK_90D", label: "Altbestand >90T" },
 ];
 
-function normalizeInventoryViewMode(value?: string | null): InventoryViewMode | null {
-  if (value === "overview" || value === "ops") return value;
-  return null;
-}
-
 function normalizeInventoryQueue(value?: string | null): InventoryQueue {
   if (value === "PHOTOS_MISSING") return "PHOTOS_MISSING";
   if (value === "STORAGE_MISSING") return "STORAGE_MISSING";
   if (value === "AMAZON_STALE") return "AMAZON_STALE";
   if (value === "OLD_STOCK_90D") return "OLD_STOCK_90D";
   return "ALL";
-}
-
-function readPersistedInventoryViewMode(): InventoryViewMode | null {
-  if (typeof window === "undefined") return null;
-  const getItem = window.localStorage?.getItem;
-  if (typeof getItem !== "function") return null;
-  try {
-    return normalizeInventoryViewMode(getItem.call(window.localStorage, INVENTORY_VIEW_KEY));
-  } catch {
-    return null;
-  }
-}
-
-function persistInventoryViewMode(viewMode: InventoryViewMode): void {
-  if (typeof window === "undefined") return;
-  const setItem = window.localStorage?.setItem;
-  if (typeof setItem !== "function") return;
-  try {
-    setItem.call(window.localStorage, INVENTORY_VIEW_KEY, viewMode);
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function copyViaExecCommand(value: string): boolean {
-  if (typeof document === "undefined") return false;
-  const ta = document.createElement("textarea");
-  ta.value = value;
-  ta.setAttribute("readonly", "");
-  ta.style.position = "absolute";
-  ta.style.left = "-9999px";
-  document.body.appendChild(ta);
-  ta.select();
-  const ok = document.execCommand("copy");
-  document.body.removeChild(ta);
-  return ok;
-}
-
-async function copyToClipboard(value: string): Promise<boolean> {
-  const text = value.trim();
-  if (!text) return false;
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return copyViaExecCommand(text);
-    }
-  }
-  return copyViaExecCommand(text);
-}
-
-function inventoryStatusLabel(status: string): string {
-  const opt = INVENTORY_STATUS_OPTIONS.find((o) => o.value === status);
-  return opt?.label ?? status;
-}
-
-function inventoryStatusVariant(status: string) {
-  switch (status) {
-    case "AVAILABLE":
-      return "success" as const;
-    case "FBA_WAREHOUSE":
-      return "success" as const;
-    case "FBA_INBOUND":
-      return "warning" as const;
-    case "RESERVED":
-      return "warning" as const;
-    case "DISCREPANCY":
-      return "danger" as const;
-    case "LOST":
-      return "danger" as const;
-    case "SOLD":
-      return "secondary" as const;
-    case "RETURNED":
-      return "outline" as const;
-    case "DRAFT":
-    default:
-      return "secondary" as const;
-  }
 }
 
 function conditionLabel(condition: string): string {
@@ -389,9 +309,9 @@ export function InventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [q, setQ] = useState(() => searchParams.get("q") ?? "");
   const [viewMode, setViewMode] = useState<InventoryViewMode>(() => {
-    const fromUrl = normalizeInventoryViewMode(searchParams.get("view"));
+    const fromUrl = normalizeChoice(searchParams.get("view"), INVENTORY_VIEW_MODES);
     if (fromUrl) return fromUrl;
-    return readPersistedInventoryViewMode() ?? "overview";
+    return readStoredChoice(INVENTORY_VIEW_KEY, INVENTORY_VIEW_MODES) ?? "overview";
   });
   const [status, setStatus] = useState<string>(() => {
     const s = (searchParams.get("status") ?? "").toUpperCase();
@@ -417,11 +337,11 @@ export function InventoryPage() {
   const tablePreviewUrlsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
-    persistInventoryViewMode(viewMode);
+    writeStorageItem(INVENTORY_VIEW_KEY, viewMode);
   }, [viewMode]);
 
   useEffect(() => {
-    const fromUrl = normalizeInventoryViewMode(searchParams.get("view"));
+    const fromUrl = normalizeChoice(searchParams.get("view"), INVENTORY_VIEW_MODES);
     if (fromUrl && fromUrl !== viewMode) setViewMode(fromUrl);
   }, [searchParams, viewMode]);
 
