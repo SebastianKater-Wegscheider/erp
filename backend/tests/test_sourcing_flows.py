@@ -595,6 +595,7 @@ async def test_list_manual_match_candidates_excludes_existing_matches(db_session
 
     assert len(out) == 1
     assert out[0].id == candidate.id
+    assert out[0].sku == candidate.sku
     assert out[0].platform == "GAMECUBE"
     assert out[0].rank_overall == 1_450
     assert out[0].price_used_good_cents == 5_900

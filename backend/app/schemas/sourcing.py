@@ -148,6 +148,7 @@ class SourcingMatchPatchOut(BaseModel):
 
 class SourcingManualMatchCandidateOut(BaseModel):
     id: UUID
+    sku: str
     title: str
     platform: str
     region: str

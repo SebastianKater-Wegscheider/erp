@@ -425,6 +425,7 @@ async def list_manual_match_candidates(
         out.append(
             SourcingManualMatchCandidateOut(
                 id=product.id,
+                sku=product.sku,
                 title=product.title,
                 platform=product.platform,
                 region=product.region,
