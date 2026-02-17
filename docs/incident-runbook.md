@@ -3,6 +3,7 @@
 ## Scope
 - ERP stack: `/home/seb/kater-wegscheider-company`
 - Amazon scraper stack: `/home/seb/amazon-scraper`
+- Sourcing scraper stack: `/home/seb/kater-wegscheider-company` (compose services `sourcing-scraper`, `agent-browser`)
 - Host: `seb@192.168.178.72`
 
 ## 1) Fast triage (2-3 minutes)
@@ -26,6 +27,11 @@ ssh seb@192.168.178.72 'cd /home/seb/kater-wegscheider-company && docker compose
 ### Amazon scraper stack
 ```bash
 ssh seb@192.168.178.72 'cd /home/seb/amazon-scraper && docker compose up -d --build && docker compose ps'
+```
+
+### Sourcing scraper services (same ERP compose)
+```bash
+ssh seb@192.168.178.72 'cd /home/seb/kater-wegscheider-company && docker compose up -d --build sourcing-scraper agent-browser && docker compose ps'
 ```
 
 If both fail to respond and SSH is unstable, reboot host (already validated as effective fallback), then rerun both commands.

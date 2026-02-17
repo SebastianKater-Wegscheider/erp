@@ -86,6 +86,17 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Master Products: `POST/GET/PATCH /master-products`
 - Purchases: `POST/GET /purchases` (Smart-Split: Summe Lines == Total)
   - Purchase↔Mileage Link: `GET/PUT/DELETE /purchases/{id}/mileage`
+- Sourcing Radar:
+  - `POST /sourcing/jobs/scrape`
+  - `GET /sourcing/health`
+  - `GET /sourcing/stats`
+  - `GET /sourcing/items`
+  - `GET /sourcing/items/{id}`
+  - `PATCH /sourcing/items/{id}/matches/{match_id}`
+  - `POST /sourcing/items/{id}/conversion-preview`
+  - `POST /sourcing/items/{id}/convert`
+  - `POST /sourcing/items/{id}/discard`
+  - `GET/PUT /sourcing/settings`
 - Inventory: `GET /inventory` (Filter: `status`, Suche: `q`)
 - FBA Shipments: `POST/GET/PATCH /fba-shipments`, `POST /fba-shipments/{id}/ship`, `POST /fba-shipments/{id}/receive`
 - Cost Allocation: `POST/GET /cost-allocations`
@@ -108,6 +119,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 - Incident-Runbook: `docs/incident-runbook.md`
 - Schnellcheck Produktion: `./scripts/prod_health_monitor.sh`
 - Amazon-Scraper drosseln (CPU/RAM/PID + slow mode): `./scripts/prod_apply_amazon_scraper_limits.sh`
+- Optionaler Sourcing-Scraper-Stack ist in `docker-compose.yml` als `sourcing-scraper` + `agent-browser` enthalten.
 
 ## Steuer-Notizen
 
