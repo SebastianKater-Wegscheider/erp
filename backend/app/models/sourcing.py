@@ -17,11 +17,65 @@ if TYPE_CHECKING:
     from app.models.purchase import Purchase
 
 
+class SourcingAgent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "sourcing_agents"
+    __table_args__ = (
+        Index("ix_sourcing_agents_enabled_next_run_at", "enabled", "next_run_at"),
+    )
+
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=21_600)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    queries: Mapped[list["SourcingAgentQuery"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    runs: Mapped[list["SourcingRun"]] = relationship(back_populates="agent")
+    items: Mapped[list["SourcingItem"]] = relationship(back_populates="agent")
+
+
+class SourcingAgentQuery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "sourcing_agent_queries"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "platform", "keyword", name="uq_sourcing_agent_query_platform_keyword"),
+        Index("ix_sourcing_agent_queries_agent_id", "agent_id"),
+        Index("ix_sourcing_agent_queries_enabled", "enabled"),
+    )
+
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sourcing_agents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    platform: Mapped[SourcingPlatform] = mapped_column(sourcing_platform_enum, nullable=False)
+    keyword: Mapped[str] = mapped_column(String(200), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    max_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    detail_enrichment_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    options_json: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+
+    agent: Mapped[SourcingAgent] = relationship(back_populates="queries")
+    runs: Mapped[list["SourcingRun"]] = relationship(back_populates="agent_query")
+    items: Mapped[list["SourcingItem"]] = relationship(back_populates="agent_query")
+
+
 class SourcingRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "sourcing_runs"
 
     trigger: Mapped[str] = mapped_column(String(32), nullable=False, default="scheduler")
     platform: Mapped[SourcingPlatform | None] = mapped_column(sourcing_platform_enum, nullable=True)
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sourcing_agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_query_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sourcing_agent_queries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -37,6 +91,8 @@ class SourcingRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     search_terms: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     items: Mapped[list["SourcingItem"]] = relationship(back_populates="run")
+    agent: Mapped[SourcingAgent | None] = relationship(back_populates="runs")
+    agent_query: Mapped[SourcingAgentQuery | None] = relationship(back_populates="runs")
 
 
 class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -47,6 +103,7 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_sourcing_items_scraped_at", "scraped_at"),
         Index("ix_sourcing_items_posted_at", "posted_at"),
         Index("ix_sourcing_items_run_id", "last_run_id"),
+        Index("ix_sourcing_items_auction_end_at", "auction_end_at"),
     )
 
     platform: Mapped[SourcingPlatform] = mapped_column(sourcing_platform_enum, nullable=False)
@@ -69,10 +126,16 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     estimated_revenue_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     estimated_profit_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     estimated_roi_bp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_purchase_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auction_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auction_current_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    auction_bid_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bidbag_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    bidbag_last_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     converted_purchase_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -85,10 +148,22 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("sourcing_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sourcing_agents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    agent_query_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sourcing_agent_queries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     matches: Mapped[list["SourcingMatch"]] = relationship(back_populates="item", cascade="all, delete-orphan")
     converted_purchase: Mapped[Purchase | None] = relationship("Purchase")
     run: Mapped[SourcingRun | None] = relationship(back_populates="items")
+    agent: Mapped[SourcingAgent | None] = relationship(back_populates="items")
+    agent_query: Mapped[SourcingAgentQuery | None] = relationship(back_populates="items")
 
 
 class SourcingMatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):

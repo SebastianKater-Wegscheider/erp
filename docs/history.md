@@ -1,5 +1,37 @@
 # History
 
+## 2026-02-17 - Sourcing Radar v1.1: Multi-Platform (eBay.de), Search Agents, Bidbag-Handoff
+
+### Ausgangslage
+- Sourcing laeuft aktuell als globaler Kleinanzeigen-Run mit zentralen Keywords.
+- Es fehlt ein operatives Agent-Modell (mehrere Suchstrategien mit eigener Frequenz/Plattform).
+- Fuer eBay Auktionen existiert kein automatisierter Ceiling-Preis und kein strukturierter Handoff in den Sniping-Flow.
+
+### Business-Entscheidungen
+- Scope v1.1:
+  - zweite Plattform `EBAY_DE` (Auktionen, ending soon)
+  - Search Agents als First-Class-Konfiguration (pro Agent: Keywords, Plattformen, Intervall)
+  - Bidbag-Handoff bewusst manuell ueber Deep-Link/Payload (kein API-Coupling)
+- Max Purchase Price wird aus bestehender Bewertungslogik (Revenue/ROI/Profit Floors) abgeleitet, nicht statisch.
+- Detail-Enrichment bleibt selektiv (Top-Kandidaten), um Crawl-Breite nicht zu verlieren.
+
+### Technische Entscheidungen
+- Schema-Erweiterung:
+  - neue Agent-Tabellen (`sourcing_agents`, `sourcing_agent_queries`)
+  - Provenance-FKs auf Runs/Items
+  - Auktions- und Bidbag-Felder auf `sourcing_items`
+  - `sourcing_platform` erweitert um `EBAY_DE` (bestehende Werte bleiben erhalten)
+- Orchestrierung:
+  - Scheduler wird agent-getrieben (`next_run_at` / `interval_seconds`)
+  - bestehende globale Settings (`search_terms`, `scrape_interval_seconds`) bleiben als Fallback kompatibel
+- Scraper:
+  - `POST /scrape` und `POST /listing-detail` erhalten `platform=ebay_de`
+  - eBay-Extraktion ueber agent-browser, keine API-Integration
+
+### Trade-offs
+- Kein automatisches Win/Loss-Outcome-Tracking in v1.1 (bewusste Entkopplung fuer schnelleres Time-to-Value).
+- Bidbag wird nicht direkt vom Backend gesteuert; dadurch weniger Risiko bei Drittanbieter-Aenderungen, aber manuelle Ausfuehrung bleibt erforderlich.
+
 ## 2026-02-17 - Sourcing Radar: Detail-Enrichment fuer Entscheidungsqualitaet + normalisiertes `posted_at`
 
 ### Ausgangslage
