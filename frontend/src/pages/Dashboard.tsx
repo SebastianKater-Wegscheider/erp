@@ -180,12 +180,12 @@ function kleinanzeigenSlug(q: string): string {
 }
 
 function ebayEndingSoonGermanyUrl(q: string): string {
-  const kw = encodeURIComponent(q.trim() || "nintendo");
+  const kw = encodeURIComponent(q.trim() || "gamecube");
   return `https://www.ebay.de/sch/i.html?_nkw=${kw}&_sacat=0&_from=R40&LH_Auction=1&_sop=44&rt=nc&LH_PrefLoc=1`;
 }
 
 function ebayBuyNowGermanyUrl(q: string): string {
-  const kw = encodeURIComponent(q.trim() || "nintendo");
+  const kw = encodeURIComponent(q.trim() || "gamecube");
   return `https://www.ebay.de/sch/i.html?_nkw=${kw}&_sacat=0&_from=R40&LH_BIN=1&_sop=15&rt=nc&LH_PrefLoc=1`;
 }
 
@@ -195,7 +195,7 @@ function kleinanzeigenUrl(q: string): string {
 
 export function DashboardPage() {
   const api = useApi();
-  const [sourcingQ, setSourcingQ] = useState("nintendo");
+  const [sourcingQ, setSourcingQ] = useState("gamecube");
   const q = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api.request<CompanyDashboardOut>("/reports/company-dashboard"),
@@ -920,7 +920,7 @@ export function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Input value={sourcingQ} onChange={(e) => setSourcingQ(e.target.value)} placeholder="z.B. nintendo, gameboy, ps2 bundle" />
+              <Input value={sourcingQ} onChange={(e) => setSourcingQ(e.target.value)} placeholder="z.B. gamecube, gameboy, ps2 bundle" />
 
               <div className="grid gap-2">
                 <ExternalLinkButton href={ebayEndingSoonGermanyUrl(sourcingQ)} label="eBay: Auktionen enden bald (DE)" />

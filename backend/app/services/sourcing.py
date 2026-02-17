@@ -218,7 +218,7 @@ async def _load_resolved_settings(session: AsyncSession, app_settings: Settings)
         bidbag_deeplink_template=text_setting("bidbag_deeplink_template"),
         search_terms=json_setting(
             "search_terms",
-            ["videospiele konvolut", "retro spiele sammlung", "nintendo spiele paket"],
+            ["videospiele konvolut", "retro spiele sammlung", "gamecube spiele paket"],
         ),
     )
 

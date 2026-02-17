@@ -1,6 +1,6 @@
 import { ExternalLink, Play, RefreshCw, Settings2, UsersRound } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Badge } from "../components/ui/badge";
@@ -10,6 +10,7 @@ import { InlineMessage } from "../components/ui/inline-message";
 import { Label } from "../components/ui/label";
 import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { useApi } from "../lib/api";
 import { formatEur } from "../lib/money";
 
@@ -57,7 +58,7 @@ const STATUS_OPTIONS = ["ALL", "NEW", "ANALYZING", "READY", "LOW_VALUE", "CONVER
 const MIN_PROFIT_OPTIONS = ["ANY", "2000", "3000", "5000"] as const;
 const SORT_OPTIONS = ["scraped_at", "posted_at", "profit", "roi"] as const;
 const PLATFORM_OPTIONS = ["ALL", "KLEINANZEIGEN", "EBAY_DE", "WILLHABEN", "EBAY_KLEINANZEIGEN"] as const;
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 40;
 
 function formatDateTime(value?: string | null): string {
   if (!value) return "—";
@@ -75,23 +76,24 @@ export function SourcingPage() {
   const [platform, setPlatform] = useState<(typeof PLATFORM_OPTIONS)[number]>("ALL");
   const [minProfit, setMinProfit] = useState<(typeof MIN_PROFIT_OPTIONS)[number]>("ANY");
   const [sortBy, setSortBy] = useState<(typeof SORT_OPTIONS)[number]>("scraped_at");
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pendingDiscardId, setPendingDiscardId] = useState<string | null>(null);
 
-  const list = useInfiniteQuery({
-    queryKey: ["sourcing-items", status, platform, minProfit, sortBy],
-    initialPageParam: 0,
-    queryFn: ({ pageParam }) => {
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [status, platform, minProfit, sortBy]);
+
+  const list = useQuery({
+    queryKey: ["sourcing-items", status, platform, minProfit, sortBy, currentPage],
+    queryFn: () => {
       const params = new URLSearchParams();
       params.set("limit", String(PAGE_SIZE));
-      params.set("offset", String(pageParam * PAGE_SIZE));
+      params.set("offset", String(currentPage * PAGE_SIZE));
       params.set("sort_by", sortBy);
       if (status !== "ALL") params.set("status", status);
       if (platform !== "ALL") params.set("platform", platform);
       if (minProfit !== "ANY") params.set("min_profit_cents", minProfit);
       return api.request<SourcingListOut>(`/sourcing/items?${params.toString()}`);
-    },
-    getNextPageParam: (lastPage, pages) => {
-      const loaded = pages.reduce((acc, page) => acc + page.items.length, 0);
-      return loaded < lastPage.total ? pages.length : undefined;
     },
   });
 
@@ -108,15 +110,40 @@ export function SourcingPage() {
         json: { force: true },
       }),
     onSuccess: async () => {
+      setCurrentPage(0);
       await qc.invalidateQueries({ queryKey: ["sourcing-items"] });
       await qc.invalidateQueries({ queryKey: ["sourcing-health"] });
     },
   });
 
-  const items = list.data?.pages.flatMap((page) => page.items) ?? [];
-  const total = list.data?.pages[0]?.total ?? 0;
+  const markUninteresting = useMutation({
+    mutationFn: (itemId: string) =>
+      api.request<void>(`/sourcing/items/${itemId}/discard`, {
+        method: "POST",
+        json: { reason: "Marked uninteresting from sourcing list" },
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["sourcing-items"] });
+      await qc.invalidateQueries({ queryKey: ["sourcing-health"] });
+    },
+    onSettled: () => {
+      setPendingDiscardId(null);
+    },
+  });
+
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const canGoPrev = currentPage > 0;
+  const canGoNext = currentPage + 1 < totalPages;
 
   const readyCount = useMemo(() => items.filter((item) => item.status === "READY").length, [items]);
+
+  useEffect(() => {
+    if (currentPage >= totalPages) {
+      setCurrentPage(Math.max(totalPages - 1, 0));
+    }
+  }, [currentPage, totalPages]);
 
   return (
     <div className="space-y-4">
@@ -219,7 +246,7 @@ export function SourcingPage() {
           <div className="space-y-1">
             <Label>Summary</Label>
             <div className="rounded-md border border-[color:var(--app-border)] p-2 text-sm text-[color:var(--app-text-muted)]">
-              Loaded: {items.length}/{total} • READY: {readyCount}
+              Seite {currentPage + 1}/{totalPages} • Total: {total} • READY (Seite): {readyCount}
             </div>
           </div>
         </CardContent>
@@ -228,72 +255,118 @@ export function SourcingPage() {
       {list.isLoading ? <InlineMessage>Lade Sourcing Feed…</InlineMessage> : null}
       {list.error ? <InlineMessage tone="error">Feed konnte nicht geladen werden</InlineMessage> : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {items.map((item) => (
-          <Card key={item.id}>
-            <CardHeader className="space-y-1">
-              <div className="flex items-center justify-between gap-2">
-                <Badge variant={item.status === "READY" ? "success" : "secondary"}>{item.status}</Badge>
-                <span className="text-xs text-[color:var(--app-text-muted)]">Scraped: {formatDateTime(item.scraped_at)}</span>
-              </div>
-              <div className="text-xs text-[color:var(--app-text-muted)]">{item.platform}</div>
-              <CardTitle className="text-base">{item.title}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {item.primary_image_url ? (
-                <div className="overflow-hidden rounded-md border border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)]">
-                  <img
-                    src={item.primary_image_url}
-                    alt={`Listingbild von ${item.title}`}
-                    className="h-40 w-full object-cover"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] p-3 text-sm text-[color:var(--app-text-muted)]">
-                  Kein Bild verfügbar
-                </div>
-              )}
-              <div className="text-sm text-[color:var(--app-text-muted)]">Inseriert: {formatDateTime(item.posted_at)}</div>
-              <div className="text-sm text-[color:var(--app-text-muted)]">{item.location_city || "Ort unbekannt"}</div>
-              <div className="text-sm">Preis: {formatEur(item.price_cents)}</div>
-              {item.platform === "EBAY_DE" ? (
-                <>
-                  <div className="text-sm">Aktuelles Gebot: {typeof item.auction_current_price_cents === "number" ? formatEur(item.auction_current_price_cents) : "—"}</div>
-                  <div className="text-sm">Auktionsende: {formatDateTime(item.auction_end_at)}</div>
-                  <div className="text-sm">Max. Kaufpreis: {typeof item.max_purchase_price_cents === "number" ? formatEur(item.max_purchase_price_cents) : "—"}</div>
-                  <div className="text-sm">Headroom: {typeof item.max_purchase_price_cents === "number" && typeof item.auction_current_price_cents === "number" ? formatEur(item.max_purchase_price_cents - item.auction_current_price_cents) : "—"}</div>
-                </>
-              ) : null}
-              <div className="text-sm">Profit: {typeof item.estimated_profit_cents === "number" ? formatEur(item.estimated_profit_cents) : "—"}</div>
-              <div className="text-sm">ROI: {typeof item.estimated_roi_bp === "number" ? `${(item.estimated_roi_bp / 100).toFixed(0)}%` : "—"}</div>
-              <div className="text-sm">Matches: {item.match_count}</div>
-              <div className="flex items-center gap-2 pt-1">
-                <Button type="button" onClick={() => navigate(`/sourcing/${item.id}`)}>Details</Button>
-                <Button type="button" variant="outline" onClick={() => window.open(item.url, "_blank", "noopener,noreferrer")}>
-                  <ExternalLink className="h-4 w-4" />
-                  Listing
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {items.length > 0 ? (
-        <div className="flex justify-center">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => list.fetchNextPage()}
-            disabled={!list.hasNextPage || list.isFetchingNextPage}
-          >
-            {list.isFetchingNextPage ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-            {list.hasNextPage ? "Mehr laden" : "Alle Einträge geladen"}
-          </Button>
-        </div>
-      ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>Listings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="overflow-x-auto rounded-md border border-[color:var(--app-border)]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Bild</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Titel</TableHead>
+                  <TableHead>Plattform</TableHead>
+                  <TableHead>Ort</TableHead>
+                  <TableHead>Preis</TableHead>
+                  <TableHead>Profit</TableHead>
+                  <TableHead>ROI</TableHead>
+                  <TableHead>Matches</TableHead>
+                  <TableHead>Scraped</TableHead>
+                  <TableHead>Aktionen</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => {
+                  const canMarkUninteresting = item.status !== "DISCARDED" && item.status !== "CONVERTED";
+                  const discardPending = markUninteresting.isPending && pendingDiscardId === item.id;
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        {item.primary_image_url ? (
+                          <img
+                            src={item.primary_image_url}
+                            alt={`Listingbild von ${item.title}`}
+                            className="h-12 w-12 rounded-md object-cover"
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-[color:var(--app-border)] bg-[color:var(--app-surface-elevated)] text-[10px] text-[color:var(--app-text-muted)]">
+                            Kein Bild
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={item.status === "READY" ? "success" : "secondary"}>{item.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{item.title}</div>
+                        {item.platform === "EBAY_DE" ? (
+                          <div className="text-xs text-[color:var(--app-text-muted)]">
+                            Gebot {typeof item.auction_current_price_cents === "number" ? formatEur(item.auction_current_price_cents) : "—"}
+                            {" • "}
+                            Max {typeof item.max_purchase_price_cents === "number" ? formatEur(item.max_purchase_price_cents) : "—"}
+                          </div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>{item.platform}</TableCell>
+                      <TableCell>{item.location_city || "—"}</TableCell>
+                      <TableCell>{formatEur(item.price_cents)}</TableCell>
+                      <TableCell>{typeof item.estimated_profit_cents === "number" ? formatEur(item.estimated_profit_cents) : "—"}</TableCell>
+                      <TableCell>{typeof item.estimated_roi_bp === "number" ? `${(item.estimated_roi_bp / 100).toFixed(0)}%` : "—"}</TableCell>
+                      <TableCell>{item.match_count}</TableCell>
+                      <TableCell>{formatDateTime(item.scraped_at)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" size="sm" onClick={() => navigate(`/sourcing/${item.id}`)}>Details</Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => window.open(item.url, "_blank", "noopener,noreferrer")}>
+                            <ExternalLink className="h-4 w-4" />
+                            Listing
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canMarkUninteresting || markUninteresting.isPending}
+                            onClick={() => {
+                              setPendingDiscardId(item.id);
+                              markUninteresting.mutate(item.id);
+                            }}
+                          >
+                            {discardPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                            Uninteressant
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {items.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-sm text-[color:var(--app-text-muted)]">
+                      Keine Listings für die aktuelle Filterung.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </div>
+          {markUninteresting.error ? <InlineMessage tone="error">Uninteressant-Markierung fehlgeschlagen.</InlineMessage> : null}
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm text-[color:var(--app-text-muted)]">Seite {currentPage + 1} von {totalPages}</div>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => setCurrentPage((p) => Math.max(0, p - 1))} disabled={!canGoPrev || list.isFetching}>
+                Zurück
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setCurrentPage((p) => p + 1)} disabled={!canGoNext || list.isFetching}>
+                Weiter
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

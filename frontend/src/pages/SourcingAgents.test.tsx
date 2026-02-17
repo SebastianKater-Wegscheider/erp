@@ -25,7 +25,7 @@ async function renderPage() {
     if (path === "/sourcing/agents" && opts?.method === "POST") {
       return {
         id: "a1",
-        name: "Nintendo Agent",
+        name: "Gamecube Agent",
         enabled: true,
         interval_seconds: 21600,
         queries: [],
@@ -58,7 +58,7 @@ it("creates an agent via POST", async () => {
   await renderPage();
 
   await screen.findByText(/neuen agent anlegen/i, {}, { timeout: 15_000 });
-  fireEvent.change(screen.getByPlaceholderText("Nintendo Radar"), { target: { value: "Nintendo Agent" } });
+  fireEvent.change(screen.getByPlaceholderText("Gamecube Radar"), { target: { value: "Gamecube Agent" } });
   fireEvent.click(screen.getByRole("button", { name: /agent erstellen/i }));
 
   await waitFor(() => {
@@ -67,7 +67,7 @@ it("creates an agent via POST", async () => {
       expect.objectContaining({
         method: "POST",
         json: expect.objectContaining({
-          name: "Nintendo Agent",
+          name: "Gamecube Agent",
         }),
       }),
     );

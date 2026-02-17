@@ -789,3 +789,31 @@
 
 ### Result
 - Full E2E suite (`6` specs) now passes in parallel on current local compose runtime with explicit credentials.
+
+## 2026-02-17 - Planned UI refactor: sourcing table view + inline uninteresting action
+
+### Business perspective
+- Current sourcing card feed is hard to scan at higher volume; operators need faster compare/sort behavior and lower click-cost for dismissing low-signal items.
+
+### Technical intent
+- Replace card grid with table-first list for denser readability.
+- Introduce explicit pagination with 40 items per page for predictable loading and review cadence.
+- Add inline "Uninteressant" action in list rows (status-gated) so discard does not require detail navigation.
+
+### Risk handling
+- Keep existing details page and API contracts unchanged; this is a presentation/interaction-layer change with focused mutation behavior.
+
+## 2026-02-17 - Sourcing defaults switched from Nintendo to Gamecube
+
+### Business perspective
+- Broad `nintendo` sourcing generated too much low-signal inventory and review noise.
+- Narrowing to `gamecube` improves relevance and speeds operator decision cycles.
+
+### Technical intent
+- Switch application scraping defaults and UI entry defaults from `nintendo` to `gamecube`.
+- Add a forward data migration to update legacy `search_terms` and agent query keywords that still contain `nintendo`.
+- Keep migration idempotent for existing environments and deterministic for fresh environments.
+
+### Risk handling
+- Data migration only touches keyword fields related to sourcing filters; no destructive schema changes.
+- Historical listing cleanup remains an explicit operational DB action (already executed on production) to avoid accidental data loss in non-production environments.

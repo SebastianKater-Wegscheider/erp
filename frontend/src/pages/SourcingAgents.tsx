@@ -201,7 +201,7 @@ export function SourcingAgentsPage() {
           <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-1">
               <Label>Name</Label>
-              <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Nintendo Radar" />
+              <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Gamecube Radar" />
             </div>
             <div className="space-y-1">
               <Label>Intervall (Stunden)</Label>
@@ -249,7 +249,7 @@ export function SourcingAgentsPage() {
                         next[idx] = { ...query, keyword: e.target.value };
                         setDraft({ ...draft, queries: next });
                       }}
-                      placeholder="nintendo"
+                      placeholder="gamecube"
                     />
                   </div>
                   <div className="space-y-1">
