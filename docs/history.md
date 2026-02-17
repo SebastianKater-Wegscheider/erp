@@ -327,3 +327,27 @@
 - FBA payout nutzt bestehendes Fee-Profil aus Settings; Referral-Fee-Rundung erfolgt deterministisch per Integer-Half-Up.
 - Top-Chancen werden auf Master-Produkt-Ebene gruppiert und nach Gesamtmarge sortiert, um doppelte Zeilen bei Mehrfachbestand zu vermeiden.
 - UI zeigt zusaetzlich Offer-Kontext in der Inventar-Ansicht, aber nur als kompakte Meta-Information ohne neue komplexe Controls.
+
+## 2026-02-17 - Per-Item Target Pricing v1: Contract-Fix + klare operative Steuerung
+
+### Business-Intent
+- Zielpreise muessen pro Inventory-Item explizit steuerbar sein, auch wenn Amazon-Daten vorhanden sind.
+- Dashboard-Bewertung soll nachvollziehbar werden: manuell gesetzt vs. automatisch empfohlen vs. unbepreist.
+- Bulk-Steuerung fuer viele Artikel braucht sichere Vorschau vor mutierenden Aenderungen.
+
+### Technisches Modell
+- Persistiertes Item-Preismodell bleibt `AUTO|MANUAL` mit manueller Preis-Override auf Item-Ebene.
+- Empfehlung bleibt `MARGIN_FIRST`: Amazon-Anker (Condition, fallback Buybox) + Marktanpassung, sonst Kosten-Floor.
+- Floor basiert auf `max(20%, 5 EUR)` Netto-Marge auf Cost-Basis und wird auf Brutto-Zielpreis invertiert.
+- Bulk-API wird auf regelbasierte Filter (`condition`, `asin_state`, `bsr`, `offers`) + `preview/apply` mit expliziten Operationen vereinheitlicht.
+
+### Schwellwerte
+- Mindestmarge: `TARGET_PRICING_MARGIN_FLOOR_BP=2000` und `TARGET_PRICING_MARGIN_FLOOR_MIN_CENTS=500`.
+- Angebots-Signale: low `<=2`, high `>=12`.
+- BSR-Signale: strong `<=10000`, weak `>=80000`.
+- Insight-/Dashboard-Transparenz bleibt erhalten: effective/manual/auto/unpriced Counter.
+
+### Tradeoffs
+- Scope bleibt Inventory-first; keine Preisbearbeitung auf Master-Produkt-Seite in dieser Iteration.
+- Bulk-Regeln bleiben one-time apply (kein persisted Rule Scheduling/Preset-Management).
+- Korrekturen/Refunds bleiben periodisiert im Korrekturmonat; keine nachtraegliche Reallokation.

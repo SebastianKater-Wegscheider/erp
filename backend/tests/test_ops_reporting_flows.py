@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import uuid
 import zipfile
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 from fastapi import HTTPException
@@ -11,7 +11,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.enums import InventoryCondition, OrderChannel, OpexCategory, PaymentSource, PurchaseKind, PurchaseType
+from app.core.config import get_settings
+from app.core.enums import (
+    InventoryCondition,
+    InventoryStatus,
+    OrderChannel,
+    OpexCategory,
+    PaymentSource,
+    PurchaseKind,
+    PurchaseType,
+    TargetPriceMode,
+)
+from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.inventory_item import InventoryItem
 from app.models.ledger_entry import LedgerEntry
 from app.models.master_product import MasterProduct
@@ -29,6 +40,7 @@ from app.services.opex import create_opex
 from app.services.purchases import create_purchase
 from app.services.reports import company_dashboard, dashboard, monthly_close_zip, vat_report
 from app.services.sales import create_sales_order, finalize_sales_order
+from app.services.target_pricing import compute_effective_price, compute_recommendation, fba_payout_cents
 
 
 ACTOR = "tester"
@@ -407,6 +419,109 @@ async def test_company_dashboard_accounting_returns_monthly_cash_and_accrual_ins
 
     assert [i["key"] for i in accounting["insights"]] == ["runway_low", "cash_negative", "accrual_negative"]
     assert len(accounting["insights"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_company_dashboard_uses_effective_target_prices_for_sell_value(db_session: AsyncSession) -> None:
+    today = date(2026, 2, 15)
+    settings = get_settings()
+
+    async with db_session.begin():
+        mp_manual = await _create_master_product(db_session, "SELL-MANUAL")
+        mp_auto = await _create_master_product(db_session, "SELL-AUTO")
+
+        manual_item = InventoryItem(
+            master_product_id=mp_manual.id,
+            condition=InventoryCondition.GOOD,
+            purchase_type=PurchaseType.DIFF,
+            purchase_price_cents=1_000,
+            allocated_costs_cents=100,
+            status=InventoryStatus.AVAILABLE,
+            target_price_mode=TargetPriceMode.MANUAL,
+            manual_target_sell_price_cents=5_000,
+        )
+        auto_item = InventoryItem(
+            master_product_id=mp_auto.id,
+            condition=InventoryCondition.GOOD,
+            purchase_type=PurchaseType.DIFF,
+            purchase_price_cents=1_200,
+            allocated_costs_cents=0,
+            status=InventoryStatus.AVAILABLE,
+            target_price_mode=TargetPriceMode.AUTO,
+            manual_target_sell_price_cents=None,
+        )
+        db_session.add_all([manual_item, auto_item])
+        await db_session.flush()
+
+        db_session.add(
+            AmazonProductMetricsLatest(
+                master_product_id=mp_auto.id,
+                last_attempt_at=datetime(2026, 2, 15, tzinfo=timezone.utc),
+                last_success_at=datetime(2026, 2, 15, tzinfo=timezone.utc),
+                last_run_id=None,
+                blocked_last=False,
+                block_reason_last=None,
+                last_error=None,
+                rank_overall=8_000,
+                rank_overall_category=None,
+                rank_specific=None,
+                rank_specific_category=None,
+                price_new_cents=None,
+                price_used_like_new_cents=4_000,
+                price_used_very_good_cents=3_800,
+                price_used_good_cents=3_700,
+                price_used_acceptable_cents=3_500,
+                price_collectible_cents=None,
+                buybox_total_cents=3_600,
+                offers_count_total=4,
+                offers_count_priced_total=None,
+                offers_count_used_priced_total=3,
+                next_retry_at=None,
+                consecutive_failures=0,
+            )
+        )
+
+    out = await company_dashboard(db_session, today=today)
+    amazon = out["amazon_inventory"]
+
+    auto_rec = compute_recommendation(
+        purchase_price_cents=1_200,
+        allocated_costs_cents=0,
+        condition="GOOD",
+        price_new_cents=None,
+        price_used_like_new_cents=4_000,
+        price_used_very_good_cents=3_800,
+        price_used_good_cents=3_700,
+        price_used_acceptable_cents=3_500,
+        price_buybox_cents=3_600,
+        rank=8_000,
+        offers_count=3,
+        settings=settings,
+    )
+    auto_effective, _ = compute_effective_price(
+        mode="AUTO",
+        manual_target_sell_price_cents=None,
+        recommendation=auto_rec,
+    )
+    assert auto_effective is not None
+
+    expected_payout = fba_payout_cents(
+        market_price_cents=5_000,
+        referral_fee_bp=settings.amazon_fba_referral_fee_bp,
+        fulfillment_fee_cents=settings.amazon_fba_fulfillment_fee_cents,
+        inbound_shipping_cents=settings.amazon_fba_inbound_shipping_cents,
+    ) + fba_payout_cents(
+        market_price_cents=auto_effective,
+        referral_fee_bp=settings.amazon_fba_referral_fee_bp,
+        fulfillment_fee_cents=settings.amazon_fba_fulfillment_fee_cents,
+        inbound_shipping_cents=settings.amazon_fba_inbound_shipping_cents,
+    )
+    assert amazon["in_stock_units_total"] == 2
+    assert amazon["in_stock_units_manual_priced"] == 1
+    assert amazon["in_stock_units_auto_priced"] == 1
+    assert amazon["in_stock_units_unpriced"] == 0
+    assert amazon["in_stock_units_effective_priced"] == 2
+    assert amazon["in_stock_fba_payout_cents"] == expected_payout
 
 
 @pytest.mark.asyncio

@@ -11,20 +11,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.enums import InventoryQueue, InventoryStatus, TargetPriceMode
+from app.core.security import require_basic_auth
 from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.inventory_item import InventoryItem
 from app.models.inventory_item_image import InventoryItemImage
 from app.models.master_product import MasterProduct
-from app.core.security import require_basic_auth
 from app.schemas.inventory import (
-    BulkTargetPricingApplyResponse,
-    BulkTargetPricingPreviewResponse,
-    BulkTargetPricingPreviewRow,
-    BulkTargetPricingRequest,
-    BulkTargetPricingFilters,
     InventoryItemOut,
     InventoryItemUpdate,
     InventoryStatusTransition,
+    TargetPricingAsinState,
+    TargetPricingBulkApplyOut,
+    TargetPricingBulkFilters,
+    TargetPricingBulkOperation,
+    TargetPricingBulkPreviewOut,
+    TargetPricingBulkPreviewRowOut,
+    TargetPricingBulkRequest,
     TargetPriceRecommendationOut,
 )
 from app.schemas.inventory_item_image import InventoryItemImageCreate, InventoryItemImageOut
@@ -74,7 +76,6 @@ _BULK_ELIGIBLE_STATUSES = (
 def _enrich_item(
     item: InventoryItem,
     amazon: AmazonProductMetricsLatest | None,
-    asin: str | None,
 ) -> InventoryItemOut:
     """Build an enriched InventoryItemOut with target-pricing recommendation."""
     settings = get_settings()
@@ -87,6 +88,7 @@ def _enrich_item(
         price_used_very_good_cents=getattr(amazon, "price_used_very_good_cents", None) if amazon else None,
         price_used_good_cents=getattr(amazon, "price_used_good_cents", None) if amazon else None,
         price_used_acceptable_cents=getattr(amazon, "price_used_acceptable_cents", None) if amazon else None,
+        price_buybox_cents=getattr(amazon, "buybox_total_cents", None) if amazon else None,
         rank=getattr(amazon, "rank_specific", None) or getattr(amazon, "rank_overall", None) if amazon else None,
         offers_count=getattr(amazon, "offers_count_used_priced_total", None) or getattr(amazon, "offers_count_total", None) if amazon else None,
         settings=settings,
@@ -127,17 +129,6 @@ async def _load_amazon_map(session: AsyncSession, master_product_ids: set[uuid.U
         .where(AmazonProductMetricsLatest.master_product_id.in_(master_product_ids))
     )).scalars().all()
     return {r.master_product_id: r for r in rows}
-
-
-async def _load_asin_map(session: AsyncSession, master_product_ids: set[uuid.UUID]) -> dict[uuid.UUID, str | None]:
-    """Batch-load ASINs for the given master product IDs."""
-    if not master_product_ids:
-        return {}
-    rows = (await session.execute(
-        select(MasterProduct.id, MasterProduct.asin)
-        .where(MasterProduct.id.in_(master_product_ids))
-    )).all()
-    return {r[0]: (r[1].strip() if r[1] else None) for r in rows}
 
 
 @router.get("", response_model=list[InventoryItemOut])
@@ -225,10 +216,9 @@ async def list_inventory(
     # Batch-load Amazon metrics + ASINs for enrichment
     mp_ids = {item.master_product_id for item in items}
     amazon_map = await _load_amazon_map(session, mp_ids)
-    asin_map = await _load_asin_map(session, mp_ids)
 
     return [
-        _enrich_item(item, amazon_map.get(item.master_product_id), asin_map.get(item.master_product_id))
+        _enrich_item(item, amazon_map.get(item.master_product_id))
         for item in items
     ]
 
@@ -263,8 +253,9 @@ async def update_inventory_item(
 
     changes = data.model_dump(exclude_unset=True)
 
-    # If switching to AUTO, clear manual price
-    if changes.get("target_price_mode") == TargetPriceMode.AUTO:
+    effective_mode = changes.get("target_price_mode", item.target_price_mode)
+    # In AUTO mode manual price is always ignored/cleared.
+    if effective_mode == TargetPriceMode.AUTO:
         changes["manual_target_sell_price_cents"] = None
 
     before = {
@@ -300,10 +291,7 @@ async def update_inventory_item(
         select(AmazonProductMetricsLatest)
         .where(AmazonProductMetricsLatest.master_product_id == item.master_product_id)
     )).scalar_one_or_none()
-    mp = await session.get(MasterProduct, item.master_product_id)
-    asin = (mp.asin.strip() if mp and mp.asin else None)
-
-    return _enrich_item(item, amazon, asin)
+    return _enrich_item(item, amazon)
 
 
 @router.post("/{inventory_item_id}/status", response_model=InventoryItemOut)
@@ -327,10 +315,7 @@ async def change_inventory_status(
         select(AmazonProductMetricsLatest)
         .where(AmazonProductMetricsLatest.master_product_id == item.master_product_id)
     )).scalar_one_or_none()
-    mp = await session.get(MasterProduct, item.master_product_id)
-    asin = (mp.asin.strip() if mp and mp.asin else None)
-
-    return _enrich_item(item, amazon, asin)
+    return _enrich_item(item, amazon)
 
 
 @router.get("/{inventory_item_id}/images", response_model=list[InventoryItemImageOut])
@@ -394,15 +379,10 @@ async def delete_inventory_item_image(
 # Bulk target pricing
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Bulk target pricing
-# ---------------------------------------------------------------------------
-
 async def _bulk_query(
     session: AsyncSession,
-    filters: BulkTargetPricingFilters,
+    filters: TargetPricingBulkFilters,
 ) -> list[tuple[InventoryItem, AmazonProductMetricsLatest | None, MasterProduct]]:
-    """Build and execute the bulk-filter query, returning matched (item, amazon, mp) triples."""
     stmt = (
         select(InventoryItem, AmazonProductMetricsLatest, MasterProduct)
         .join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id)
@@ -410,79 +390,63 @@ async def _bulk_query(
         .where(InventoryItem.status.in_(_BULK_ELIGIBLE_STATUSES))
     )
 
-    if filters.match_status:
-        stmt = stmt.where(InventoryItem.status.in_(filters.match_status))
+    if filters.conditions:
+        stmt = stmt.where(InventoryItem.condition.in_(filters.conditions))
 
-    if filters.match_target_price_mode:
-        stmt = stmt.where(InventoryItem.target_price_mode.in_(filters.match_target_price_mode))
+    if filters.asin_state == TargetPricingAsinState.WITH_ASIN:
+        stmt = stmt.where(MasterProduct.asin.is_not(None), func.trim(MasterProduct.asin) != "")
+    elif filters.asin_state == TargetPricingAsinState.WITHOUT_ASIN:
+        stmt = stmt.where(or_(MasterProduct.asin.is_(None), func.trim(MasterProduct.asin) == ""))
 
-    if filters.match_search_query:
-        needle = filters.match_search_query.strip()
-        try:
-            mp_id = uuid.UUID(needle)
-            stmt = stmt.where(InventoryItem.master_product_id == mp_id)
-        except ValueError:
-            pat = f"%{needle}%"
-            stmt = stmt.where(
-                or_(
-                    InventoryItem.item_code.ilike(pat),
-                    MasterProduct.title.ilike(pat),
-                    MasterProduct.sku.ilike(pat),
-                    MasterProduct.platform.ilike(pat),
-                    MasterProduct.ean.ilike(pat),
-                    MasterProduct.asin.ilike(pat),
-                )
-            )
+    rank_expr = func.coalesce(AmazonProductMetricsLatest.rank_specific, AmazonProductMetricsLatest.rank_overall)
+    if filters.bsr_min is not None:
+        stmt = stmt.where(rank_expr >= filters.bsr_min)
+    if filters.bsr_max is not None:
+        stmt = stmt.where(rank_expr <= filters.bsr_max)
 
-    if filters.match_asin_state:
-        # Complex OR logic for multiple states is hard to combine efficiency.
-        # We will add checks. If multiple are selected, we OR them.
-        state_checks = []
-        for state in filters.match_asin_state:
-            if state == "MISSING":
-                state_checks.append(or_(MasterProduct.asin.is_(None), func.trim(MasterProduct.asin) == ""))
-            elif state == "BLOCKED":
-                state_checks.append(AmazonProductMetricsLatest.blocked_last.is_(True))
-            elif state == "FRESH":
-                # Arbitrary: successfully scraped in last 48h (and not blocked)
-                fresh_after = datetime.now(timezone.utc) - timedelta(hours=48)
-                state_checks.append(
-                    (AmazonProductMetricsLatest.last_success_at >= fresh_after) &
-                    (AmazonProductMetricsLatest.blocked_last.is_not(True))
-                )
-            elif state == "STALE":
-                 # Not fresh and not blocked (includes never scraped)
-                fresh_after = datetime.now(timezone.utc) - timedelta(hours=48)
-                state_checks.append(
-                    or_(
-                        AmazonProductMetricsLatest.last_success_at.is_(None),
-                        AmazonProductMetricsLatest.last_success_at < fresh_after
-                    ) & (AmazonProductMetricsLatest.blocked_last.is_not(True))
-                )
-
-        if state_checks:
-            stmt = stmt.where(or_(*state_checks))
+    offers_expr = func.coalesce(
+        AmazonProductMetricsLatest.offers_count_used_priced_total,
+        AmazonProductMetricsLatest.offers_count_total,
+    )
+    if filters.offers_min is not None:
+        stmt = stmt.where(offers_expr >= filters.offers_min)
+    if filters.offers_max is not None:
+        stmt = stmt.where(offers_expr <= filters.offers_max)
 
     stmt = stmt.order_by(InventoryItem.created_at.desc())
     rows = (await session.execute(stmt)).all()
     return [(r[0], r[1], r[2]) for r in rows]
 
 
-@router.post("/target-pricing/preview", response_model=BulkTargetPricingPreviewResponse)
+def _target_state_for_operation(
+    *,
+    operation: TargetPricingBulkOperation,
+    recommendation_cents: int,
+) -> tuple[TargetPriceMode, int | None]:
+    if operation == TargetPricingBulkOperation.APPLY_RECOMMENDED_MANUAL:
+        return TargetPriceMode.MANUAL, recommendation_cents
+    return TargetPriceMode.AUTO, None
+
+
+@router.post("/target-pricing/preview", response_model=TargetPricingBulkPreviewOut)
 async def bulk_target_pricing_preview(
-    body: BulkTargetPricingRequest,
+    body: TargetPricingBulkRequest,
     session: AsyncSession = Depends(get_session),
-) -> BulkTargetPricingPreviewResponse:
+) -> TargetPricingBulkPreviewOut:
     settings = get_settings()
     matched = await _bulk_query(session, body.filters)
     max_rows = 200
-    preview_rows: list[BulkTargetPricingPreviewRow] = []
-    
-    changed_count = 0
+    preview_rows: list[TargetPricingBulkPreviewRowOut] = []
+    applicable_count = 0
 
     for item, amazon, mp in matched:
-        # Calculate current effective price
         cond = item.condition.value if hasattr(item.condition, "value") else str(item.condition)
+        rank = getattr(amazon, "rank_specific", None) or getattr(amazon, "rank_overall", None) if amazon else None
+        offers = (
+            getattr(amazon, "offers_count_used_priced_total", None) or getattr(amazon, "offers_count_total", None)
+            if amazon
+            else None
+        )
         rec = compute_recommendation(
             purchase_price_cents=item.purchase_price_cents,
             allocated_costs_cents=item.allocated_costs_cents,
@@ -492,84 +456,106 @@ async def bulk_target_pricing_preview(
             price_used_very_good_cents=getattr(amazon, "price_used_very_good_cents", None) if amazon else None,
             price_used_good_cents=getattr(amazon, "price_used_good_cents", None) if amazon else None,
             price_used_acceptable_cents=getattr(amazon, "price_used_acceptable_cents", None) if amazon else None,
-            rank=getattr(amazon, "rank_specific", None) or getattr(amazon, "rank_overall", None) if amazon else None,
-            offers_count=getattr(amazon, "offers_count_used_priced_total", None) or getattr(amazon, "offers_count_total", None) if amazon else None,
+            price_buybox_cents=getattr(amazon, "buybox_total_cents", None) if amazon else None,
+            rank=rank,
+            offers_count=offers,
             settings=settings,
         )
-        current_eff, _ = compute_effective_price(
+        current_eff, current_source = compute_effective_price(
             mode=item.target_price_mode,
             manual_target_sell_price_cents=item.manual_target_sell_price_cents,
             recommendation=rec,
         )
 
-        # Calculate new effective price
-        # logic: we simulate the change on the item
-        sim_mode = body.set_target_price_mode
-        sim_manual = body.set_manual_target_sell_price_cents if sim_mode == TargetPriceMode.MANUAL else None
-        
+        after_mode, after_manual = _target_state_for_operation(
+            operation=body.operation,
+            recommendation_cents=rec.recommended_target_sell_price_cents,
+        )
         new_eff, new_source = compute_effective_price(
-            mode=sim_mode,
-            manual_target_sell_price_cents=sim_manual,
+            mode=after_mode,
+            manual_target_sell_price_cents=after_manual,
             recommendation=rec,
         )
+        before_cfg = (TargetPriceMode(item.target_price_mode), item.manual_target_sell_price_cents)
+        after_cfg = (after_mode, after_manual)
+        if before_cfg == after_cfg:
+            continue
 
-        # Detect if meaningful change
-        has_change = False
-        if item.target_price_mode != sim_mode:
-            has_change = True
-        elif sim_mode == TargetPriceMode.MANUAL and item.manual_target_sell_price_cents != sim_manual:
-            has_change = True
-        
-        # If result is strictly identical (same effective price and source), maybe user doesn't care?
-        # But we track "configuration change".
-        
-        if has_change:
-            changed_count += 1
-
+        applicable_count += 1
         delta = (new_eff - current_eff) if current_eff is not None and new_eff is not None else None
-
-        if len(preview_rows) < max_rows and has_change:
-            preview_rows.append(BulkTargetPricingPreviewRow(
+        if len(preview_rows) < max_rows:
+            asin = mp.asin.strip() if isinstance(mp.asin, str) and mp.asin.strip() else None
+            preview_rows.append(
+                TargetPricingBulkPreviewRowOut(
                 item_id=item.id,
                 item_code=item.item_code,
                 title=mp.title,
-                current_mode=TargetPriceMode(item.target_price_mode),
-                current_effective_cents=current_eff,
-                new_mode=sim_mode,
-                new_manual_cents=sim_manual,
-                new_effective_cents=new_eff,
-                new_effective_source=new_source,
-                diff_cents=delta,
-            ))
+                condition=item.condition,
+                asin=asin,
+                rank=rank,
+                offers_count=offers,
+                before_target_price_mode=TargetPriceMode(item.target_price_mode),
+                before_effective_target_sell_price_cents=current_eff,
+                before_effective_target_price_source=current_source,
+                after_target_price_mode=after_mode,
+                after_effective_target_sell_price_cents=new_eff,
+                after_effective_target_price_source=new_source,
+                delta_cents=delta,
+                )
+            )
 
-    return BulkTargetPricingPreviewResponse(
-        total_items_matched=len(matched),
-        total_items_changed=changed_count,
-        preview_rows=preview_rows,
+    return TargetPricingBulkPreviewOut(
+        matched_count=len(matched),
+        applicable_count=applicable_count,
+        truncated=applicable_count > max_rows,
+        rows=preview_rows,
     )
 
 
-@router.post("/target-pricing/apply", response_model=BulkTargetPricingApplyResponse)
+@router.post("/target-pricing/apply", response_model=TargetPricingBulkApplyOut)
 async def bulk_target_pricing_apply(
-    body: BulkTargetPricingRequest,
+    body: TargetPricingBulkRequest,
     session: AsyncSession = Depends(get_session),
     actor: str = Depends(require_basic_auth),
-) -> BulkTargetPricingApplyResponse:
+) -> TargetPricingBulkApplyOut:
+    settings = get_settings()
     matched = await _bulk_query(session, body.filters)
     updated_count = 0
+    skipped_count = 0
+    sample_updated_item_ids: list[uuid.UUID] = []
 
-    for item, amazon, mp in matched:
+    for item, amazon, _mp in matched:
+        cond = item.condition.value if hasattr(item.condition, "value") else str(item.condition)
+        rank = getattr(amazon, "rank_specific", None) or getattr(amazon, "rank_overall", None) if amazon else None
+        offers = (
+            getattr(amazon, "offers_count_used_priced_total", None) or getattr(amazon, "offers_count_total", None)
+            if amazon
+            else None
+        )
+        recommendation = compute_recommendation(
+            purchase_price_cents=item.purchase_price_cents,
+            allocated_costs_cents=item.allocated_costs_cents,
+            condition=cond,
+            price_new_cents=getattr(amazon, "price_new_cents", None) if amazon else None,
+            price_used_like_new_cents=getattr(amazon, "price_used_like_new_cents", None) if amazon else None,
+            price_used_very_good_cents=getattr(amazon, "price_used_very_good_cents", None) if amazon else None,
+            price_used_good_cents=getattr(amazon, "price_used_good_cents", None) if amazon else None,
+            price_used_acceptable_cents=getattr(amazon, "price_used_acceptable_cents", None) if amazon else None,
+            price_buybox_cents=getattr(amazon, "buybox_total_cents", None) if amazon else None,
+            rank=rank,
+            offers_count=offers,
+            settings=settings,
+        )
+        after_mode, after_manual = _target_state_for_operation(
+            operation=body.operation,
+            recommendation_cents=recommendation.recommended_target_sell_price_cents,
+        )
         before = {
             "target_price_mode": item.target_price_mode,
             "manual_target_sell_price_cents": item.manual_target_sell_price_cents,
         }
-        
-        # Apply changes
-        item.target_price_mode = body.set_target_price_mode
-        if body.set_target_price_mode == TargetPriceMode.MANUAL:
-             item.manual_target_sell_price_cents = body.set_manual_target_sell_price_cents
-        else:
-             item.manual_target_sell_price_cents = None
+        item.target_price_mode = after_mode
+        item.manual_target_sell_price_cents = after_manual
 
         after = {
             "target_price_mode": item.target_price_mode,
@@ -577,21 +563,27 @@ async def bulk_target_pricing_apply(
         }
 
         if before == after:
+            skipped_count += 1
             continue
 
         updated_count += 1
+        if len(sample_updated_item_ids) < 20:
+            sample_updated_item_ids.append(item.id)
         await audit_log(
             session,
             actor=actor,
             entity_type="inventory_item",
             entity_id=item.id,
-            action="bulk_target_price_update",
+            action="bulk_target_pricing_apply",
             before=before,
             after=after,
         )
 
     await session.commit()
 
-    return BulkTargetPricingApplyResponse(
+    return TargetPricingBulkApplyOut(
+        matched_count=len(matched),
         updated_count=updated_count,
+        skipped_count=skipped_count,
+        sample_updated_item_ids=sample_updated_item_ids,
     )

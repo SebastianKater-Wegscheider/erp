@@ -1,381 +1,382 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, ArrowRight, CheckCircle2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+
 import { useApi } from "../../lib/api";
 import { formatEur } from "../../lib/money";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { InlineMessage } from "../ui/inline-message";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
-import { Badge } from "../ui/badge";
-import { InlineMessage } from "../ui/inline-message";
 
-// Types matching backend schemas
-type TargetPriceMode = "AUTO" | "MANUAL";
-type InventoryStatus = "DRAFT" | "AVAILABLE" | "FBA_INBOUND" | "FBA_WAREHOUSE" | "RESERVED" | "SOLD" | "RETURNED" | "DISCREPANCY" | "LOST";
-type AsinState = "MISSING" | "FRESH" | "STALE" | "BLOCKED";
+type InventoryCondition = "NEW" | "LIKE_NEW" | "GOOD" | "ACCEPTABLE" | "DEFECT";
+type TargetPricingAsinState = "ANY" | "WITH_ASIN" | "WITHOUT_ASIN";
+type TargetPricingOperation = "APPLY_RECOMMENDED_MANUAL" | "CLEAR_MANUAL_USE_AUTO";
 
-type BulkTargetPricingFilters = {
-    match_status?: InventoryStatus[] | null;
-    match_target_price_mode?: TargetPriceMode[] | null;
-    match_search_query?: string | null;
-    match_asin_state?: AsinState[] | null;
+type TargetPricingBulkRequest = {
+  filters: {
+    conditions?: InventoryCondition[] | null;
+    asin_state: TargetPricingAsinState;
+    bsr_min?: number | null;
+    bsr_max?: number | null;
+    offers_min?: number | null;
+    offers_max?: number | null;
+  };
+  operation: TargetPricingOperation;
 };
 
-type BulkTargetPricingRequest = {
-    filters: BulkTargetPricingFilters;
-    set_target_price_mode: TargetPriceMode;
-    set_manual_target_sell_price_cents?: number | null;
+type TargetPricingBulkPreviewRow = {
+  item_id: string;
+  item_code: string;
+  title: string;
+  condition: InventoryCondition;
+  asin?: string | null;
+  rank?: number | null;
+  offers_count?: number | null;
+  before_target_price_mode: "AUTO" | "MANUAL";
+  before_effective_target_sell_price_cents?: number | null;
+  after_target_price_mode: "AUTO" | "MANUAL";
+  after_effective_target_sell_price_cents?: number | null;
+  delta_cents?: number | null;
 };
 
-type BulkTargetPricingPreviewRow = {
-    item_id: string;
-    item_code: string;
-    title: string;
-    current_mode: TargetPriceMode;
-    current_effective_cents: number | null;
-    new_mode: TargetPriceMode;
-    new_manual_cents: number | null;
-    new_effective_cents: number | null;
-    new_effective_source: string;
-    diff_cents: number | null;
+type TargetPricingBulkPreviewResponse = {
+  matched_count: number;
+  applicable_count: number;
+  truncated: boolean;
+  rows: TargetPricingBulkPreviewRow[];
 };
 
-type BulkTargetPricingPreviewResponse = {
-    total_items_matched: number;
-    total_items_changed: number;
-    preview_rows: BulkTargetPricingPreviewRow[];
+type TargetPricingBulkApplyResponse = {
+  matched_count: number;
+  updated_count: number;
+  skipped_count: number;
+  sample_updated_item_ids: string[];
 };
 
-type BulkTargetPricingApplyResponse = {
-    updated_count: number;
-};
+const CONDITION_OPTIONS: Array<{ value: InventoryCondition; label: string }> = [
+  { value: "NEW", label: "Neu" },
+  { value: "LIKE_NEW", label: "Wie neu" },
+  { value: "GOOD", label: "Gut" },
+  { value: "ACCEPTABLE", label: "Akzeptabel" },
+  { value: "DEFECT", label: "Defekt" },
+];
 
-export function BulkTargetPricingDialog({
-    trigger,
-    defaultQuery = "",
-    defaultStatus = "ALL", // "ALL" or specific status like "AVAILABLE"
-}: {
-    trigger?: React.ReactNode;
-    defaultQuery?: string;
-    defaultStatus?: string;
-}) {
-    const api = useApi();
-    const qc = useQueryClient();
-    const [open, setOpen] = useState(false);
-    const [step, setStep] = useState<"FILTER" | "PREVIEW" | "SUCCESS">("FILTER");
+function parseOptionalInt(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
-    // Filter States
-    const [filterMode, setFilterMode] = useState<"ALL" | "AUTO" | "MANUAL">("ALL");
-    const [filterQuery, setFilterQuery] = useState(defaultQuery);
-    // If defaultStatus provided (and not ALL), use it. otherwise default to available-only true
-    const [filterStatusAvailableOnly, setFilterStatusAvailableOnly] = useState(defaultStatus === "ALL" || defaultStatus === "AVAILABLE");
+export function BulkTargetPricingDialog({ trigger }: { trigger?: ReactNode }) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"FILTER" | "PREVIEW" | "SUCCESS">("FILTER");
 
-    // Reset state when opening (or re-opening with new defaults if they changed?)
-    // Actually, we should sync state when opening.
-    useEffect(() => {
-        if (open) {
-            setFilterQuery(defaultQuery);
-            setFilterStatusAvailableOnly(defaultStatus === "ALL" || defaultStatus === "AVAILABLE");
-        }
-    }, [open, defaultQuery, defaultStatus]);
+  const [conditions, setConditions] = useState<InventoryCondition[]>([]);
+  const [asinState, setAsinState] = useState<TargetPricingAsinState>("ANY");
+  const [bsrMin, setBsrMin] = useState("");
+  const [bsrMax, setBsrMax] = useState("");
+  const [offersMin, setOffersMin] = useState("");
+  const [offersMax, setOffersMax] = useState("");
+  const [operation, setOperation] = useState<TargetPricingOperation>("APPLY_RECOMMENDED_MANUAL");
 
-    // Action States
-    const [targetMode, setTargetMode] = useState<TargetPriceMode>("AUTO");
-    const [manualPrice, setManualPrice] = useState("");
+  const [previewData, setPreviewData] = useState<TargetPricingBulkPreviewResponse | null>(null);
+  const [applyResult, setApplyResult] = useState<TargetPricingBulkApplyResponse | null>(null);
 
-    // Data States
-    const [previewData, setPreviewData] = useState<BulkTargetPricingPreviewResponse | null>(null);
-    const [applyResult, setApplyResult] = useState<BulkTargetPricingApplyResponse | null>(null);
-
-    const previewMutation = useMutation({
-        mutationFn: async () => {
-            const filters: BulkTargetPricingFilters = {};
-            if (filterMode !== "ALL") filters.match_target_price_mode = [filterMode];
-            if (filterQuery.trim()) filters.match_search_query = filterQuery.trim();
-            if (filterStatusAvailableOnly) filters.match_status = ["AVAILABLE", "FBA_WAREHOUSE", "FBA_INBOUND"];
-
-            const payload: BulkTargetPricingRequest = {
-                filters,
-                set_target_price_mode: targetMode,
-                set_manual_target_sell_price_cents: targetMode === "MANUAL" ? Math.round(parseFloat(manualPrice.replace(",", ".")) * 100) : null,
-            };
-
-            if (targetMode === "MANUAL" && (typeof payload.set_manual_target_sell_price_cents !== "number" || isNaN(payload.set_manual_target_sell_price_cents) || payload.set_manual_target_sell_price_cents < 0)) {
-                throw new Error("Bitte einen gültigen Preis eingeben.");
-            }
-
-            return api.request<BulkTargetPricingPreviewResponse>("/inventory/target-pricing/preview", {
-                method: "POST",
-                json: payload,
-            });
-        },
-        onSuccess: (data) => {
-            setPreviewData(data);
-            setStep("PREVIEW");
-        },
-    });
-
-    const applyMutation = useMutation({
-        mutationFn: async () => {
-            if (!previewData) throw new Error("Keine Vorschau vorhanden.");
-            // Re-construct payload (same as preview)
-            const filters: BulkTargetPricingFilters = {};
-            if (filterMode !== "ALL") filters.match_target_price_mode = [filterMode];
-            if (filterQuery.trim()) filters.match_search_query = filterQuery.trim();
-            if (filterStatusAvailableOnly) filters.match_status = ["AVAILABLE", "FBA_WAREHOUSE", "FBA_INBOUND"];
-
-            const payload: BulkTargetPricingRequest = {
-                filters,
-                set_target_price_mode: targetMode,
-                set_manual_target_sell_price_cents: targetMode === "MANUAL" ? Math.round(parseFloat(manualPrice.replace(",", ".")) * 100) : null,
-            };
-
-            return api.request<BulkTargetPricingApplyResponse>("/inventory/target-pricing/apply", {
-                method: "POST",
-                json: payload,
-            });
-        },
-        onSuccess: (data) => {
-            setApplyResult(data);
-            setStep("SUCCESS");
-            qc.invalidateQueries({ queryKey: ["inventory"] });
-        },
-    });
-
-    const reset = () => {
-        setStep("FILTER");
-        setPreviewData(null);
-        setApplyResult(null);
-        setFilterMode("ALL");
-        setFilterQuery("");
-        setTargetMode("AUTO");
-        setManualPrice("");
+  const payload = useMemo<TargetPricingBulkRequest>(() => {
+    const request: TargetPricingBulkRequest = {
+      filters: {
+        asin_state: asinState,
+      },
+      operation,
     };
+    if (conditions.length) request.filters.conditions = conditions;
+    const parsedBsrMin = parseOptionalInt(bsrMin);
+    const parsedBsrMax = parseOptionalInt(bsrMax);
+    const parsedOffersMin = parseOptionalInt(offersMin);
+    const parsedOffersMax = parseOptionalInt(offersMax);
+    if (parsedBsrMin !== null) request.filters.bsr_min = parsedBsrMin;
+    if (parsedBsrMax !== null) request.filters.bsr_max = parsedBsrMax;
+    if (parsedOffersMin !== null) request.filters.offers_min = parsedOffersMin;
+    if (parsedOffersMax !== null) request.filters.offers_max = parsedOffersMax;
+    return request;
+  }, [asinState, bsrMax, bsrMin, conditions, offersMax, offersMin, operation]);
 
-    return (
-        <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); setOpen(v); }}>
-            <DialogTrigger asChild>
-                {trigger || <Button variant="outline">Massenbearbeitung</Button>}
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle>Zielpreise: Massenbearbeitung</DialogTitle>
-                    <DialogDescription>
-                        Ändern Sie den Preismodus für mehrere Artikel gleichzeitig.
-                    </DialogDescription>
-                </DialogHeader>
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      api.request<TargetPricingBulkPreviewResponse>("/inventory/target-pricing/preview", {
+        method: "POST",
+        json: payload,
+      }),
+    onSuccess: (data) => {
+      setPreviewData(data);
+      setStep("PREVIEW");
+    },
+  });
 
-                {step === "FILTER" && (
-                    <div className="space-y-6 py-4">
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-4 rounded-md border p-4 dark:border-gray-800">
-                                <h3 className="font-medium text-sm">1. Welche Artikel filtern?</h3>
+  const applyMutation = useMutation({
+    mutationFn: () =>
+      api.request<TargetPricingBulkApplyResponse>("/inventory/target-pricing/apply", {
+        method: "POST",
+        json: payload,
+      }),
+    onSuccess: async (data) => {
+      setApplyResult(data);
+      setStep("SUCCESS");
+      await qc.invalidateQueries({ queryKey: ["inventory"] });
+    },
+  });
 
-                                <div className="space-y-2">
-                                    <Label>Aktueller Modus</Label>
-                                    <Select value={filterMode} onValueChange={(v: any) => setFilterMode(v)}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="ALL">Alle Modi</SelectItem>
-                                            <SelectItem value="AUTO">Nur Auto-Preis</SelectItem>
-                                            <SelectItem value="MANUAL">Nur Manuell</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+  function toggleCondition(condition: InventoryCondition) {
+    setConditions((current) => (current.includes(condition) ? current.filter((value) => value !== condition) : [...current, condition]));
+  }
 
-                                <div className="space-y-2">
-                                    <Label>Suchbegriff (Titel/SKU)</Label>
-                                    <Input value={filterQuery} onChange={e => setFilterQuery(e.target.value)} placeholder="Optional einschränken..." />
-                                </div>
+  function reset() {
+    setStep("FILTER");
+    setConditions([]);
+    setAsinState("ANY");
+    setBsrMin("");
+    setBsrMax("");
+    setOffersMin("");
+    setOffersMax("");
+    setOperation("APPLY_RECOMMENDED_MANUAL");
+    setPreviewData(null);
+    setApplyResult(null);
+    previewMutation.reset();
+    applyMutation.reset();
+  }
 
-                                <div className="flex items-center space-x-2">
-                                    <input
-                                        type="checkbox"
-                                        id="statusFilter"
-                                        checked={filterStatusAvailableOnly}
-                                        onChange={(e) => setFilterStatusAvailableOnly(e.target.checked)}
-                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary dark:border-gray-600 dark:bg-gray-800"
-                                    />
-                                    <Label htmlFor="statusFilter" className="font-normal text-sm text-gray-500 dark:text-gray-400">
-                                        Nur Verfügbar/FBA (keine Verkauften/Drafts)
-                                    </Label>
-                                </div>
-                            </div>
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) reset();
+        setOpen(value);
+      }}
+    >
+      <DialogTrigger asChild>{trigger ?? <Button variant="outline">Bulk Pricing</Button>}</DialogTrigger>
+      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Zielpreise: Bulk Pricing</DialogTitle>
+          <DialogDescription>Filter definieren, Vorschau prüfen, dann einmalig anwenden.</DialogDescription>
+        </DialogHeader>
 
-                            <div className="space-y-4 rounded-md border p-4 bg-gray-50 dark:bg-gray-900/50 dark:border-gray-800">
-                                <h3 className="font-medium text-sm">2. Welche Änderung anwenden?</h3>
+        {step === "FILTER" && (
+          <div className="space-y-5 py-2">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3 rounded-md border p-4 dark:border-gray-800">
+                <div className="text-sm font-medium">Filter</div>
+                <div className="space-y-2">
+                  <Label>Zustand</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {CONDITION_OPTIONS.map((condition) => (
+                      <button
+                        key={condition.value}
+                        type="button"
+                        className="rounded-md"
+                        onClick={() => toggleCondition(condition.value)}
+                      >
+                        <Badge variant={conditions.includes(condition.value) ? "secondary" : "outline"}>{condition.label}</Badge>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>ASIN</Label>
+                  <Select value={asinState} onValueChange={(value: TargetPricingAsinState) => setAsinState(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ANY">Alle</SelectItem>
+                      <SelectItem value="WITH_ASIN">Mit ASIN</SelectItem>
+                      <SelectItem value="WITHOUT_ASIN">Ohne ASIN</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>BSR min</Label>
+                    <Input type="number" min="0" value={bsrMin} onChange={(event) => setBsrMin(event.target.value)} placeholder="z. B. 1" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>BSR max</Label>
+                    <Input type="number" min="0" value={bsrMax} onChange={(event) => setBsrMax(event.target.value)} placeholder="z. B. 10000" />
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>Offers min</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={offersMin}
+                      onChange={(event) => setOffersMin(event.target.value)}
+                      placeholder="z. B. 0"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Offers max</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={offersMax}
+                      onChange={(event) => setOffersMax(event.target.value)}
+                      placeholder="z. B. 12"
+                    />
+                  </div>
+                </div>
+              </div>
 
-                                <div className="space-y-2">
-                                    <Label>Neuer Modus</Label>
-                                    <Select value={targetMode} onValueChange={(v: TargetPriceMode) => setTargetMode(v)}>
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="AUTO">Automatisch (Empfohlen)</SelectItem>
-                                            <SelectItem value="MANUAL">Manuell Festlegen</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        {targetMode === "AUTO"
-                                            ? "Der Zielpreis wird basierend auf Marktpreisen und Margen-Regeln berechnet."
-                                            : "Der Zielpreis wird fest auf den eingegebenen Wert gesetzt."}
-                                    </p>
-                                </div>
+              <div className="space-y-3 rounded-md border bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/40">
+                <div className="text-sm font-medium">Operation</div>
+                <Select value={operation} onValueChange={(value: TargetPricingOperation) => setOperation(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="APPLY_RECOMMENDED_MANUAL">Empfehlung als Manuell setzen</SelectItem>
+                    <SelectItem value="CLEAR_MANUAL_USE_AUTO">Manuell löschen, Auto verwenden</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {operation === "APPLY_RECOMMENDED_MANUAL"
+                    ? "Setzt pro Treffer den aktuellen Empfehlungswert als fixen manuellen Zielpreis."
+                    : "Löscht manuelle Zielpreise und nutzt wieder die automatische Empfehlung."}
+                </div>
+              </div>
+            </div>
 
-                                {targetMode === "MANUAL" && (
-                                    <div className="space-y-2">
-                                        <Label>Neuer Festpreis (EUR)</Label>
-                                        <Input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            value={manualPrice}
-                                            onChange={e => setManualPrice(e.target.value)}
-                                            placeholder="0.00"
-                                        />
-                                    </div>
-                                )}
-                            </div>
+            {previewMutation.isError && (
+              <InlineMessage tone="error">
+                {(previewMutation.error as Error).message}
+              </InlineMessage>
+            )}
+
+            <DialogFooter>
+              <Button onClick={() => previewMutation.mutate()} disabled={previewMutation.isPending}>
+                {previewMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Vorschau anzeigen
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step === "PREVIEW" && previewData && (
+          <div className="space-y-4 py-2">
+            <div className="rounded-md bg-gray-100 p-3 text-sm dark:bg-gray-800">
+              Treffer: <strong>{previewData.matched_count}</strong> · Anwendbar: <strong>{previewData.applicable_count}</strong>
+              {previewData.truncated && <span className="ml-2 text-amber-600 dark:text-amber-400">Vorschau gekürzt (max 200).</span>}
+            </div>
+
+            <div className="max-h-[420px] overflow-y-auto rounded-md border dark:border-gray-800">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Artikel</TableHead>
+                    <TableHead>Kontext</TableHead>
+                    <TableHead>Vorher</TableHead>
+                    <TableHead>Nachher</TableHead>
+                    <TableHead className="text-right">Delta</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {previewData.rows.map((row) => (
+                    <TableRow key={row.item_id}>
+                      <TableCell className="max-w-[260px]">
+                        <div className="truncate font-medium" title={row.title}>{row.title}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{row.item_code}</div>
+                      </TableCell>
+                      <TableCell className="text-xs text-gray-600 dark:text-gray-300">
+                        <div>{row.condition}</div>
+                        <div>{row.asin ? `ASIN ${row.asin}` : "ohne ASIN"}</div>
+                        <div>{typeof row.rank === "number" ? `BSR #${row.rank}` : "BSR —"}</div>
+                        <div>{typeof row.offers_count === "number" ? `Offers ${row.offers_count}` : "Offers —"}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{row.before_target_price_mode}</div>
+                        <div className="font-medium">
+                          {typeof row.before_effective_target_sell_price_cents === "number"
+                            ? `${formatEur(row.before_effective_target_sell_price_cents)} €`
+                            : "—"}
                         </div>
-
-                        {previewMutation.isError && (
-                            <InlineMessage tone="error">
-                                {(previewMutation.error as Error).message}
-                            </InlineMessage>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{row.after_target_price_mode}</div>
+                        <div className="font-medium">
+                          {typeof row.after_effective_target_sell_price_cents === "number"
+                            ? `${formatEur(row.after_effective_target_sell_price_cents)} €`
+                            : "—"}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {typeof row.delta_cents === "number" && row.delta_cents !== 0 ? (
+                          <span className={row.delta_cents > 0 ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}>
+                            {row.delta_cents > 0 ? "+" : ""}
+                            {formatEur(row.delta_cents)} €
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">0,00 €</span>
                         )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!previewData.rows.length && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-sm text-gray-500 dark:text-gray-400">
+                        Keine Änderungen anwendbar.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
 
-                        <DialogFooter>
-                            <Button onClick={() => previewMutation.mutate()} disabled={previewMutation.isPending}>
-                                {previewMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Vorschau anzeigen
-                                <ArrowRight className="ml-2 h-4 w-4" />
-                            </Button>
-                        </DialogFooter>
-                    </div>
-                )}
+            {applyMutation.isError && (
+              <InlineMessage tone="error">
+                {(applyMutation.error as Error).message}
+              </InlineMessage>
+            )}
 
-                {step === "PREVIEW" && previewData && (
-                    <div className="space-y-4 py-4">
-                        <div className="flex items-center justify-between rounded-md bg-gray-100 p-4 dark:bg-gray-800">
-                            <div>
-                                <div className="font-medium text-gray-900 dark:text-gray-100">Gefundene Artikel: {previewData.total_items_matched}</div>
-                                <div className="text-sm text-gray-500 dark:text-gray-400">Davon werden aktualisiert: {previewData.total_items_changed}</div>
-                            </div>
-                            {previewData.total_items_changed === 0 && (
-                                <div className="text-sm text-amber-600 font-medium dark:text-amber-400">Keine Änderungen notwendig.</div>
-                            )}
-                        </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep("FILTER")} disabled={applyMutation.isPending}>
+                Zurück
+              </Button>
+              <Button
+                onClick={() => applyMutation.mutate()}
+                disabled={applyMutation.isPending || previewData.applicable_count === 0}
+              >
+                {applyMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Anwenden
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
 
-                        {previewData.total_items_changed > 1 && (
-                            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
-                                <strong>Achtung:</strong> Sie bearbeiten {previewData.total_items_changed} Artikel gleichzeitig.
-                            </div>
-                        )}
-
-                        {previewData.total_items_changed > 1 && (
-                            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
-                                <strong>Achtung:</strong> Sie bearbeiten {previewData.total_items_changed} Artikel gleichzeitig.
-                            </div>
-                        )}
-
-                        <div className="max-h-[400px] overflow-y-auto rounded-md border dark:border-gray-800">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Artikel</TableHead>
-                                        <TableHead>Aktuell</TableHead>
-                                        <TableHead>Neu</TableHead>
-                                        <TableHead className="text-right">Differenz</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {previewData.preview_rows.map((row) => (
-                                        <TableRow key={row.item_id}>
-                                            <TableCell className="max-w-[200px]">
-                                                <div className="font-medium truncate text-gray-900 dark:text-gray-100" title={row.title}>{row.title}</div>
-                                                <div className="text-xs font-mono text-gray-500 dark:text-gray-400">{row.item_code}</div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="text-sm text-gray-600 dark:text-gray-300">
-                                                    {row.current_mode === "MANUAL" ? "Manuell" : "Auto"}
-                                                </div>
-                                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    {row.current_effective_cents ? formatEur(row.current_effective_cents) + " €" : "—"}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="text-sm text-gray-600 dark:text-gray-300">
-                                                    {row.new_mode === "MANUAL" ? "Manuell" : "Auto"}
-                                                </div>
-                                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                                    {row.new_effective_cents ? formatEur(row.new_effective_cents) + " €" : "—"}
-                                                </div>
-                                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                    {row.new_effective_source}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                {row.diff_cents !== null && row.diff_cents !== 0 ? (
-                                                    <Badge variant={row.diff_cents > 0 ? "success" : "secondary"}>
-                                                        {row.diff_cents > 0 ? "+" : ""}{formatEur(row.diff_cents)} €
-                                                    </Badge>
-                                                ) : (
-                                                    <span className="text-gray-400 text-sm dark:text-gray-500">—</span>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                    {previewData.preview_rows.length === 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={4} className="text-center text-gray-500 py-8 dark:text-gray-400">
-                                                Keine Artikel zur Anzeige.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </div>
-
-                        {applyMutation.isError && (
-                            <InlineMessage tone="error">
-                                {(applyMutation.error as Error).message}
-                            </InlineMessage>
-                        )}
-
-                        <DialogFooter className="gap-2 sm:gap-0">
-                            <Button variant="outline" onClick={() => setStep("FILTER")}>Zurück</Button>
-                            <Button
-                                onClick={() => applyMutation.mutate()}
-                                disabled={applyMutation.isPending || previewData.total_items_changed === 0}
-                            >
-                                {applyMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Änderungen anwenden ({previewData.total_items_changed})
-                            </Button>
-                        </DialogFooter>
-                    </div>
-                )}
-
-                {step === "SUCCESS" && applyResult && (
-                    <div className="space-y-6 py-8 text-center">
-                        <div className="flex justify-center">
-                            <div className="rounded-full bg-green-100 p-3 text-green-600 dark:bg-green-900/30 dark:text-green-400">
-                                <CheckCircle2 className="h-8 w-8" />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Erfolgreich aktualisiert</h3>
-                            <p className="text-gray-500 dark:text-gray-400">
-                                Es wurden {applyResult.updated_count} Artikel aktualisiert.
-                            </p>
-                        </div>
-                        <DialogFooter>
-                            <Button onClick={() => setOpen(false)}>Schließen</Button>
-                        </DialogFooter>
-                    </div>
-                )}
-            </DialogContent>
-        </Dialog>
-    );
+        {step === "SUCCESS" && applyResult && (
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="h-5 w-5" />
+              Bulk-Operation abgeschlossen.
+            </div>
+            <div className="rounded-md bg-gray-100 p-3 text-sm dark:bg-gray-800">
+              Treffer: <strong>{applyResult.matched_count}</strong> · Aktualisiert: <strong>{applyResult.updated_count}</strong> · Übersprungen:{" "}
+              <strong>{applyResult.skipped_count}</strong>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setOpen(false)}>Fertig</Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }

@@ -80,6 +80,31 @@ def market_price_for_condition_cents(
     return None
 
 
+def market_anchor_for_condition_cents(
+    *,
+    inventory_condition: str,
+    price_new_cents: int | None,
+    price_used_like_new_cents: int | None,
+    price_used_very_good_cents: int | None,
+    price_used_good_cents: int | None,
+    price_used_acceptable_cents: int | None,
+    price_buybox_cents: int | None,
+) -> tuple[int | None, str]:
+    condition_anchor = market_price_for_condition_cents(
+        inventory_condition=inventory_condition,
+        price_new_cents=price_new_cents,
+        price_used_like_new_cents=price_used_like_new_cents,
+        price_used_very_good_cents=price_used_very_good_cents,
+        price_used_good_cents=price_used_good_cents,
+        price_used_acceptable_cents=price_used_acceptable_cents,
+    )
+    if condition_anchor is not None:
+        return condition_anchor, "AMAZON_CONDITION"
+    if isinstance(price_buybox_cents, int):
+        return price_buybox_cents, "AMAZON_BUYBOX"
+    return None, "NONE"
+
+
 def referral_fee_cents(price_cents: int, referral_fee_bp: int) -> int:
     """Deterministic half-up rounding for basis-point fee calculation."""
     return ((price_cents * referral_fee_bp) + 5_000) // 10_000
@@ -105,7 +130,7 @@ class TargetPriceRecommendation:
     strategy: str  # always "MARGIN_FIRST" for now
     recommended_target_sell_price_cents: int
     anchor_price_cents: int | None
-    anchor_source: str  # "AMAZON_CONDITION" | "NONE"
+    anchor_source: str  # "AMAZON_CONDITION" | "AMAZON_BUYBOX" | "NONE"
     rank: int | None
     offers_count: int | None
     adjustment_bp: int
@@ -200,6 +225,7 @@ def compute_recommendation(
     price_used_very_good_cents: int | None,
     price_used_good_cents: int | None,
     price_used_acceptable_cents: int | None,
+    price_buybox_cents: int | None,
     rank: int | None,
     offers_count: int | None,
     settings: Settings,
@@ -208,13 +234,14 @@ def compute_recommendation(
     cost_basis = purchase_price_cents + allocated_costs_cents
 
     # 1. Amazon anchor
-    anchor = market_price_for_condition_cents(
+    anchor, anchor_source = market_anchor_for_condition_cents(
         inventory_condition=condition,
         price_new_cents=price_new_cents,
         price_used_like_new_cents=price_used_like_new_cents,
         price_used_very_good_cents=price_used_very_good_cents,
         price_used_good_cents=price_used_good_cents,
         price_used_acceptable_cents=price_used_acceptable_cents,
+        price_buybox_cents=price_buybox_cents,
     )
     has_anchor = anchor is not None
 
@@ -253,7 +280,6 @@ def compute_recommendation(
     # 4. Recommendation
     if adjusted_anchor is not None:
         recommended = max(adjusted_anchor, floor_price)
-        anchor_source = "AMAZON_CONDITION"
     else:
         recommended = floor_price
         anchor_source = "NONE"

@@ -835,6 +835,18 @@ export function InventoryPage() {
     ? mpById.get(tablePreviewItem.master_product_id) ?? null
     : null;
 
+  function openItemEditor(item: InventoryItem) {
+    setEditing(item);
+    setEditStorageLocation(item.storage_location ?? "");
+    setEditSerialNumber(item.serial_number ?? "");
+    setEditTargetPriceMode(item.target_price_mode as "AUTO" | "MANUAL");
+    setEditManualPrice(
+      typeof item.manual_target_sell_price_cents === "number"
+        ? (item.manual_target_sell_price_cents / 100).toFixed(2)
+        : "",
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -846,7 +858,7 @@ export function InventoryPage() {
         }
         actions={
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <BulkTargetPricingDialog defaultQuery={q} defaultStatus={status} />
+            <BulkTargetPricingDialog />
             <Button
               variant="secondary"
               onClick={() => {
@@ -1059,12 +1071,10 @@ export function InventoryPage() {
                                 <DropdownMenuItem
                                   onSelect={(e) => {
                                     e.preventDefault();
-                                    setEditing(it);
-                                    setEditStorageLocation(it.storage_location ?? "");
-                                    setEditSerialNumber(it.serial_number ?? "");
+                                    openItemEditor(it);
                                   }}
                                 >
-                                  Bearbeiten
+                                  Zielpreis setzen
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -1103,15 +1113,20 @@ export function InventoryPage() {
                                       ? `${formatEur(it.effective_target_sell_price_cents)} €`
                                       : "—"}
                                   </div>
-                                  <div className="text-[10px] text-gray-400">
-                                    {it.target_price_mode === "MANUAL"
-                                      ? "Manuell"
-                                      : it.effective_target_price_source === "AUTO_AMAZON"
-                                        ? "Auto (Amazon)"
-                                        : "Auto (Floor)"}
-                                  </div>
+                                <div className="text-[10px] text-gray-400">
+                                  {it.target_price_mode === "MANUAL"
+                                    ? "Manuell"
+                                    : it.effective_target_price_source === "AUTO_AMAZON"
+                                      ? "Auto (Amazon)"
+                                      : "Auto (Floor)"}
                                 </div>
-                                <div className="text-[11px] text-gray-500 dark:text-gray-400">{market.label}</div>
+                              </div>
+                                <div
+                                  className="text-[11px] text-gray-500 dark:text-gray-400"
+                                  title={it.target_price_recommendation?.summary ?? market.label}
+                                >
+                                  {it.target_price_recommendation?.summary ?? market.label}
+                                </div>
                               </div>
 
                               <div
@@ -1182,12 +1197,10 @@ export function InventoryPage() {
                                 variant="outline"
                                 className="w-full sm:w-auto sm:flex-1"
                                 onClick={() => {
-                                  setEditing(it);
-                                  setEditStorageLocation(it.storage_location ?? "");
-                                  setEditSerialNumber(it.serial_number ?? "");
+                                  openItemEditor(it);
                                 }}
                               >
-                                Bearbeiten
+                                Zielpreis setzen
                               </Button>
                               {!!itemImages.length && (
                                 <Button
@@ -1474,16 +1487,10 @@ export function InventoryPage() {
                               variant="outline"
                               className="min-w-[6.5rem]"
                               onClick={() => {
-                                setEditing(it);
-                                setEditStorageLocation(it.storage_location ?? "");
-                                setEditSerialNumber(it.serial_number ?? "");
-                                setEditTargetPriceMode(it.target_price_mode as "AUTO" | "MANUAL");
-                                setEditManualPrice(
-                                  it.manual_target_sell_price_cents ? (it.manual_target_sell_price_cents / 100).toFixed(2) : "",
-                                );
+                                openItemEditor(it);
                               }}
                             >
-                              Bearbeiten
+                              Zielpreis setzen
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -1690,16 +1697,10 @@ export function InventoryPage() {
                               variant="outline"
                               className="min-w-[6.5rem]"
                               onClick={() => {
-                                setEditing(it);
-                                setEditStorageLocation(it.storage_location ?? "");
-                                setEditSerialNumber(it.serial_number ?? "");
-                                setEditTargetPriceMode(it.target_price_mode as "AUTO" | "MANUAL");
-                                setEditManualPrice(
-                                  it.manual_target_sell_price_cents ? (it.manual_target_sell_price_cents / 100).toFixed(2) : "",
-                                );
+                                openItemEditor(it);
                               }}
                             >
-                              Bearbeiten
+                              Zielpreis setzen
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -1779,41 +1780,40 @@ export function InventoryPage() {
         <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Artikel bearbeiten</DialogTitle>
-            <DialogDescription>
-              {editing ? (
-                <div className="grid gap-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.item_code}</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        void copyToClipboard(editing.item_code);
-                      }}
-                    >
-                      <Copy className="h-4 w-4" />
-                      Item code kopieren
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.id}</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        void copyToClipboard(editing.id);
-                      }}
-                    >
-                      <Copy className="h-4 w-4" />
-                      ID kopieren
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </DialogDescription>
+            <DialogDescription>Pflege die Artikeldaten und Zielpreis-Strategie.</DialogDescription>
           </DialogHeader>
+          {editing ? (
+            <div className="grid gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.item_code}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void copyToClipboard(editing.item_code);
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  Item code kopieren
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">{editing.id}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void copyToClipboard(editing.id);
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  ID kopieren
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
@@ -1850,12 +1850,38 @@ export function InventoryPage() {
                     </SelectContent>
                   </Select>
                   {editing?.target_price_recommendation && (
-                    <div className="text-[11px] text-gray-500">
+                    <div className="text-[11px] text-gray-500" title={editing.target_price_recommendation.summary}>
                       Empfehlung: {(editing.target_price_recommendation.recommended_target_sell_price_cents / 100).toFixed(2)} €
                       <br />
                       <span className="opacity-80">{editing.target_price_recommendation.summary}</span>
                     </div>
                   )}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        if (typeof editing?.recommended_target_sell_price_cents !== "number") return;
+                        setEditTargetPriceMode("MANUAL");
+                        setEditManualPrice((editing.recommended_target_sell_price_cents / 100).toFixed(2));
+                      }}
+                      disabled={typeof editing?.recommended_target_sell_price_cents !== "number"}
+                    >
+                      Empfehlung übernehmen
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditTargetPriceMode("AUTO");
+                        setEditManualPrice("");
+                      }}
+                    >
+                      Auto verwenden
+                    </Button>
+                  </div>
                 </div>
                 {editTargetPriceMode === "MANUAL" && (
                   <div className="space-y-2">

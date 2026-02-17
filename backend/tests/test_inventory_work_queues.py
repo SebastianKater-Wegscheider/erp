@@ -11,7 +11,7 @@ os.environ.setdefault("BASIC_AUTH_USERNAME", "test-user")
 os.environ.setdefault("BASIC_AUTH_PASSWORD", "test-pass")
 
 from app.api.v1.endpoints.inventory import list_inventory
-from app.core.enums import InventoryCondition, InventoryQueue, InventoryStatus, PurchaseType
+from app.core.enums import InventoryCondition, InventoryQueue, InventoryStatus, PurchaseType, TargetPriceMode
 from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.inventory_item import InventoryItem
 from app.models.inventory_item_image import InventoryItemImage
@@ -355,7 +355,7 @@ async def test_company_dashboard_returns_amazon_inventory_insights(db_session: A
         mp_missing = await _create_master_product(db_session, suffix="insights-missing", asin=None)
         mp_blocked = await _create_master_product(db_session, suffix="insights-blocked", asin="B00INSIGHTS3")
 
-        await _create_inventory_item(
+        top_item_manual = await _create_inventory_item(
             db_session,
             master_product=mp_top,
             status=InventoryStatus.AVAILABLE,
@@ -397,6 +397,8 @@ async def test_company_dashboard_returns_amazon_inventory_insights(db_session: A
             condition=InventoryCondition.NEW,
             purchase_price_cents=5_000,
         )
+        top_item_manual.target_price_mode = TargetPriceMode.MANUAL
+        top_item_manual.manual_target_sell_price_cents = 4_500
 
         db_session.add_all(
             [
@@ -439,6 +441,10 @@ async def test_company_dashboard_returns_amazon_inventory_insights(db_session: A
 
     assert amazon["in_stock_units_total"] == 5
     assert amazon["in_stock_units_priced"] == 5
+    assert amazon["in_stock_units_manual_priced"] == 1
+    assert amazon["in_stock_units_auto_priced"] == 4
+    assert amazon["in_stock_units_unpriced"] == 0
+    assert amazon["in_stock_units_effective_priced"] == 5
     assert amazon["in_stock_units_missing_asin"] == 1
     assert amazon["in_stock_units_fresh"] == 2
     assert amazon["in_stock_units_stale_or_blocked"] == 2
@@ -455,7 +461,7 @@ async def test_company_dashboard_returns_amazon_inventory_insights(db_session: A
     assert top[0]["master_product_id"] == str(mp_top.id)
     assert top[0]["units_total"] == 2
     assert top[0]["units_priced"] == 2
-    assert top[0]["market_gross_cents_total"] == 8_080
+    assert top[0]["market_gross_cents_total"] == 8_540
     # assert top[0]["fba_payout_cents_total"] == 5_930
     # assert top[0]["margin_cents_total"] == 1_630
     assert top[0]["amazon_rank_overall"] == 1200

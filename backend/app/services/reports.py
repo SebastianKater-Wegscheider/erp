@@ -11,7 +11,7 @@ from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.enums import InventoryStatus, OrderStatus, PurchaseKind, PurchaseType
+from app.core.enums import EffectiveTargetPriceSource, InventoryStatus, OrderStatus, PurchaseKind, PurchaseType
 from app.services.target_pricing import (
     fba_payout_cents as _fba_payout_cents_impl,
     market_price_for_condition_cents as _market_price_for_condition_cents_impl,
@@ -165,6 +165,7 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
                 AmazonProductMetricsLatest.price_used_very_good_cents,
                 AmazonProductMetricsLatest.price_used_good_cents,
                 AmazonProductMetricsLatest.price_used_acceptable_cents,
+                AmazonProductMetricsLatest.buybox_total_cents,
             )
             .select_from(InventoryItem)
             .join(MasterProduct, MasterProduct.id == InventoryItem.master_product_id)
@@ -226,6 +227,7 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
             price_used_very_good_cents=r.price_used_very_good_cents,
             price_used_good_cents=r.price_used_good_cents,
             price_used_acceptable_cents=r.price_used_acceptable_cents,
+            price_buybox_cents=r.buybox_total_cents,
             rank=r.rank_specific or r.rank_overall,
             offers_count=r.offers_count_used_priced_total or r.offers_count_total,
             settings=settings,
@@ -237,7 +239,6 @@ async def _amazon_inventory_insights(session: AsyncSession) -> dict:
         )
 
         # Track pricing source counters
-        from app.core.enums import EffectiveTargetPriceSource
         if source == EffectiveTargetPriceSource.MANUAL:
             out["in_stock_units_manual_priced"] = int(out["in_stock_units_manual_priced"]) + 1
         elif source in (EffectiveTargetPriceSource.AUTO_AMAZON, EffectiveTargetPriceSource.AUTO_COST_FLOOR):

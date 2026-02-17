@@ -53,6 +53,10 @@ const DASHBOARD_DATA = {
     in_stock_units_fresh: 6,
     in_stock_units_stale_or_blocked: 2,
     in_stock_units_blocked: 1,
+    in_stock_units_manual_priced: 2,
+    in_stock_units_auto_priced: 8,
+    in_stock_units_unpriced: 0,
+    in_stock_units_effective_priced: 10,
     positive_margin_units: 5,
     negative_margin_units: 2,
     top_opportunities: [
@@ -203,6 +207,7 @@ it("renders amazon intelligence card with key values and opportunities", async (
   expect(screen.getByText("Sell Value (net)")).toBeInTheDocument();
   expect(screen.getByText("777,00 €")).toBeInTheDocument();
   expect(screen.getAllByText(/Bepreist/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/\(Auto 8 · Manuell 2\)/i)).toBeInTheDocument();
   expect(screen.getByText("Top Chancen")).toBeInTheDocument();
   expect(screen.getByText("Mario Kart 64")).toBeInTheDocument();
   expect(screen.getByText("Income (Monat)")).toBeInTheDocument();
