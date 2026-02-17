@@ -89,6 +89,7 @@ type ConvertOut = {
 
 type ManualCandidateRow = {
   id: string;
+  sku: string;
   title: string;
   platform: string;
   region: string;
@@ -114,6 +115,7 @@ export function SourcingDetailPage() {
   const [bidbagMessage, setBidbagMessage] = useState<string | null>(null);
   const [manualSearch, setManualSearch] = useState("");
   const [pendingManualProductId, setPendingManualProductId] = useState<string | null>(null);
+  const [manualMatchMessage, setManualMatchMessage] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ["sourcing-item", id],
@@ -157,15 +159,17 @@ export function SourcingDetailPage() {
   });
 
   const addManualMatch = useMutation({
-    mutationFn: (masterProductId: string) =>
+    mutationFn: (payload: { masterProductId: string; productTitle: string; sku: string }) =>
       api.request(`/sourcing/items/${id}/matches/manual`, {
         method: "POST",
-        json: { master_product_id: masterProductId, user_confirmed: true },
+        json: { master_product_id: payload.masterProductId, user_confirmed: true },
       }),
-    onMutate: (masterProductId) => {
-      setPendingManualProductId(masterProductId);
+    onMutate: (payload) => {
+      setPendingManualProductId(payload.masterProductId);
+      setManualMatchMessage(null);
     },
-    onSuccess: async () => {
+    onSuccess: async (_, payload) => {
+      setManualMatchMessage(`Match hinzugefügt: ${payload.productTitle} (${payload.sku})`);
       await qc.invalidateQueries({ queryKey: ["sourcing-item", id] });
       await qc.invalidateQueries({ queryKey: ["sourcing-items"] });
       await qc.invalidateQueries({ queryKey: ["sourcing-manual-candidates", id] });
@@ -226,7 +230,17 @@ export function SourcingDetailPage() {
   });
 
   const item = detail.data;
-  const canConvert = item?.status === "READY" && confirmedMatchIds.length > 0;
+  const convertDisabledReason = useMemo(() => {
+    if (!item) return null;
+    if (confirmedMatchIds.length === 0) {
+      return "Mindestens ein bestätigter Match ist für die Conversion erforderlich.";
+    }
+    if (item.status !== "READY") {
+      return `Conversion ist erst bei Status READY möglich (aktuell: ${item.status}).`;
+    }
+    return null;
+  }, [item, confirmedMatchIds.length]);
+  const canConvert = convertDisabledReason === null;
   const canDiscard = item ? item.status !== "DISCARDED" && item.status !== "CONVERTED" : false;
 
   if (!id) {
@@ -308,6 +322,7 @@ export function SourcingDetailPage() {
                 <Button
                   type="button"
                   onClick={() => convert.mutate()}
+                  title={convertDisabledReason ?? undefined}
                   disabled={convert.isPending || !canConvert}
                 >
                   Purchase erstellen
@@ -330,6 +345,7 @@ export function SourcingDetailPage() {
                 ) : null}
               </div>
               {bidbagMessage ? <InlineMessage tone="info">{bidbagMessage}</InlineMessage> : null}
+              {convertDisabledReason ? <InlineMessage tone="info">{convertDisabledReason}</InlineMessage> : null}
               {bidbag.error ? <InlineMessage tone="error">{String((bidbag.error as Error).message)}</InlineMessage> : null}
               {convert.error ? <InlineMessage tone="error">{String((convert.error as Error).message)}</InlineMessage> : null}
               {discard.error ? <InlineMessage tone="error">{String((discard.error as Error).message)}</InlineMessage> : null}
@@ -415,7 +431,10 @@ export function SourcingDetailPage() {
             <CardContent className="space-y-3">
               <Input
                 value={manualSearch}
-                onChange={(event) => setManualSearch(event.target.value)}
+                onChange={(event) => {
+                  setManualSearch(event.target.value);
+                  setManualMatchMessage(null);
+                }}
                 placeholder="Produkt suchen (Titel, Plattform, SKU, ASIN, EAN)…"
                 aria-label="Manuelle Match-Suche"
               />
@@ -436,6 +455,7 @@ export function SourcingDetailPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Produkt</TableHead>
+                        <TableHead>SKU</TableHead>
                         <TableHead>Plattform</TableHead>
                         <TableHead>BSR</TableHead>
                         <TableHead>Used/New</TableHead>
@@ -452,6 +472,9 @@ export function SourcingDetailPage() {
                               <div className="text-xs text-[color:var(--app-text-muted)]">
                                 {candidate.region} {candidate.variant ? `• ${candidate.variant}` : ""}
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              <code className="text-xs">{candidate.sku}</code>
                             </TableCell>
                             <TableCell>{candidate.platform}</TableCell>
                             <TableCell>
@@ -471,7 +494,13 @@ export function SourcingDetailPage() {
                                 type="button"
                                 size="sm"
                                 disabled={isPending}
-                                onClick={() => addManualMatch.mutate(candidate.id)}
+                                onClick={() =>
+                                  addManualMatch.mutate({
+                                    masterProductId: candidate.id,
+                                    productTitle: candidate.title,
+                                    sku: candidate.sku,
+                                  })
+                                }
                               >
                                 {isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
                                 Als Match hinzufügen
@@ -487,6 +516,7 @@ export function SourcingDetailPage() {
               {addManualMatch.error ? (
                 <InlineMessage tone="error">{String((addManualMatch.error as Error).message)}</InlineMessage>
               ) : null}
+              {manualMatchMessage ? <InlineMessage tone="info">{manualMatchMessage}</InlineMessage> : null}
             </CardContent>
           </Card>
         </>
