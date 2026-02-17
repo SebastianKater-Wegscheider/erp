@@ -777,3 +777,15 @@
 - `frontend`: `npm run typecheck` and `npm run build` green.
 - `backend`: `pytest -q tests/test_marketplace_order_import_apply.py` green.
 - `e2e`: `npx playwright test tests/marketplace.spec.ts tests/sales.spec.ts --workers=1` green with local credentials.
+
+## 2026-02-17 - Follow-up: E2E concurrency hardening completed
+
+### Observation
+- The two initially targeted specs (`marketplace`, `sales`) were green in isolation but still timed out under full parallel suite load due strict 60s ceiling and brittle response waits.
+
+### Actions
+- Added timeout headroom (`120s`) for heavy flow specs.
+- Reworked critical waits in `marketplace`, `sales`, and `purchases` specs to use button-enabled guards, broader request capture, and poll-based UI readiness where appropriate.
+
+### Result
+- Full E2E suite (`6` specs) now passes in parallel on current local compose runtime with explicit credentials.
