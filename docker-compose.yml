@@ -17,6 +17,7 @@ services:
   backend:
     build:
       context: ./backend
+      target: ${BACKEND_IMAGE_TARGET:-prod}
     restart: unless-stopped
     env_file:
       - .env
@@ -55,6 +56,7 @@ services:
   backend-migrations:
     build:
       context: ./backend
+      target: ${BACKEND_IMAGE_TARGET:-prod}
     restart: "no"
     env_file:
       - .env

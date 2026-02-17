@@ -5,6 +5,7 @@ HOST="${HOST:-192.168.178.72}"
 SSH_USER="${SSH_USER:-seb}"
 SSH_TARGET="${SSH_USER}@${HOST}"
 CURL_TIMEOUT_SECONDS="${CURL_TIMEOUT_SECONDS:-10}"
+STRICT_DEEP_HEALTH="${STRICT_DEEP_HEALTH:-true}"
 
 echo "== Prod Health @ ${HOST} =="
 date -u +"UTC %Y-%m-%d %H:%M:%S"
@@ -16,6 +17,27 @@ cat /tmp/erp_healthz.json
 echo
 if curl -sS --max-time "${CURL_TIMEOUT_SECONDS}" -w "backend deep healthz: %{http_code} in %{time_total}s\n" -o /tmp/erp_healthz_deep.json "http://${HOST}:18000/healthz/deep"; then
   cat /tmp/erp_healthz_deep.json
+  if [[ "${STRICT_DEEP_HEALTH}" == "true" ]]; then
+    python3 - <<'PY'
+import json
+import sys
+
+with open("/tmp/erp_healthz_deep.json", "r", encoding="utf-8") as f:
+    payload = json.load(f)
+
+state = (
+    payload.get("checks", {})
+    .get("migration", {})
+    .get("state")
+)
+
+if state != "up_to_date":
+    print(f"ERROR: migration state is '{state}', expected 'up_to_date'", file=sys.stderr)
+    sys.exit(1)
+
+print("Deep health migration state: up_to_date")
+PY
+  fi
 else
   echo "backend deep healthz: WARN (unavailable)"
 fi

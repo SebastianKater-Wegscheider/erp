@@ -127,7 +127,7 @@ jobs:
 
       - name: Install e2e deps
         working-directory: e2e
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright (Chromium)
         working-directory: e2e
@@ -152,6 +152,36 @@ jobs:
             sleep 2
           done
           curl -fsS http://localhost:18000/healthz >/dev/null
+
+          for i in {1..60}; do
+            if curl -fsS http://localhost:18000/healthz/deep -o /tmp/erp_healthz_deep.json >/dev/null; then
+              if python3 - <<'PY'
+import json
+import sys
+
+with open("/tmp/erp_healthz_deep.json", "r", encoding="utf-8") as f:
+    payload = json.load(f)
+
+state = payload.get("checks", {}).get("migration", {}).get("state")
+sys.exit(0 if state == "up_to_date" else 1)
+PY
+              then
+                break
+              fi
+            fi
+            sleep 2
+          done
+          python3 - <<'PY'
+import json
+import sys
+
+with open("/tmp/erp_healthz_deep.json", "r", encoding="utf-8") as f:
+    payload = json.load(f)
+
+state = payload.get("checks", {}).get("migration", {}).get("state")
+if state != "up_to_date":
+    raise SystemExit(f"Migration state is '{state}', expected 'up_to_date'")
+PY
 
           for i in {1..60}; do
             if curl -fsS http://localhost:15173 >/dev/null; then

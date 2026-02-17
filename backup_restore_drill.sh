@@ -35,7 +35,7 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
-  ./backup_restore_drill.sh [--keep-db] [--no-backup]
+  ./backup_restore_drill.sh [--keep-db] [--no-backup] [--strict-alembic|--allow-legacy-alembic]
 
 What it does:
   1) (optional) runs ./backup.sh to create a fresh dump + files archive
@@ -49,6 +49,7 @@ EOF
 
 KEEP_DB=0
 RUN_BACKUP=1
+STRICT_ALEMBIC="${RESTORE_DRILL_STRICT_ALEMBIC:-true}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,6 +57,10 @@ while [[ $# -gt 0 ]]; do
       KEEP_DB=1; shift ;;
     --no-backup)
       RUN_BACKUP=0; shift ;;
+    --strict-alembic)
+      STRICT_ALEMBIC=true; shift ;;
+    --allow-legacy-alembic)
+      STRICT_ALEMBIC=false; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -147,10 +152,13 @@ echo "Validating restore..."
     exit 1
   fi
 
-  # If this is a legacy backup (pre-Alembic), the version table may not exist yet.
+  # Enforce Alembic metadata by default; legacy mode must be explicit.
   has_alembic=\$(psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -tAc \"select to_regclass('public.alembic_version') is not null\" | tr -d '[:space:]')
   if [ \"\$has_alembic\" = \"t\" ]; then
     psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"${drill_db}\" -c \"select version_num from alembic_version;\"
+  elif [ \"${STRICT_ALEMBIC}\" = \"true\" ]; then
+    echo \"Missing table: alembic_version (strict drill mode).\" >&2
+    exit 1
   else
     echo \"Note: legacy backup (no alembic_version table).\" >&2
   fi

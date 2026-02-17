@@ -15,6 +15,7 @@ Lean ERP für Gebrauchtwarenhandel (z.B. Videospiele) mit **FastAPI + PostgreSQL
 2. Start:
    - `docker compose up -d --build`
    - optional fuer lokale Backend-Hot-Reloads: `BACKEND_DEV_RELOAD=true`
+   - optional fuer Container-Dev-Tooling (inkl. `requirements-dev`): `BACKEND_IMAGE_TARGET=dev`
 3. Swagger UI:
    - `http://localhost:18000/docs` (HTTP Basic Auth aus `.env`)
 
@@ -76,6 +77,8 @@ Backup/Restore-Drill (sicher, nutzt eine temporaere neue DB und laesst die Haupt
 
 - `chmod +x backup_restore_drill.sh`
 - `./backup_restore_drill.sh`
+- Standard ist strikt (`RESTORE_DRILL_STRICT_ALEMBIC=true`) und failt ohne `alembic_version`.
+- Fuer explizite Legacy-Dumps: `./backup_restore_drill.sh --allow-legacy-alembic`
 
 ## E2E (Playwright)
 
@@ -134,7 +137,7 @@ Wichtige Endpoints (Prefix `/api/v1`, alle mit Basic Auth):
 ## Ops / Incident
 
 - Incident-Runbook: `docs/incident-runbook.md`
-- Schnellcheck Produktion: `./scripts/prod_health_monitor.sh`
+- Schnellcheck Produktion: `./scripts/prod_health_monitor.sh` (strict Deep-Health-Migrationscheck standardmaessig aktiv)
 - Deep Health (DB + Migration-Status): `GET /healthz/deep`
 - Amazon-Scraper drosseln (CPU/RAM/PID + slow mode): `./scripts/prod_apply_amazon_scraper_limits.sh`
 - Optionaler `agent-browser`-Sidecar ist als Compose-Profil `optional-agent-browser` hinterlegt.
