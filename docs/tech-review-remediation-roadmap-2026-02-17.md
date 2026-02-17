@@ -83,11 +83,22 @@ Goal: re-establish trustworthy CI signals and deterministic local/CI parity.
 - Keep a dedicated dev profile preserving current DX behavior.
 - Estimated effort: M (0.5-1 day)
 
+5. E2E environment contract stabilization
+- Align local E2E auth defaults with compose runtime defaults or enforce explicit env export in runner scripts.
+- Prevent false-red local runs caused by credential drift (`401` during seed API setup).
+- Estimated effort: S (2-4 hours)
+
+6. E2E selector hardening
+- Replace ambiguous text selectors in failing specs (for example `getByText("READY")`) with strict role/locator contracts.
+- Resolve sales dialog timing/selectors causing current timeout at buyer-name input step.
+- Estimated effort: S-M (0.5-1 day)
+
 ### Phase 1 Test Gates (must pass)
 1. `pytest -q` passes.
 2. `npm run typecheck`, `npm test`, `npm run build` pass consistently on pinned runtime.
 3. `check_schema_drift.py` and `check_db_invariants.py` both pass on fresh migrated DB.
 4. E2E smoke run passes (`smoke`, `purchases`, `marketplace` minimum).
+5. E2E rerun stability: 2 consecutive local runs with same result profile (no auth-contract false negatives).
 
 ## Phase 2 - Hardening (2-6 weeks)
 Goal: reduce long-term regression risk and maintenance cost.
@@ -128,6 +139,14 @@ Goal: reduce long-term regression risk and maintenance cost.
 - Add strict drill mode requiring valid Alembic state for modern deployments.
 - Estimated effort: S (2-4 hours)
 
+7. Sourcing review UX hardening
+- Add pagination/infinite loading for sourcing feed and render loaded-vs-total signal.
+- Enforce state-based action gating in detail view (convert/discard visibility/disabled logic by status).
+- Add explicit mutation error surfacing for convert/discard conflicts.
+- Render listing image thumbnail/gallery with fallback/no-image indicator.
+- Add accessible labels for match confirm/reject actions.
+- Estimated effort: M (3-5 days)
+
 ### Phase 2 Test Gates (must pass)
 1. Route-to-test matrix for all critical domains has explicit coverage owner and minimum test count.
 2. E2E includes coverage for:
@@ -137,6 +156,8 @@ Goal: reduce long-term regression risk and maintenance cost.
 - sourcing run/convert/discard
 - sales finalize + return
 3. Operational checks detect migration mismatch pre-deploy.
+4. Sourcing list renders full navigable dataset (or explicit pageable contract) when total exceeds page-size cap.
+5. Sourcing detail rejects invalid actions in UI before API conflict and surfaces actionable error if API still rejects.
 
 ## Public API / Interface / Type Changes to Implement
 1. Startup/migration interface

@@ -723,3 +723,26 @@
 - Scheduler tests updated to assert degraded status escalation.
 - Targeted backend tests green and frontend production build green.
 - Production validation: pilot agent run shows `KLEINANZEIGEN=completed` and `EBAY_DE=degraded` when eBay keeps returning zero listings; scheduler now surfaces this as agent error (`RuntimeError`) for operational visibility.
+
+## 2026-02-17 - Phase-2 Live E2E audit (Playwright) and reprioritization
+
+### Business perspective
+- Sourcing operator throughput is currently constrained less by backend scrape logic and more by review UX correctness.
+- Two operator-facing risks are now priority-raising:
+  - feed truncation (100 rendered vs larger totals) can hide opportunities.
+  - invalid actions are offered in detail state, producing avoidable conflicts and user confusion.
+
+### Technical findings snapshot
+- Manual Playwright run validated sourcing scrape/convert/discard path in live stack.
+- Feed page requests `limit=100&offset=0` only, while API returns `total`; UI does not expose pagination/load-more.
+- Converted item still allows `Purchase erstellen` click; backend returns `409` (`Item already converted`) and UI does not surface a clear error.
+- Image metadata exists in contracts (`primary_image_url`, `image_urls`) but is not rendered in list/detail.
+- Automated E2E rerun with active local credentials passed 4/6; remaining failures are selector/timing fragility (`marketplace`, `sales`).
+
+### Decision
+- Move Phase-2 sourcing UX hardening tasks into immediate stabilization queue after current P1 blockers:
+  1. pagination or infinite loading with loaded/total transparency,
+  2. status-gated detail actions + explicit conflict messaging,
+  3. listing image previews and no-image indicators,
+  4. resilient and accessible action labels/selectors.
+- Keep backend conversion/discard behavior unchanged for now; address user-facing contract in frontend first to reduce operational error rate quickly.

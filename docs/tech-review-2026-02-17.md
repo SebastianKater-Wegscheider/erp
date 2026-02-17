@@ -9,6 +9,8 @@ Evidence sources used:
   - `pytest -q` (backend)
   - `npm test`, `npm run typecheck`, `npm run build` (frontend)
   - `npm install`, `npx playwright test --list` (e2e)
+  - Manual Playwright E2E run (`$playwright` skill) against live compose stack for sourcing run/convert/discard + UX gap audit.
+  - Automated Playwright E2E reruns with and without explicit credentials to separate environment drift vs product defects.
   - Compose health/log checks
   - Migration checks (`alembic upgrade head`, `check_schema_drift.py`, `check_db_invariants.py`) against fresh and legacy-shaped DB states.
 
@@ -20,6 +22,8 @@ Evidence sources used:
 - Frontend tests: failing (`6 failed, 34 passed`), mostly timeout-driven.
 - Frontend typecheck/build: pass.
 - E2E setup: dependencies now install; Playwright discovers `5` tests.
+- Automated E2E current: `4 passed, 2 failed` when run with local creds (`E2E_USER=admin`, `E2E_PASS=change-me`); default local run fails early with `401` seed setup due credential drift.
+- Manual sourcing E2E current: live scrape executed, convert and discard flows functional, but multiple UX/operability gaps found (detailed below).
 
 ## Priority Risk Register
 
@@ -111,6 +115,49 @@ Evidence sources used:
   1. Add `/healthz/deep` or extend health to include DB connectivity + migration state checks.
   2. Wire deploy and monitor scripts to fail on migration-state mismatch.
 
+### P1-5: Sourcing feed truncates actionable dataset (100 shown vs larger total)
+- Likelihood: High
+- Impact: High (operators can miss opportunities)
+- Evidence:
+  - Frontend hardcodes `limit=100` and `offset=0` for sourcing list requests (`frontend/src/pages/Sourcing.tsx:82-83`).
+  - Backend supports pagination and returns `total` + `limit` + `offset` (`backend/app/api/v1/endpoints/sourcing.py:174-243`).
+  - Live Playwright snapshot after scrape shows `Total: 177 • READY: 0`, but exactly `100` visible cards (`button "Details"` occurrences) with no pagination/load-more control in viewport-bottom snapshot (`output/playwright/sourcing-phase2-20260217/.playwright-cli/page-2026-02-17T12-10-37-520Z.yml`).
+- Why this matters:
+  - Review users can assume full coverage while 77 items are not visible in the default UI state.
+- Recommendation:
+  1. Add explicit pagination or infinite loading with `offset` progression.
+  2. Display "loaded/total" to prevent false completeness assumptions.
+  3. Add E2E assertion for total-to-render consistency.
+
+### P1-6: Sourcing detail actions violate state contract and surface conflicts poorly
+- Likelihood: High
+- Impact: High (operator confusion, repeated failed actions)
+- Evidence:
+  - Detail page always renders `Purchase erstellen` / `Verwerfen` for non-ready states (`frontend/src/pages/SourcingDetail.tsx:245-254`).
+  - Backend intentionally returns `409` for invalid conversions (`backend/app/api/v1/endpoints/sourcing.py:386-419`, `backend/app/services/sourcing.py:782-785`).
+  - Live Playwright network log captured `POST /sourcing/items/{converted-id}/convert => 409 Conflict` after user clicks enabled button; no visible inline error rendered for convert/discard failures (`output/playwright/sourcing-phase2-20260217/.playwright-cli/network-2026-02-17T12-09-36-540Z.log`).
+- Why this matters:
+  - Users can trigger invalid operations from states that should be read-only or explicitly blocked in UI.
+- Recommendation:
+  1. Gate actions by item status in UI (`READY` only for convert, hide/disable discard once discarded).
+  2. Add inline error messaging for mutation failures (`convert.error`, `discard.error`).
+  3. Add idempotency tests for repeated conversion/discard clicks.
+
+### P1-7: Automated E2E suite still has deterministic fragility points
+- Likelihood: High
+- Impact: High (CI confidence gaps on critical flows)
+- Evidence:
+  - With local credential contract aligned, current run is `4 passed, 2 failed` (`e2e`: `marketplace.spec.ts`, `sales.spec.ts`).
+  - Marketplace failure is a strict-mode locator ambiguity on `getByText("READY")` (two matches).
+  - Sales failure is a 60s timeout waiting/filling buyer name field in create-order dialog.
+  - Without explicit credential alignment, the same suite fails early with `401` in API seed helper defaults.
+- Why this matters:
+  - E2E signal quality is environment-sensitive and currently under-protects two high-value flows.
+- Recommendation:
+  1. Enforce explicit E2E auth env contract in local+CI docs/scripts.
+  2. Replace ambiguous text selectors with role-scoped locators.
+  3. Harden sales dialog synchronization before fill/assert actions.
+
 ### P2-1: Complexity hotspots increase regression probability
 - Likelihood: High
 - Impact: Medium-High (future change friction)
@@ -179,6 +226,30 @@ Evidence sources used:
   1. Use multi-stage or separate prod/dev images.
   2. Install only `requirements.txt` in production image.
 
+### P2-6: Sourcing imagery is available in API but absent from review UI
+- Likelihood: High
+- Impact: Medium-High (decision quality + review speed)
+- Evidence:
+  - List/detail contracts include `primary_image_url` / `image_urls` (`frontend/src/pages/Sourcing.tsx:25`, `frontend/src/pages/SourcingDetail.tsx:44`, `backend/app/api/v1/endpoints/sourcing.py:227`, `backend/app/api/v1/endpoints/sourcing.py:289`).
+  - Current list/detail rendering does not display listing thumbnails or gallery, including seeded "ohne Bilder" validation cases.
+- Why this matters:
+  - Operators cannot quickly validate listing condition/completeness, increasing misclassification risk.
+- Recommendation:
+  1. Render thumbnail preview in list cards with fallback placeholder.
+  2. Add detail gallery with image count and "no image" warning badge.
+
+### P2-7: Match-action buttons are icon-only without explicit labels
+- Likelihood: High
+- Impact: Medium (accessibility and test robustness)
+- Evidence:
+  - Match row action buttons render only `<Check />` / `<X />` icons without visible text or explicit aria-labels (`frontend/src/pages/SourcingDetail.tsx:317-332`).
+  - Playwright snapshot exposes unnamed action buttons in match table.
+- Why this matters:
+  - Reduced accessibility and brittle selector strategy in E2E.
+- Recommendation:
+  1. Add clear text or `aria-label` attributes for confirm/reject actions.
+  2. Standardize resilient selectors (`getByRole` with exact names) in E2E.
+
 ### P3-1: Restore drill allows no-Alembic state as informational
 - Likelihood: Medium
 - Impact: Low-Medium (can normalize stale migration posture)
@@ -215,8 +286,8 @@ Evidence sources used:
 2. Fresh DB migration to head: **PASS**.
 3. Drift/invariant checks after migration flow: **FAIL** (drift script fails even on fresh DB; invariants fail on current legacy DB).
 4. Frontend reliability: **FAIL** (timeouts/flakiness).
-5. E2E readiness: **PARTIAL** (deps and test discovery pass; full run not executed in this cycle due backend outage state).
-6. Critical flow validation end-to-end: **PARTIAL** (backend unit/service coverage is strong; full integrated coverage incomplete).
+5. E2E readiness: **PARTIAL** (suite executes end-to-end; local credential drift can cause early `401` failures if env contract is not aligned; with correct creds, 4/6 pass).
+6. Critical flow validation end-to-end: **PARTIAL** (purchases flows pass, sourcing run/convert/discard manually verified, but sales/marketplace still have failing automated scenarios).
 7. Backup/restore drill robustness vs migration metadata: **PARTIAL** (script permits legacy no-Alembic state).
 8. Security hygiene: **PARTIAL** (no tracked `.env` now, but runtime/prod hardening gaps remain).
 
