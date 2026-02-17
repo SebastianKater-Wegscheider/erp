@@ -842,3 +842,56 @@
 ### Risk handling
 - Prioritize parser compatibility hotfix first; keep scope narrow to eBay extraction paths.
 - Verify against live scrape endpoint and production run metrics before closing incident.
+
+## 2026-02-17 - Planned manual sourcing match enablement + nav prioritization
+
+### Business perspective
+- Operators are blocked when automatic sourcing matches are empty or sparse; business still needs a manual path to convert viable listings.
+- Sourcing is now core daily workflow and should be first-class in navigation, not hidden in a subsection.
+
+### Technical intent
+- Add API + UI flow to search master products and attach manual matches to a sourcing item.
+- Reuse existing recalculation/conversion logic so manual matches immediately affect status/profit and purchase creation readiness.
+- Move `Sourcing` to a dedicated top-level nav entry in first position and remove sourcing links from `Belege` dropdown.
+
+### Risk handling
+- Keep manual matching additive; no destructive data migrations.
+- Preserve existing auto-match behavior and compatibility paths while introducing a new explicit user action.
+
+## 2026-02-17 - Implementation kickoff: manual matching API/UI and top-level nav
+
+### Business perspective
+- Ohne automatische Treffer entsteht operativer Stillstand im Sourcing-Review; ein manueller Fallback ist unmittelbar notwendig.
+
+### Technical plan
+- Backend: Kandidaten-Suche und manuelles Match-Create als dedizierte Endpoints, inklusive sofortiger Re-Kalkulation des Items.
+- Frontend: Manuelles Matching in der Detailansicht mit direkter "Als Match hinzufügen"-Aktion.
+- Navigation: `Sourcing` als erstes Top-Level-Element; Einträge aus `Belege` entfernen, um die Informationsarchitektur zu vereinfachen.
+
+### Tradeoff
+- Fokus auf schnelle Wiederherstellung des Kern-Workflows mit minimal-invasiven Änderungen an bestehenden Auto-Match- und Conversion-Flows.
+
+## 2026-02-17 - Implemented: manual sourcing matching + sourcing-first navigation
+
+### Business perspective
+- Der Sourcing-Prozess ist trotz leerer Auto-Matches wieder handlungsfähig: Operator können manuell passende Produkte anhängen und sofort weiterrechnen.
+- Sourcing ist als primärer Workflow in der Navigation sichtbar und nicht mehr im Belege-Dropdown versteckt.
+
+### Technical implementation
+- Backend `sourcing` endpoints:
+  - `GET /sourcing/items/{item_id}/manual-candidates` (Titel/Plattform/SKU/ASIN/EAN Suche, bestehende Matches ausgeschlossen, Amazon-Metriken beigefügt).
+  - `POST /sourcing/items/{item_id}/matches/manual` (upsert auf `(item, master_product)`, Snapshot/Payout übernehmen, Recalc direkt auslösen).
+- Frontend `SourcingDetail`:
+  - neue Sektion "Manuelles Matching" mit Suche, Kandidatentabelle und direkter Aktion "Als Match hinzufügen".
+  - Query-Invalidierung auf Detail-/Listenebene nach erfolgreichem manuellem Match.
+- Frontend Topbar:
+  - `Sourcing` als erstes Top-Level-Item (Desktop + Mobile).
+  - Sourcing-Links aus `Belege` entfernt.
+
+### Validation
+- `pytest -q backend/tests/test_sourcing_flows.py` -> 12 passed.
+- `pytest -q backend/tests/test_sourcing_flows.py -k "manual_match_candidates or create_manual_sourcing_match_upserts"` -> 2 passed.
+- `frontend`: `npm run typecheck` + `npm run build` erfolgreich.
+
+### Tradeoff
+- Fokus auf schnelles Enablen des manuellen Kernpfads ohne invasive Änderungen an Auto-Matching, Conversion- oder Datenmodell-Strukturen.

@@ -13,7 +13,10 @@ import { Input } from "./ui/input";
 type NavItem = { to: string; label: string };
 type NavSection = { label: string; items: NavItem[] };
 
-const NAV_PRIMARY: NavItem = { to: "/dashboard", label: "Übersicht" };
+const NAV_TOP_LEVEL: NavItem[] = [
+  { to: "/sourcing", label: "Sourcing" },
+  { to: "/dashboard", label: "Übersicht" },
+];
 const NAV_SECTIONS = [
   {
     label: "Stammdaten",
@@ -27,8 +30,6 @@ const NAV_SECTIONS = [
     label: "Belege",
     items: [
       { to: "/purchases", label: "Einkäufe" },
-      { to: "/sourcing", label: "Sourcing" },
-      { to: "/sourcing/agents", label: "Sourcing Agents" },
       { to: "/sales", label: "Verkäufe" },
       { to: "/marketplace", label: "Marktplatz" },
     ],
@@ -62,9 +63,12 @@ export function Topbar() {
     );
   }, [vatEnabled]);
 
-  const allNavItems = useMemo(() => [NAV_PRIMARY, ...navSections.flatMap((s) => s.items)], [navSections]);
-  const activeItem = useMemo(() => allNavItems.find((n) => n.to === loc.pathname), [allNavItems, loc.pathname]);
-  const isActive = (to: string) => loc.pathname === to;
+  const allNavItems = useMemo(() => [...NAV_TOP_LEVEL, ...navSections.flatMap((s) => s.items)], [navSections]);
+  const isActive = (to: string) => {
+    if (to === "/sourcing") return loc.pathname === "/sourcing" || loc.pathname.startsWith("/sourcing/");
+    return loc.pathname === to;
+  };
+  const activeItem = allNavItems.find((n) => isActive(n.to));
   const isSectionActive = (items: NavItem[]) => items.some((i) => isActive(i.to));
 
   useEffect(() => {
@@ -103,7 +107,7 @@ export function Topbar() {
       <div className="mx-auto flex max-w-[1240px] items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="flex min-w-0 items-center gap-3">
           <Link
-            to={NAV_PRIMARY.to}
+            to="/dashboard"
             className="group inline-flex shrink-0 items-center gap-2 rounded-lg px-1 py-0.5 text-[color:var(--app-text)] transition-colors hover:text-[color:var(--app-primary-strong)]"
           >
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[color:var(--app-primary-soft)] text-[11px] font-bold uppercase tracking-wide text-[color:var(--app-primary-strong)] shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--app-primary)_22%,transparent)]">
@@ -122,13 +126,16 @@ export function Topbar() {
           <div className="hidden h-6 w-px bg-[color:var(--app-border)] md:block" />
 
           <div className="hidden items-center gap-1 rounded-xl border border-[color:var(--app-border)] bg-[color:color-mix(in_oklab,var(--app-surface)_84%,var(--app-primary-soft))] p-1 shadow-[inset_0_1px_2px_color-mix(in_oklab,var(--app-border)_50%,transparent)] md:flex">
-            <Link
-              to={NAV_PRIMARY.to}
-              aria-current={isActive(NAV_PRIMARY.to) ? "page" : undefined}
-              className={cnNavPill(isActive(NAV_PRIMARY.to))}
-            >
-              {NAV_PRIMARY.label}
-            </Link>
+            {NAV_TOP_LEVEL.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                aria-current={isActive(item.to) ? "page" : undefined}
+                className={cnNavPill(isActive(item.to))}
+              >
+                {item.label}
+              </Link>
+            ))}
 
             {navSections.map((section) => (
               <DropdownMenu key={section.label}>
@@ -215,14 +222,19 @@ export function Topbar() {
                     </div>
 
                     <div className="px-2 pb-3">
-                      <Link
-                        to={NAV_PRIMARY.to}
-                        aria-current={isActive(NAV_PRIMARY.to) ? "page" : undefined}
-                        onClick={() => setMobileNavOpen(false)}
-                        className={cnMobileLink(isActive(NAV_PRIMARY.to))}
-                      >
-                        {NAV_PRIMARY.label}
-                      </Link>
+                      <div className="space-y-1">
+                        {NAV_TOP_LEVEL.map((item) => (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            aria-current={isActive(item.to) ? "page" : undefined}
+                            onClick={() => setMobileNavOpen(false)}
+                            className={cnMobileLink(isActive(item.to))}
+                          >
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
                     </div>
                   </div>
 

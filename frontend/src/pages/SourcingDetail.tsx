@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { InlineMessage } from "../components/ui/inline-message";
+import { Input } from "../components/ui/input";
 import { PageHeader } from "../components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { useApi } from "../lib/api";
@@ -86,6 +87,18 @@ type ConvertOut = {
   purchase_id: string;
 };
 
+type ManualCandidateRow = {
+  id: string;
+  title: string;
+  platform: string;
+  region: string;
+  variant: string;
+  asin?: string | null;
+  rank_overall?: number | null;
+  price_used_good_cents?: number | null;
+  price_new_cents?: number | null;
+};
+
 function fmtDate(value?: string | null): string {
   if (!value) return "—";
   const dt = new Date(value);
@@ -99,17 +112,29 @@ export function SourcingDetailPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [bidbagMessage, setBidbagMessage] = useState<string | null>(null);
+  const [manualSearch, setManualSearch] = useState("");
+  const [pendingManualProductId, setPendingManualProductId] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ["sourcing-item", id],
     enabled: !!id,
     queryFn: () => api.request<SourcingDetailOut>(`/sourcing/items/${id}`),
   });
+  const manualSearchTrimmed = manualSearch.trim();
 
   const confirmedMatchIds = useMemo(() => {
     const rows = detail.data?.matches ?? [];
     return rows.filter((m) => m.user_confirmed && !m.user_rejected).map((m) => m.id);
   }, [detail.data?.matches]);
+
+  const manualCandidates = useQuery({
+    queryKey: ["sourcing-manual-candidates", id, manualSearchTrimmed],
+    enabled: !!id && manualSearchTrimmed.length >= 2,
+    queryFn: () =>
+      api.request<ManualCandidateRow[]>(
+        `/sourcing/items/${id}/manual-candidates?q=${encodeURIComponent(manualSearchTrimmed)}&limit=20`,
+      ),
+  });
 
   const preview = useMutation({
     mutationFn: () =>
@@ -128,6 +153,25 @@ export function SourcingDetailPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["sourcing-item", id] });
       await qc.invalidateQueries({ queryKey: ["sourcing-items"] });
+    },
+  });
+
+  const addManualMatch = useMutation({
+    mutationFn: (masterProductId: string) =>
+      api.request(`/sourcing/items/${id}/matches/manual`, {
+        method: "POST",
+        json: { master_product_id: masterProductId, user_confirmed: true },
+      }),
+    onMutate: (masterProductId) => {
+      setPendingManualProductId(masterProductId);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["sourcing-item", id] });
+      await qc.invalidateQueries({ queryKey: ["sourcing-items"] });
+      await qc.invalidateQueries({ queryKey: ["sourcing-manual-candidates", id] });
+    },
+    onSettled: () => {
+      setPendingManualProductId(null);
     },
   });
 
@@ -361,6 +405,88 @@ export function SourcingDetailPage() {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Manuelles Matching</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                value={manualSearch}
+                onChange={(event) => setManualSearch(event.target.value)}
+                placeholder="Produkt suchen (Titel, Plattform, SKU, ASIN, EAN)…"
+                aria-label="Manuelle Match-Suche"
+              />
+              {manualSearchTrimmed.length < 2 ? (
+                <InlineMessage tone="info">Bitte mindestens 2 Zeichen eingeben.</InlineMessage>
+              ) : null}
+              {manualCandidates.isLoading ? <InlineMessage>Lade Kandidaten…</InlineMessage> : null}
+              {manualCandidates.error ? <InlineMessage tone="error">Kandidaten konnten nicht geladen werden.</InlineMessage> : null}
+              {manualSearchTrimmed.length >= 2 &&
+              !manualCandidates.isLoading &&
+              !manualCandidates.error &&
+              (manualCandidates.data?.length ?? 0) === 0 ? (
+                <InlineMessage tone="info">Keine Kandidaten gefunden.</InlineMessage>
+              ) : null}
+              {(manualCandidates.data?.length ?? 0) > 0 ? (
+                <div className="overflow-x-auto rounded-md border border-[color:var(--app-border)]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Produkt</TableHead>
+                        <TableHead>Plattform</TableHead>
+                        <TableHead>BSR</TableHead>
+                        <TableHead>Used/New</TableHead>
+                        <TableHead>Aktion</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(manualCandidates.data ?? []).map((candidate) => {
+                        const isPending = addManualMatch.isPending && pendingManualProductId === candidate.id;
+                        return (
+                          <TableRow key={candidate.id}>
+                            <TableCell>
+                              <div className="font-medium">{candidate.title}</div>
+                              <div className="text-xs text-[color:var(--app-text-muted)]">
+                                {candidate.region} {candidate.variant ? `• ${candidate.variant}` : ""}
+                              </div>
+                            </TableCell>
+                            <TableCell>{candidate.platform}</TableCell>
+                            <TableCell>
+                              {typeof candidate.rank_overall === "number"
+                                ? candidate.rank_overall.toLocaleString("de-AT")
+                                : "—"}
+                            </TableCell>
+                            <TableCell>
+                              {typeof candidate.price_used_good_cents === "number"
+                                ? formatEur(candidate.price_used_good_cents)
+                                : "—"}
+                              {" / "}
+                              {typeof candidate.price_new_cents === "number" ? formatEur(candidate.price_new_cents) : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={isPending}
+                                onClick={() => addManualMatch.mutate(candidate.id)}
+                              >
+                                {isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                                Als Match hinzufügen
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : null}
+              {addManualMatch.error ? (
+                <InlineMessage tone="error">{String((addManualMatch.error as Error).message)}</InlineMessage>
+              ) : null}
             </CardContent>
           </Card>
         </>
