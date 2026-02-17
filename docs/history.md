@@ -746,3 +746,34 @@
   3. listing image previews and no-image indicators,
   4. resilient and accessible action labels/selectors.
 - Keep backend conversion/discard behavior unchanged for now; address user-facing contract in frontend first to reduce operational error rate quickly.
+
+## 2026-02-17 - Planned implementation: sourcing UX hotfix + E2E stability fixes
+
+### Business perspective
+- Immediate goal is to reduce operator error and missed opportunities in sourcing review while restoring trust in critical E2E gates.
+
+### Technical intent
+- Sourcing UI: implement paging/loaded-total transparency, status-gated convert/discard actions with explicit error feedback, and listing image visibility.
+- Accessibility/testability: add explicit labels for match decision actions.
+- E2E: fix deterministic failures in marketplace (ambiguous READY locator) and sales (dialog timing/selector), then rerun suite.
+
+### Tradeoff
+- Changes prioritize low-risk frontend/test hardening without altering backend business rules for conversion/discard conflicts.
+
+## 2026-02-17 - Implemented: sourcing UX hotfixes + marketplace apply persistence fix + E2E stabilization
+
+### Business perspective
+- Sourcing review now exposes missing listing media and full-feed progress, reducing missed-opportunity and misclassification risk.
+- Marketplace apply flow had a hidden persistence defect (UI showed success but writes could be lost); fixing this restores trust in order application and E2E gates.
+
+### Technical implementation
+- Frontend sourcing list (`Sourcing.tsx`): switched to paged infinite query (`limit/offset`), added loaded-vs-total summary and explicit "Mehr laden" control, and rendered primary listing thumbnails/fallback.
+- Frontend sourcing detail (`SourcingDetail.tsx`): added image gallery/fallback, status-gated convert/discard actions, explicit convert/discard error messages, and aria-labels for match confirm/reject icon buttons.
+- Frontend sales dialog (`Sales.tsx`): added `htmlFor/id` bindings for buyer fields so label-based automation/accessibility works reliably.
+- Backend marketplace endpoint (`marketplace.py`): `_begin_tx` now commits outer transaction after nested writes when session is already in transaction (same pattern as sourcing endpoint).
+- E2E (`marketplace.spec.ts`, `helpers.ts`): removed ambiguous READY text assertion, assert apply result payload contract, and verify finalized sales order via API helper.
+
+### Validation
+- `frontend`: `npm run typecheck` and `npm run build` green.
+- `backend`: `pytest -q tests/test_marketplace_order_import_apply.py` green.
+- `e2e`: `npx playwright test tests/marketplace.spec.ts tests/sales.spec.ts --workers=1` green with local credentials.
