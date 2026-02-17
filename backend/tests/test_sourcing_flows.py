@@ -15,6 +15,7 @@ from app.models.amazon_scrape import AmazonProductMetricsLatest
 from app.models.master_product import MasterProduct, master_product_sku_from_id
 from app.models.purchase import Purchase
 from app.models.sourcing import SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
+from app.schemas.sourcing import SourcingManualMatchCreateIn
 from app.services.sourcing import (
     _ResolvedSettings,
     _compute_max_purchase_price_cents,
@@ -528,3 +529,135 @@ async def test_prune_old_sourcing_items_respects_status_age_and_batch_limit(db_s
     assert "old-low-1" not in remaining_ids
     assert "old-low-2" not in remaining_ids
     assert "old-low-3" not in remaining_ids
+
+
+@pytest.mark.asyncio
+async def test_list_manual_match_candidates_excludes_existing_matches(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.sourcing import list_manual_match_candidates
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="manual-candidates-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/manual-candidates-1",
+        title="Gamecube Bundle",
+        price_cents=1_000,
+        status=SourcingStatus.NEW,
+    )
+    db_session.add(item)
+
+    excluded_id = uuid.uuid4()
+    excluded = MasterProduct(
+        id=excluded_id,
+        sku=master_product_sku_from_id(excluded_id),
+        kind="GAME",
+        title="Gamecube Zelda",
+        platform="GAMECUBE",
+        region="EU",
+        variant="",
+        asin="B000EXCLUDED",
+    )
+    candidate_id = uuid.uuid4()
+    candidate = MasterProduct(
+        id=candidate_id,
+        sku=master_product_sku_from_id(candidate_id),
+        kind="GAME",
+        title="Gamecube Metroid Prime",
+        platform="GAMECUBE",
+        region="EU",
+        variant="Player's Choice",
+        asin="B000CANDIDATE",
+    )
+    db_session.add_all([excluded, candidate])
+    await db_session.flush()
+
+    db_session.add(
+        SourcingMatch(
+            sourcing_item_id=item.id,
+            master_product_id=excluded.id,
+            confidence_score=82,
+            match_method="title_fuzzy",
+            user_confirmed=True,
+        )
+    )
+    db_session.add(
+        AmazonProductMetricsLatest(
+            master_product_id=candidate.id,
+            last_attempt_at=datetime.now(UTC),
+            last_success_at=datetime.now(UTC),
+            rank_overall=1_450,
+            price_used_good_cents=5_900,
+            price_new_cents=8_900,
+        )
+    )
+    await db_session.commit()
+
+    out = await list_manual_match_candidates(item.id, q="gamecube", limit=10, session=db_session)
+
+    assert len(out) == 1
+    assert out[0].id == candidate.id
+    assert out[0].platform == "GAMECUBE"
+    assert out[0].rank_overall == 1_450
+    assert out[0].price_used_good_cents == 5_900
+
+
+@pytest.mark.asyncio
+async def test_create_manual_sourcing_match_upserts_and_recalculates(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.sourcing import create_manual_sourcing_match
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="manual-match-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/manual-match-1",
+        title="Gamecube Lot",
+        price_cents=1_000,
+        status=SourcingStatus.NEW,
+    )
+    db_session.add(item)
+
+    mp_id = uuid.uuid4()
+    product = MasterProduct(
+        id=mp_id,
+        sku=master_product_sku_from_id(mp_id),
+        kind="GAME",
+        title="Gamecube F-Zero GX",
+        platform="GAMECUBE",
+        region="EU",
+        variant="",
+        asin="B000FZERO",
+    )
+    db_session.add(product)
+    await db_session.flush()
+    db_session.add(
+        AmazonProductMetricsLatest(
+            master_product_id=product.id,
+            last_attempt_at=datetime.now(UTC),
+            last_success_at=datetime.now(UTC),
+            rank_overall=2_500,
+            price_used_good_cents=8_000,
+            price_new_cents=12_000,
+        )
+    )
+    await db_session.commit()
+
+    payload = SourcingManualMatchCreateIn(master_product_id=product.id, user_confirmed=True)
+    first = await create_manual_sourcing_match(item_id=item.id, data=payload, session=db_session)
+    second = await create_manual_sourcing_match(item_id=item.id, data=payload, session=db_session)
+
+    matches = (
+        await db_session.execute(
+            select(SourcingMatch)
+            .where(SourcingMatch.sourcing_item_id == item.id)
+            .order_by(SourcingMatch.created_at.asc())
+        )
+    ).scalars().all()
+    refreshed = await db_session.get(SourcingItem, item.id)
+
+    assert refreshed is not None
+    assert len(matches) == 1
+    assert matches[0].match_method == "manual"
+    assert matches[0].user_confirmed is True
+    assert matches[0].snapshot_bsr == 2_500
+    assert matches[0].snapshot_fba_payout_cents is not None
+    assert first.match_id == matches[0].id
+    assert second.match_id == matches[0].id
+    assert refreshed.status == SourcingStatus.READY

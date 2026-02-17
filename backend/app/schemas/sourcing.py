@@ -146,6 +146,24 @@ class SourcingMatchPatchOut(BaseModel):
     estimated_roi_bp: int | None
 
 
+class SourcingManualMatchCandidateOut(BaseModel):
+    id: UUID
+    title: str
+    platform: str
+    region: str
+    variant: str
+    asin: str | None = None
+    rank_overall: int | None = None
+    price_used_good_cents: int | None = None
+    price_new_cents: int | None = None
+
+
+class SourcingManualMatchCreateIn(BaseModel):
+    master_product_id: UUID
+    user_confirmed: bool = True
+    user_adjusted_condition: str | None = None
+
+
 class SourcingConversionPreviewIn(BaseModel):
     confirmed_match_ids: list[UUID] | None = None
 

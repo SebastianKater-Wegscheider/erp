@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,6 +14,8 @@ from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.enums import SourcingPlatform, SourcingStatus
 from app.core.security import require_basic_auth
+from app.models.amazon_scrape import AmazonProductMetricsLatest
+from app.models.master_product import MasterProduct
 from app.models.sourcing import SourcingAgent, SourcingAgentQuery, SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
 from app.schemas.sourcing import (
     SourcingAgentCreateIn,
@@ -33,6 +35,8 @@ from app.schemas.sourcing import (
     SourcingItemListOut,
     SourcingItemListResponse,
     SourcingMatchMasterProductOut,
+    SourcingManualMatchCandidateOut,
+    SourcingManualMatchCreateIn,
     SourcingMatchOut,
     SourcingMatchPatchIn,
     SourcingMatchPatchOut,
@@ -42,6 +46,7 @@ from app.schemas.sourcing import (
     SourcingSettingsUpdateIn,
     SourcingStatsOut,
 )
+from app.services.target_pricing import fba_payout_cents
 from app.services.sourcing import (
     build_bidbag_handoff,
     build_conversion_preview,
@@ -56,6 +61,20 @@ from app.services.sourcing import (
 
 
 router = APIRouter()
+
+
+def _manual_used_price_cents(metrics: AmazonProductMetricsLatest | None) -> int | None:
+    if metrics is None:
+        return None
+    for value in (
+        metrics.price_used_good_cents,
+        metrics.price_used_very_good_cents,
+        metrics.price_used_like_new_cents,
+        metrics.price_used_acceptable_cents,
+    ):
+        if isinstance(value, int):
+            return int(value)
+    return None
 
 
 @asynccontextmanager
@@ -342,6 +361,155 @@ async def patch_sourcing_match(
     ).scalars().all()
     confirmed_only = any(m.user_confirmed and not m.user_rejected for m in item_matches)
 
+    await recalculate_item_from_matches(session=session, item=item, confirmed_only=confirmed_only)
+    await session.commit()
+
+    return SourcingMatchPatchOut(
+        item_id=item.id,
+        match_id=match.id,
+        status=item.status,
+        estimated_revenue_cents=item.estimated_revenue_cents,
+        estimated_profit_cents=item.estimated_profit_cents,
+        estimated_roi_bp=item.estimated_roi_bp,
+    )
+
+
+@router.get("/items/{item_id}/manual-candidates", response_model=list[SourcingManualMatchCandidateOut])
+async def list_manual_match_candidates(
+    item_id: uuid.UUID,
+    q: str = Query(default="", max_length=200),
+    limit: int = Query(default=20, ge=1, le=80),
+    session: AsyncSession = Depends(get_session),
+) -> list[SourcingManualMatchCandidateOut]:
+    item = await session.get(SourcingItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    query = q.strip()
+    if not query:
+        return []
+
+    existing_match_ids = (
+        await session.execute(
+            select(SourcingMatch.master_product_id).where(SourcingMatch.sourcing_item_id == item_id)
+        )
+    ).scalars().all()
+    existing_match_set = set(existing_match_ids)
+    scan_limit = min(limit + max(len(existing_match_set), 10), 250)
+
+    pattern = f"%{query}%"
+    stmt = (
+        select(MasterProduct, AmazonProductMetricsLatest)
+        .outerjoin(
+            AmazonProductMetricsLatest,
+            AmazonProductMetricsLatest.master_product_id == MasterProduct.id,
+        )
+        .where(
+            or_(
+                MasterProduct.title.ilike(pattern),
+                MasterProduct.platform.ilike(pattern),
+                MasterProduct.sku.ilike(pattern),
+                MasterProduct.asin.ilike(pattern),
+                MasterProduct.ean.ilike(pattern),
+            )
+        )
+        .order_by(MasterProduct.title.asc(), MasterProduct.platform.asc(), MasterProduct.variant.asc())
+        .limit(scan_limit)
+    )
+
+    rows = (await session.execute(stmt)).all()
+    out: list[SourcingManualMatchCandidateOut] = []
+    for product, metrics in rows:
+        if product.id in existing_match_set:
+            continue
+        out.append(
+            SourcingManualMatchCandidateOut(
+                id=product.id,
+                title=product.title,
+                platform=product.platform,
+                region=product.region,
+                variant=product.variant,
+                asin=product.asin,
+                rank_overall=metrics.rank_overall if metrics else None,
+                price_used_good_cents=metrics.price_used_good_cents if metrics else None,
+                price_new_cents=metrics.price_new_cents if metrics else None,
+            )
+        )
+        if len(out) >= limit:
+            break
+
+    return out
+
+
+@router.post("/items/{item_id}/matches/manual", response_model=SourcingMatchPatchOut)
+async def create_manual_sourcing_match(
+    item_id: uuid.UUID,
+    data: SourcingManualMatchCreateIn,
+    session: AsyncSession = Depends(get_session),
+) -> SourcingMatchPatchOut:
+    item = await session.get(SourcingItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    master_product = await session.get(MasterProduct, data.master_product_id)
+    if master_product is None:
+        raise HTTPException(status_code=404, detail="Master product not found")
+
+    settings = get_settings()
+    metrics = await session.get(AmazonProductMetricsLatest, master_product.id)
+    used_price_cents = _manual_used_price_cents(metrics)
+    new_price_cents = metrics.price_new_cents if metrics else None
+    market_price_cents = (
+        used_price_cents
+        if isinstance(used_price_cents, int)
+        else int(new_price_cents * 0.7) if isinstance(new_price_cents, int) else None
+    )
+    payout_cents = (
+        fba_payout_cents(
+            market_price_cents=market_price_cents,
+            referral_fee_bp=settings.amazon_fba_referral_fee_bp,
+            fulfillment_fee_cents=settings.amazon_fba_fulfillment_fee_cents,
+            inbound_shipping_cents=settings.amazon_fba_inbound_shipping_cents,
+        )
+        if isinstance(market_price_cents, int)
+        else None
+    )
+
+    match = (
+        await session.execute(
+            select(SourcingMatch).where(
+                SourcingMatch.sourcing_item_id == item_id,
+                SourcingMatch.master_product_id == master_product.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if match is None:
+        match = SourcingMatch(
+            sourcing_item_id=item_id,
+            master_product_id=master_product.id,
+            confidence_score=100,
+            match_method="manual",
+        )
+        session.add(match)
+
+    match.confidence_score = 100
+    match.match_method = "manual"
+    match.matched_substring = None
+    match.snapshot_bsr = metrics.rank_overall if metrics else None
+    match.snapshot_new_price_cents = new_price_cents
+    match.snapshot_used_price_cents = used_price_cents
+    match.snapshot_fba_payout_cents = payout_cents
+    match.user_confirmed = bool(data.user_confirmed)
+    match.user_rejected = False
+    match.user_adjusted_condition = data.user_adjusted_condition
+    match.snapshot_at = utcnow()
+
+    await session.flush()
+
+    item_matches = (
+        await session.execute(select(SourcingMatch).where(SourcingMatch.sourcing_item_id == item.id))
+    ).scalars().all()
+    confirmed_only = any(m.user_confirmed and not m.user_rejected for m in item_matches)
     await recalculate_item_from_matches(session=session, item=item, confirmed_only=confirmed_only)
     await session.commit()
 
