@@ -1,5 +1,41 @@
 # History
 
+## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
+
+### Ausgangslage
+- Nach Phase 0/1 sind Verfuegbarkeit und Baseline-Stabilitaet deutlich besser, aber langfristige Regressionsrisiken bleiben in duplizierter Frontend-Logik, stillen Exception-Pfaden und zu weichen Ops-Checks.
+
+### Business-Entscheidungen
+- Phase-2-Start wird bewusst auf **riskante Wiederholungsfehler** fokussiert statt auf einen grossen Architektur-Refactor:
+  1) shared helpers statt Copy/Paste in High-Churn-Pages
+  2) observability auf catch-and-continue Pfaden
+  3) strengere Restore/Health Guardrails fuer Deploy-Sicherheit
+  4) schlankeres Runtime-Image im Standardpfad
+- E2E wird zuerst um sales finalize/return erweitert; sourcing-e2e bleibt separat iterativ, um fragile externe Abhaengigkeiten zu vermeiden.
+
+### Technische Entscheidungen
+- Gemeinsame Clipboard-/Storage-/View-Mode Utilities unter `frontend/src/lib/`, angebunden in `Inventory` und `MasterProducts`.
+- Silent catches in kritischen Services werden durch strukturierte Logs mit Kontext ersetzt (id/url/error-type), Verhalten bleibt robust.
+- `backup_restore_drill.sh` erhaelt expliziten Strict-Alembic-Modus.
+- Backend-Dockerfile wird in prod/dev Targets getrennt; Compose nutzt standardmaessig den prod-Target und erlaubt dev opt-in.
+- Ops/CI Readiness prueft Deep-Health inkl. Migration-Status explizit.
+
+### Umsetzung (inkrementell)
+- Neue Shared-Utilities:
+  - `frontend/src/lib/browserStorage.ts`
+  - `frontend/src/lib/clipboard.ts`
+  - `frontend/src/lib/inventoryStatus.ts`
+- Neue Tests:
+  - `frontend/src/lib/browserStorage.test.ts`
+  - `frontend/src/lib/clipboard.test.ts`
+  - `e2e/tests/sales.spec.ts`
+- Neue Coverage-Governance:
+  - `docs/route-test-coverage-matrix-2026-02-17.md`
+
+### Trade-offs
+- Mehr Guardrails bedeuten strengere Fehlerschwellen (frueheres Fail-Fast), dafuer weniger spaete Produktionsueberraschungen.
+- Zuschnitt in kleinen Schritten reduziert Refactor-Risiko, erreicht aber noch keine vollstaendige Zerlegung aller Grossmodule in einem Zug.
+
 ## 2026-02-17 - Phase 1 Umsetzung: Drift-Reconciliation + Teststabilitaet + Runtime-Paritaet
 
 ### Ausgangslage
