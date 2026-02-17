@@ -603,6 +603,7 @@
   - `sourcing_retention_days` (default `180`)
   - `sourcing_retention_max_delete_per_tick` (default `500`)
 - `execute_sourcing_run` now marks eBay runs as `degraded` when zero listings repeat for the configured consecutive streak in the same query context.
+- Once threshold is reached, subsequent zero-result eBay runs continue to be marked `degraded` until a non-empty run breaks the streak.
 - Scheduler now treats `degraded` query runs as agent-level failures (`last_error_type/last_error_message`), making issues visible in agent monitoring.
 - Added retention pruning in scheduler tick:
   - deletes only `LOW_VALUE`, `DISCARDED`, `ERROR`

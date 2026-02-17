@@ -434,7 +434,11 @@ def _compute_max_purchase_price_cents(
 
 
 def _run_is_empty_without_errors(run: SourcingRun) -> bool:
-    return not run.blocked and not run.error_type and int(run.items_scraped or 0) == 0
+    if run.blocked or int(run.items_scraped or 0) != 0:
+        return False
+    if not run.error_type:
+        return True
+    return run.error_type == _EBAY_EMPTY_RESULTS_DEGRADED_ERROR_TYPE
 
 
 async def _count_prior_consecutive_empty_runs(
