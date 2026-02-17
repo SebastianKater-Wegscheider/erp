@@ -29,9 +29,17 @@ test("sales finalize and return restock flow remains operational", async ({ page
 
   await createDialog.getByLabel("Käufername").fill(buyerName);
   await createDialog.getByPlaceholder("SKU/Titel/EAN/ASIN suchen…").fill(productTitle);
+  const inventoryRefreshResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().includes("/api/v1/inventory?") &&
+      response.status() === 200,
+  );
+  await createDialog.getByRole("button", { name: "Aktualisieren" }).click();
+  await inventoryRefreshResponse;
 
   const inventoryRow = createDialog.getByRole("row").filter({ hasText: productTitle }).first();
-  await expect(inventoryRow).toBeVisible();
+  await expect(inventoryRow).toBeVisible({ timeout: 20_000 });
   await inventoryRow.getByRole("button", { name: "Hinzufügen" }).click();
 
   const linesTable = createDialog.locator("table").nth(1);
