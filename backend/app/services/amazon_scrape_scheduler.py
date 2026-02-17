@@ -185,8 +185,16 @@ async def amazon_scrape_scheduler_loop(settings: Settings) -> None:
 
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("Amazon scrape scheduler tick failed")
+        except Exception as exc:
+            logger.exception(
+                "Amazon scrape scheduler tick failed",
+                extra={
+                    "lock_name": lock_name,
+                    "holder": holder,
+                    "cooldown_until": cooldown_until.isoformat(),
+                    "error_type": type(exc).__name__,
+                },
+            )
 
         # Add a small jitter to avoid steady beats if multiple services are running.
         await asyncio.sleep(tick + random.uniform(0, 3))

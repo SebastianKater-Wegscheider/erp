@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 import unicodedata
@@ -28,6 +29,9 @@ from app.services.documents import next_document_number
 from app.services.money import format_eur, mileage_amount_cents, meters_from_km, split_gross_to_net_and_tax
 from app.services.pdf import render_pdf
 from app.services.vat import allocate_proportional
+
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_extra_purchase_costs(
@@ -127,6 +131,7 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
     try:
         from PIL import Image, ImageChops  # type: ignore
     except Exception:
+        logger.debug("Pillow not available for PDF image slicing fallback", extra={"src_path": str(src_path)})
         return [src_path]
 
     # These are CSS px, aligned with WeasyPrint's 96dpi CSS pixel model.
@@ -211,7 +216,7 @@ def _slice_image_for_pdf(*, src_path: Path, out_dir: Path, stem: str) -> list[Pa
             # Close the original ImageFile to release the underlying file handle.
             orig.close()
         except Exception:
-            pass
+            logger.debug("Failed to close temporary image handle", extra={"src_path": str(src_path)}, exc_info=True)
 
 
 async def create_purchase(session: AsyncSession, *, actor: str, data: PurchaseCreate) -> Purchase:
@@ -992,7 +997,11 @@ async def generate_purchase_credit_note_pdf(
                 if p.exists():
                     p.unlink()
             except Exception:
-                pass
+                logger.warning(
+                    "Could not remove temporary purchase evidence image slice",
+                    extra={"tmp_path": str(p)},
+                    exc_info=True,
+                )
 
     purchase.pdf_path = rel_path
 

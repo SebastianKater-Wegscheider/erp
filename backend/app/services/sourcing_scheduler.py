@@ -94,7 +94,13 @@ async def sourcing_scheduler_loop(settings: Settings) -> None:
                         await _run_agent_queries(agent=agent, settings=settings)
                         await _mark_agent_run_success(agent_id=agent.id)
                     except Exception as exc:
-                        logger.exception("Sourcing agent run failed for %s", agent.id)
+                        logger.exception(
+                            "Sourcing agent run failed",
+                            extra={
+                                "agent_id": str(agent.id),
+                                "error_type": type(exc).__name__,
+                            },
+                        )
                         await _mark_agent_run_error(agent_id=agent.id, error=exc)
                         cooldown_until = utcnow() + timedelta(seconds=max(30, settings.sourcing_error_backoff_seconds))
             elif settings.sourcing_kleinanzeigen_enabled and not await _has_enabled_agents():
@@ -109,8 +115,16 @@ async def sourcing_scheduler_loop(settings: Settings) -> None:
 
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("Sourcing scheduler tick failed")
+        except Exception as exc:
+            logger.exception(
+                "Sourcing scheduler tick failed",
+                extra={
+                    "lock_name": lock_name,
+                    "holder": holder,
+                    "cooldown_until": cooldown_until.isoformat(),
+                    "error_type": type(exc).__name__,
+                },
+            )
             cooldown_until = utcnow() + timedelta(seconds=max(30, settings.sourcing_error_backoff_seconds))
 
         await asyncio.sleep(tick + random.uniform(0, 3))

@@ -37,6 +37,7 @@ try:
 except Exception:  # pragma: no cover
     fuzz = None
     process = None
+    logger.debug("rapidfuzz unavailable; sourcing fuzzy matching disabled", exc_info=True)
 
 
 @dataclass
@@ -712,7 +713,11 @@ def _condition_from_match(match: SourcingMatch) -> InventoryCondition:
     raw = (match.user_adjusted_condition or "").strip().upper()
     try:
         return InventoryCondition(raw)
-    except Exception:
+    except ValueError:
+        logger.debug(
+            "Unknown adjusted condition on sourcing match; falling back to GOOD",
+            extra={"match_id": str(match.id), "condition_raw": raw},
+        )
         return InventoryCondition.GOOD
 
 
@@ -929,6 +934,17 @@ async def execute_sourcing_run(
     except Exception as exc:
         err_type = "network"
         err_msg = str(exc)
+        logger.warning(
+            "Sourcing scraper fetch failed",
+            extra={
+                "platform": run_platform.value,
+                "trigger": trigger,
+                "max_pages": max_pages,
+                "agent_id": str(agent_id) if agent_id else None,
+                "agent_query_id": str(agent_query_id) if agent_query_id else None,
+            },
+            exc_info=True,
+        )
 
     items_new = 0
     items_ready = 0
@@ -1080,6 +1096,11 @@ async def execute_sourcing_run(
                 url=item_url,
             )
         except Exception:
+            logger.warning(
+                "Sourcing detail enrichment failed for listing",
+                extra={"item_id": str(item_id), "platform": run_platform.value, "url": item_url},
+                exc_info=True,
+            )
             continue
         if detail_payload.get("blocked") is True:
             continue
