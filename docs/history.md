@@ -1,5 +1,32 @@
 # History
 
+## 2026-02-17 - End-to-End Tech Review: Production-Continuity Priorisierung
+
+### Ausgangslage
+- Repo und Feature-Scope sind in kurzer Zeit stark gewachsen; operative Risiken lagen vor allem in Migration/Runtime-Drift, Teststabilitaet und steigender Modulkomplexitaet.
+- Der aktuelle Compose-Startup scheitert in einem Legacy-DB-Zustand (fehlende `alembic_version` bei vorhandenen Tabellen) reproduzierbar mit Backend-Restart-Loop.
+
+### Business-Entscheidungen
+- Reihenfolge wurde explizit auf **Kontinuitaet vor Feature-Tempo** gesetzt:
+  1) Backend-Verfuegbarkeit + sichere Migrations-Bootstrap-Strategie
+  2) belastbare CI-Signale (Schema-Drift + Frontend-Teststabilitaet)
+  3) erst danach strukturelle Refactors/Modularisierung.
+- Risiko-orientierte Ausgabe wurde als Standard festgelegt (P0-P3 mit Impact/Likelihood, statt unpriorisierter Longlist), damit Entscheidungen schneller in Releases umgesetzt werden.
+
+### Technische Entscheidungen
+- Frisches DB-Szenario und Legacy-Szenario wurden getrennt verifiziert:
+  - `alembic upgrade head` funktioniert auf leerer DB.
+  - Legacy-DB zeigt starke Drift und Enum-Invariant-Verletzung.
+- Als technische Leitplanken wurden priorisiert:
+  - explizite Migration-Preflight/Bootstrap-Schnittstelle
+  - Migration-Status in Ops-Health
+  - Runtime-Paritaet lokal vs CI (Python/Node)
+  - Deduplizierung wiederholter Frontend-Helfer und schrittweise Entzerrung grosser Dateien.
+
+### Trade-offs
+- Kurzfristig zusaetzlicher Aufwand fuer Betriebsstabilitaet und Testhygiene reduziert kurzfristigen Feature-Durchsatz.
+- Mittel-/langfristig sinkt dadurch das Risiko fuer Ausfaelle, regressionsgetriebene Hotfixes und unklare Release-Go/No-Go-Entscheidungen.
+
 ## 2026-02-17 - Sourcing Radar v1.1: Multi-Platform (eBay.de), Search Agents, Bidbag-Handoff
 
 ### Ausgangslage
