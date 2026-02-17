@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createMasterProductViaApi, createPurchaseViaApi, listInventoryViaApi, loginViaUi } from "./helpers";
+import { createMasterProductViaApi, createPurchaseViaApi, getSalesOrderViaApi, listInventoryViaApi, loginViaUi } from "./helpers";
 
 test("import marketplace orders via CSV auto-matches IT-... and applies to finalized sale", async ({ page, request }) => {
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
@@ -34,11 +34,9 @@ test("import marketplace orders via CSV auto-matches IT-... and applies to final
       response.status() === 200,
   );
   await page.getByRole("button", { name: "Import" }).click();
-  await importResponse;
-
-  // Summary shows READY=1.
-  await expect(page.getByText("READY")).toBeVisible();
-  await expect(page.getByText("1")).toBeVisible();
+  const importJson = (await (await importResponse).json()) as { ready_orders_count: number; staged_orders_count: number };
+  expect(importJson.staged_orders_count).toBeGreaterThan(0);
+  expect(importJson.ready_orders_count).toBe(1);
 
   await page.getByRole("tab", { name: "Apply" }).click();
 
@@ -49,12 +47,17 @@ test("import marketplace orders via CSV auto-matches IT-... and applies to final
       response.status() === 200,
   );
   await page.getByRole("button", { name: "Apply READY from batch" }).click();
-  await applyResponse;
+  const applyJson = (await (await applyResponse).json()) as {
+    results: Array<{ ok: boolean; sales_order_id: string | null; error?: string | null }>;
+  };
+  expect(applyJson.results).toHaveLength(1);
+  expect(applyJson.results[0]?.ok).toBeTruthy();
+  expect(applyJson.results[0]?.sales_order_id).toBeTruthy();
 
   await expect(page.getByText("OK")).toBeVisible();
 
-  // Inventory item must be SOLD after apply.
-  const invAfter = await listInventoryViaApi(request, { q: itemCode, limit: 5 });
-  expect(invAfter.find((i) => i.item_code === itemCode)?.status).toBe("SOLD");
+  const sale = await getSalesOrderViaApi(request, String(applyJson.results[0]?.sales_order_id));
+  expect(sale.status).toBe("FINALIZED");
+  expect(sale.lines.length).toBeGreaterThan(0);
+  expect(sale.lines[0]?.inventory_item_id).toBeTruthy();
 });
-

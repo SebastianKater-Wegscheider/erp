@@ -163,3 +163,14 @@ export async function listInventoryViaApi(
   expect(response.ok(), `inventory list failed (${response.status()})`).toBeTruthy();
   return (await response.json()) as Array<{ id: string; item_code: string; master_product_id: string; status: string }>;
 }
+
+export async function getSalesOrderViaApi(
+  request: APIRequestContext,
+  salesOrderId: string,
+): Promise<{ id: string; status: string; lines: Array<{ inventory_item_id: string }> }> {
+  const response = await request.get(`${E2E_API_BASE_URL}/sales/${salesOrderId}`, {
+    headers: { Authorization: basicAuthHeader(E2E_USER, E2E_PASS) },
+  });
+  expect(response.ok(), `sales get failed (${response.status()})`).toBeTruthy();
+  return (await response.json()) as { id: string; status: string; lines: Array<{ inventory_item_id: string }> };
+}
