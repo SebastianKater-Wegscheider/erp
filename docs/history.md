@@ -562,3 +562,11 @@
 
 ### Operational impact
 - Prevents startup migration crash-loop and allows safe rollout on existing production databases.
+
+## 2026-02-17 - Production startup hotfix: sourcing agent delete endpoint status
+
+### Issue
+- Backend startup failed because FastAPI rejected `DELETE /sourcing/agents/{id}` configured with `status_code=204` under current route/body constraints.
+
+### Fix
+- Endpoint status changed to `200` (same pragmatic approach already used for sourcing discard route) to avoid startup assertion and keep behavior stable.

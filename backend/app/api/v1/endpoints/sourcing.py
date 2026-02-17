@@ -642,7 +642,7 @@ async def patch_sourcing_agent(
     )
 
 
-@router.delete("/agents/{agent_id}", status_code=204)
+@router.delete("/agents/{agent_id}", status_code=200)
 async def delete_sourcing_agent(
     agent_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
