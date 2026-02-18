@@ -13,12 +13,27 @@ export class ApiError extends Error {
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-function basicAuthHeader(username: string, password: string): string {
+export function basicAuthHeader(username: string, password: string): string {
   return `Basic ${btoa(`${username}:${password}`)}`;
 }
 
+export async function validateBasicAuth(
+  credentials: { username: string; password: string },
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/reports/tax-profile`, {
+    headers: {
+      Authorization: basicAuthHeader(credentials.username, credentials.password),
+    },
+    signal,
+  });
+  if (!res.ok) {
+    throw new ApiError("Ungültige Zugangsdaten", res.status);
+  }
+}
+
 export function useApi() {
-  const { credentials } = useAuth();
+  const { credentials, clearCredentials } = useAuth();
 
   async function request<T>(
     path: string,
@@ -44,6 +59,9 @@ export function useApi() {
     if (!res.ok) {
       const detail = isJson ? await res.json().catch(() => undefined) : await res.text().catch(() => undefined);
       const msg = typeof detail === "object" && detail && "detail" in (detail as any) ? (detail as any).detail : res.statusText;
+      if (res.status === 401 && credentials) {
+        clearCredentials();
+      }
       throw new ApiError(String(msg || "Anfrage fehlgeschlagen"), res.status, detail);
     }
 
