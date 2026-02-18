@@ -926,3 +926,56 @@
 - `pytest -q backend/tests/test_sourcing_flows.py` -> 12 passed.
 - `npm run typecheck` -> erfolgreich.
 - `npm run build` -> erfolgreich.
+
+## 2026-02-17 - Playwright production UX/bug audit (non-mutating)
+
+### Business perspective
+- Ziel war eine echte End-to-End-Bewertung der produktiven GUI auf Inkonsistenzen, UX-Reibung und funktionale Risiken, ohne Produktivdaten zu verfälschen.
+
+### Technical scope and constraints
+- Audit wurde über `http://192.168.178.72:15173` mit Playwright durchgeführt, inkl. kompletter Navigation über Kernmodule und kritische Operator-Flows.
+- Sicherheits-/Datenintegritätsvorgabe: keine persistierenden Create/Update/Delete-Aktionen in Prod; Dialoge nur geöffnet und verworfen.
+
+### Key decision and rationale
+- Findings wurden als eigenes Artefakt unter `docs/playwright-e2e-ux-bug-audit-2026-02-17.md` dokumentiert, priorisiert nach P0-P2 und mit Datei-/Log-Evidenz hinterlegt.
+- Fokus der Priorisierung: zuerst Kontinuitäts- und Sicherheitsrisiken (Prod-Serve-Modus, Transport-Sicherheit, Auth-Verhalten), danach UX-/Datenqualitätsdefizite.
+
+## 2026-02-18 - Planned hardening batch after production Playwright audit
+
+### Business perspective
+- HTTP im internen Netz bleibt bewusst unverändert; Priorität liegt auf Auth-Zuverlässigkeit, produktionsfähigem Frontend-Serving, und operativer UX-Reduktion von Fehlbedienungsrisiken.
+
+### Technical intent
+- Auth-Gate auf echte Backend-Validierung umstellen (kein App-Shell-Eintritt mit invaliden Credentials).
+- Compose-Frontend standardmäßig ohne Vite-Dev-Server betreiben (Build + Preview) und Dev-Mode explizit opt-in machen.
+- Marketplace/Sales/Sourcing UI sprachlich konsolidieren und Picker-Tabellen auf operator-taugliche Primärinformationen umstellen.
+- eBay.de-Extraktion bei Bildern und generischen Titeln robuster machen, um `Kein Bild`/`Neues Angebot`-Noise zu reduzieren.
+
+### Risk handling
+- Änderungen bewusst inkrementell in Frontend/Compose/Scraper; keine destruktiven Datenmigrationen.
+- Verifikation über Typecheck/Build/Tests plus gezielte Scraper-Unit-Tests.
+
+## 2026-02-18 - Implemented hardening batch (excluding HTTP-only login transport)
+
+### Business outcome
+- Kritische UX-/Zuverlässigkeitsprobleme aus dem Playwright-Audit wurden behoben, ohne den bewusst akzeptierten HTTP-internen Betriebsmodus zu ändern.
+- Operator-Flows für Matching/Sourcing/Marketplace sind konsistenter und weniger fehleranfällig.
+
+### Technical implementation
+- Auth-Hardening:
+  - Login akzeptiert Credentials erst nach Backend-Validierung.
+  - Persistierte invalide Credentials werden beim App-Start erkannt und bereinigt.
+  - Globale 401-Responses räumen Credentials auf, um inkonsistente Session-Zustände zu vermeiden.
+- Frontend serving:
+  - Compose-Default für `frontend` auf `build + preview` umgestellt; Vite-Dev-Server ist nur noch explizit opt-in.
+- UI/UX consistency:
+  - Sprachkonsolidierung (deutsche Labels/Begriffe) in zentralen Views.
+  - Marketplace-/Sales-Picker auf operator-relevante Felder (Artikelcode/EK/Status), reduzierte UUID-Lastigkeit, suchgetriebene Kandidatenabfrage.
+  - Sourcing-Detail und Sourcing-Settings lokalisiert/vereinheitlicht.
+- Scraper robustness (eBay.de):
+  - Bild-Extraktion erweitert (inkl. lazy/srcset-Quellen) und URL-Normalisierung ergänzt.
+  - Generische Titel wie `Neues Angebot` werden bereinigt bzw. als unbrauchbare Listing-Titel verworfen.
+
+### Validation
+- `frontend`: `npm test`, `npm run typecheck`, `npm run build` erfolgreich.
+- `sourcing-scraper`: `python3 -m py_compile sourcing-scraper/app/platforms/ebay_de.py` erfolgreich.
