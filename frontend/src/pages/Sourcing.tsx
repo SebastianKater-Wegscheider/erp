@@ -168,13 +168,13 @@ export function SourcingPage() {
             <Button type="button" variant="outline" asChild>
               <Link to="/sourcing/settings">
                 <Settings2 className="h-4 w-4" />
-                Settings
+                Einstellungen
               </Link>
             </Button>
             <Button type="button" variant="outline" asChild>
               <Link to="/sourcing/agents">
                 <UsersRound className="h-4 w-4" />
-                Agents
+                Agenten
               </Link>
             </Button>
             <Button type="button" onClick={() => triggerScrape.mutate()} disabled={triggerScrape.isPending}>
@@ -225,7 +225,7 @@ export function SourcingPage() {
             <Select value={minProfit} onValueChange={(v) => setMinProfit(v as (typeof MIN_PROFIT_OPTIONS)[number])}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="ANY">Any</SelectItem>
+                <SelectItem value="ANY">Beliebig</SelectItem>
                 <SelectItem value="2000">≥ 20 EUR</SelectItem>
                 <SelectItem value="3000">≥ 30 EUR</SelectItem>
                 <SelectItem value="5000">≥ 50 EUR</SelectItem>

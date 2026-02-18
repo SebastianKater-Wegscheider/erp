@@ -160,9 +160,9 @@ const OPEX_CATEGORY_LABEL: Record<string, string> = {
   PACKAGING: "Verpackung",
   POSTAGE: "Versand",
   SOFTWARE: "Software",
-  OFFICE: "Buero",
+  OFFICE: "Büro",
   CONSULTING: "Beratung",
-  FEES: "Gebuehren",
+  FEES: "Gebühren",
   OTHER: "Sonstiges",
 };
 
@@ -468,7 +468,7 @@ export function DashboardPage() {
                       </div>
                     </div>
                     <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
-                      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Operating Result</div>
+                      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Betriebsergebnis</div>
                       <div
                         className={[
                           "mt-1 text-lg font-semibold",
@@ -782,7 +782,7 @@ export function DashboardPage() {
         <div className="space-y-4 md:col-span-4">
           <Card>
             <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
+              <CardTitle>Schnellaktionen</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <ActionLink to="/purchases" icon={<ReceiptText className="h-4 w-4" />} label="Einkauf erfassen" />

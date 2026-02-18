@@ -1626,7 +1626,7 @@ export function PurchasesPage() {
 
   async function persistStagedAttachmentsNow(): Promise<void> {
     if (!editingPurchaseId) {
-      setStagedAttachmentError("Einkauf zuerst speichern, danach koennen die Anhaenge verknuepft werden.");
+      setStagedAttachmentError("Einkauf zuerst speichern, danach können die Anhänge verknüpft werden.");
       return;
     }
     try {
@@ -2034,7 +2034,7 @@ export function PurchasesPage() {
                   <div className="border-b border-gray-200 pb-3 dark:border-gray-800">
                     <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Eckdaten</div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Stammdaten, Kosten und optionale Nachverfolgungsinfos fuer den Einkauf.
+                      Stammdaten, Kosten und optionale Nachverfolgungsinfos für den Einkauf.
                     </div>
                   </div>
                   <div className="grid gap-4 md:grid-cols-3">
@@ -2304,7 +2304,7 @@ export function PurchasesPage() {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="text-xs text-gray-500 dark:text-gray-400">Identitaetsdaten nur bei Bedarf</div>
                           <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setIdentityFieldsOpen((open) => !open)}>
-                            {identityFieldsOpen ? "Identitaet ausblenden" : "Identitaet einblenden"}
+                            {identityFieldsOpen ? "Identität ausblenden" : "Identität einblenden"}
                           </Button>
                         </div>
                         {identityFieldsOpen ? (
@@ -2609,7 +2609,7 @@ export function PurchasesPage() {
                   </div>
                   {!isPrivateKind ? (
                     <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
-                      Nachweise sind nur fuer Privatankaeufe vorgesehen.
+                      Nachweise sind nur für Privatankäufe vorgesehen.
                     </div>
                   ) : (
                     <>
@@ -2664,7 +2664,7 @@ export function PurchasesPage() {
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div className="flex items-end gap-2">
                           <div className="space-y-2">
-                            <Label>Typ fuer alle (optional)</Label>
+                            <Label>Typ für alle (optional)</Label>
                             <Select value={stagedAttachmentBulkKind} onValueChange={setStagedAttachmentBulkKind}>
                               <SelectTrigger className="w-44">
                                 <SelectValue />

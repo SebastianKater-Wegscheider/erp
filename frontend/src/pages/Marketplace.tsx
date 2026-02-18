@@ -86,23 +86,33 @@ type MarketplacePayoutImportOut = {
   errors: Array<{ row_number: number; message: string; external_payout_id?: string | null }>;
 };
 
+type MasterProduct = {
+  id: string;
+  title: string;
+  sku: string;
+  platform: string;
+  region: string;
+  variant?: string | null;
+};
+
 type InventoryMatchCandidate = {
   id: string;
   item_code: string;
   master_product_id: string;
+  purchase_price_cents: number;
   status: string;
 };
 
 const STAGED_STATUS_LABEL: Record<MarketplaceStagedOrderOut["status"], string> = {
   READY: "READY",
-  NEEDS_ATTENTION: "Needs attention",
-  APPLIED: "Applied",
+  NEEDS_ATTENTION: "Prüfen",
+  APPLIED: "Übernommen",
 };
 
 const MATCH_STRATEGY_LABEL: Record<MarketplaceStagedOrderLineOut["match_strategy"], string> = {
   ITEM_CODE: "IT- Code",
   MASTER_SKU_FIFO: "MP FIFO",
-  NONE: "None",
+  NONE: "Keine",
 };
 
 function countUnmatched(order: MarketplaceStagedOrderOut): number {
@@ -149,6 +159,19 @@ export function MarketplacePage() {
   const [payoutsCsv, setPayoutsCsv] = useState("");
   const [payoutsDelimiter, setPayoutsDelimiter] = useState<string>("");
   const [payoutsImportOut, setPayoutsImportOut] = useState<MarketplacePayoutImportOut | null>(null);
+  const [ordersFilename, setOrdersFilename] = useState<string>("");
+  const [payoutsFilename, setPayoutsFilename] = useState<string>("");
+
+  const masterProducts = useQuery({
+    queryKey: ["master-products"],
+    enabled: !!overrideTarget,
+    queryFn: () => api.request<MasterProduct[]>("/master-products"),
+  });
+  const masterProductById = useMemo(
+    () => new Map((masterProducts.data ?? []).map((entry) => [entry.id, entry])),
+    [masterProducts.data],
+  );
+  const overrideSearchTrimmed = overrideSearch.trim();
 
   const importOrders = useMutation({
     mutationFn: () =>
@@ -204,11 +227,11 @@ export function MarketplacePage() {
   });
 
   const overrideCandidates = useQuery({
-    queryKey: ["marketplace-override-candidates", overrideSearch],
-    enabled: !!overrideTarget,
+    queryKey: ["marketplace-override-candidates", overrideSearchTrimmed],
+    enabled: !!overrideTarget && overrideSearchTrimmed.length >= 2,
     queryFn: () =>
       api.request<InventoryMatchCandidate[]>(
-        `/inventory?limit=30&offset=0${overrideSearch.trim() ? `&q=${encodeURIComponent(overrideSearch.trim())}` : ""}`,
+        `/inventory?status=AVAILABLE&limit=30&offset=0&q=${encodeURIComponent(overrideSearchTrimmed)}`,
       ),
   });
 
@@ -254,20 +277,20 @@ export function MarketplacePage() {
   });
 
   const stagedOrderRows = stagedOrders.data ?? [];
-  const sellableOverrideCandidates = (overrideCandidates.data ?? []).filter(
-    (r) => r.status === "AVAILABLE" || r.status === "FBA_WAREHOUSE",
-  );
+  const sellableOverrideCandidates = (overrideCandidates.data ?? [])
+    .filter((r) => r.status === "AVAILABLE" || r.status === "FBA_WAREHOUSE")
+    .sort((a, b) => a.item_code.localeCompare(b.item_code));
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Marketplace" description="Amazon/eBay Import (CSV) mit SKU-basierendem Auto-Matching (IT-/MP-...)." />
+      <PageHeader title="Marktplatz" description="Amazon/eBay-Import (CSV) mit SKU-basiertem Auto-Matching (IT-/MP-...)." />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="review">Review</TabsTrigger>
-          <TabsTrigger value="apply">Apply</TabsTrigger>
-          <TabsTrigger value="payouts">Payouts</TabsTrigger>
+          <TabsTrigger value="orders">Bestellungen</TabsTrigger>
+          <TabsTrigger value="review">Prüfung</TabsTrigger>
+          <TabsTrigger value="apply">Übernahme</TabsTrigger>
+          <TabsTrigger value="payouts">Auszahlungen</TabsTrigger>
         </TabsList>
 
         <TabsContent value="orders">
@@ -276,7 +299,7 @@ export function MarketplacePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Upload className="h-5 w-5" />
-                  Import Orders (CSV)
+                  Bestellungen importieren (CSV)
                 </CardTitle>
                 <CardDescription>Eine Zeile pro verkaufter Einheit. SKU bevorzugt: `IT-...`.</CardDescription>
               </CardHeader>
@@ -287,7 +310,7 @@ export function MarketplacePage() {
                     <Input value={ordersSourceLabel} onChange={(e) => setOrdersSourceLabel(e.target.value)} placeholder="z.B. Amazon export 2026-02-01" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Delimiter (optional)</Label>
+                    <Label>Trennzeichen (optional)</Label>
                     <Input value={ordersDelimiter} onChange={(e) => setOrdersDelimiter(e.target.value)} placeholder="z.B. , oder ;" />
                   </div>
                 </div>
@@ -295,16 +318,26 @@ export function MarketplacePage() {
                 <div className="space-y-2">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <Label>CSV</Label>
-                    <Input
-                      type="file"
-                      className="max-w-xs"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        setOrdersCsv(await f.text());
-                        e.currentTarget.value = "";
-                      }}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="file"
+                        id="orders-csv-upload"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          setOrdersFilename(f.name);
+                          setOrdersCsv(await f.text());
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      <Label htmlFor="orders-csv-upload" className="cursor-pointer">
+                        Datei wählen
+                      </Label>
+                      <span className="text-xs text-[color:var(--app-text-muted)]">
+                        {ordersFilename || "Keine Datei ausgewählt"}
+                      </span>
+                    </div>
                   </div>
                   <textarea
                     value={ordersCsv}
@@ -328,7 +361,7 @@ export function MarketplacePage() {
                     disabled={importOrders.isPending || !ordersCsv.trim()}
                   >
                     <Upload className="h-4 w-4" />
-                    Import
+                    Importieren
                   </Button>
 
                   {ordersImportOut?.batch_id && (
@@ -353,30 +386,30 @@ export function MarketplacePage() {
                   <FileText className="h-5 w-5" />
                   Ergebnis
                 </CardTitle>
-                <CardDescription>READY Orders koennen direkt angewendet werden.</CardDescription>
+                <CardDescription>READY-Bestellungen können direkt übernommen werden.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {!ordersImportOut && <div className="text-sm text-[color:var(--app-text-muted)]">Noch kein Import.</div>}
                 {ordersImportOut && (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="text-[color:var(--app-text-muted)]">Rows</div>
+                      <div className="text-[color:var(--app-text-muted)]">Zeilen</div>
                       <div className="text-right font-semibold">{ordersImportOut.total_rows}</div>
-                      <div className="text-[color:var(--app-text-muted)]">Orders staged</div>
+                      <div className="text-[color:var(--app-text-muted)]">Bestellungen vorgemerkt</div>
                       <div className="text-right font-semibold">{ordersImportOut.staged_orders_count}</div>
-                      <div className="text-[color:var(--app-text-muted)]">Lines staged</div>
+                      <div className="text-[color:var(--app-text-muted)]">Positionen vorgemerkt</div>
                       <div className="text-right font-semibold">{ordersImportOut.staged_lines_count}</div>
                       <div className="text-[color:var(--app-text-muted)]">READY</div>
                       <div className="text-right font-semibold text-emerald-700 dark:text-emerald-300">
                         {ordersImportOut.ready_orders_count}
                       </div>
-                      <div className="text-[color:var(--app-text-muted)]">Needs attention</div>
+                      <div className="text-[color:var(--app-text-muted)]">Prüfen</div>
                       <div className="text-right font-semibold text-rose-700 dark:text-rose-300">
                         {ordersImportOut.needs_attention_orders_count}
                       </div>
-                      <div className="text-[color:var(--app-text-muted)]">Skipped</div>
+                      <div className="text-[color:var(--app-text-muted)]">Übersprungen</div>
                       <div className="text-right font-semibold">{ordersImportOut.skipped_orders_count}</div>
-                      <div className="text-[color:var(--app-text-muted)]">Row errors</div>
+                      <div className="text-[color:var(--app-text-muted)]">Fehlerzeilen</div>
                       <div className="text-right font-semibold">{ordersImportOut.failed_count}</div>
                     </div>
 
@@ -387,8 +420,8 @@ export function MarketplacePage() {
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="w-16">Row</TableHead>
-                                <TableHead>Message</TableHead>
+                                <TableHead className="w-16">Zeile</TableHead>
+                                <TableHead>Meldung</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -414,13 +447,13 @@ export function MarketplacePage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-3">
-                <span>Staged Orders</span>
+                <span>Vorgemerkte Bestellungen</span>
                 <Button type="button" variant="outline" onClick={() => stagedOrders.refetch()} disabled={stagedOrders.isFetching}>
                   <RefreshCw className="h-4 w-4" />
-                  Refresh
+                  Aktualisieren
                 </Button>
               </CardTitle>
-              <CardDescription>Detailansicht zeigt Matching pro Line. Unmatched Lines verursachen NEEDS_ATTENTION.</CardDescription>
+              <CardDescription>Die Detailansicht zeigt Zuordnungen pro Position. Unzugeordnete Positionen führen zu PRÜFEN.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-3 md:grid-cols-3">
@@ -433,20 +466,20 @@ export function MarketplacePage() {
                     <SelectContent>
                       <SelectItem value="ALL">ALL</SelectItem>
                       <SelectItem value="READY">READY</SelectItem>
-                      <SelectItem value="NEEDS_ATTENTION">NEEDS_ATTENTION</SelectItem>
-                      <SelectItem value="APPLIED">APPLIED</SelectItem>
+                      <SelectItem value="NEEDS_ATTENTION">PRÜFEN</SelectItem>
+                      <SelectItem value="APPLIED">ÜBERNOMMEN</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Suche</Label>
-                  <Input value={reviewQuery} onChange={(e) => setReviewQuery(e.target.value)} placeholder="external_order_id" />
+                  <Input value={reviewQuery} onChange={(e) => setReviewQuery(e.target.value)} placeholder="Externe Bestellnummer" />
                 </div>
               </div>
 
               {stagedOrders.isError && <InlineMessage tone="error">{(stagedOrders.error as Error).message}</InlineMessage>}
               {!stagedOrders.isLoading && !stagedOrderRows.length && (
-                <div className="text-sm text-[color:var(--app-text-muted)]">Keine Orders gefunden.</div>
+                <div className="text-sm text-[color:var(--app-text-muted)]">Keine Bestellungen gefunden.</div>
               )}
 
               {!!stagedOrderRows.length && (
@@ -454,12 +487,12 @@ export function MarketplacePage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Channel</TableHead>
-                        <TableHead>External ID</TableHead>
+                        <TableHead>Datum</TableHead>
+                        <TableHead>Kanal</TableHead>
+                        <TableHead>Externe ID</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Lines</TableHead>
-                        <TableHead className="text-right">Unmatched</TableHead>
+                        <TableHead className="text-right">Positionen</TableHead>
+                        <TableHead className="text-right">Ohne Match</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -495,8 +528,8 @@ export function MarketplacePage() {
             }}
           >
             <DialogContent className="max-w-4xl">
-              <DialogHeader>
-                <DialogTitle>Order Details</DialogTitle>
+                <DialogHeader>
+                <DialogTitle>Bestelldetails</DialogTitle>
                 <DialogDescription className="font-mono text-xs">
                   {selectedOrder ? `${selectedOrder.channel} ${selectedOrder.external_order_id} (${selectedOrder.order_date})` : ""}
                 </DialogDescription>
@@ -507,14 +540,14 @@ export function MarketplacePage() {
                 <div className="space-y-3">
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface)] p-3">
-                      <div className="text-xs text-[color:var(--app-text-muted)]">Buyer</div>
+                      <div className="text-xs text-[color:var(--app-text-muted)]">Käufer</div>
                       <div className="text-sm font-semibold">{selectedOrder.buyer_name}</div>
                       {selectedOrder.buyer_address && <div className="mt-1 text-xs text-[color:var(--app-text-muted)]">{selectedOrder.buyer_address}</div>}
                     </div>
                     <div className="rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface)] p-3">
-                      <div className="text-xs text-[color:var(--app-text-muted)]">Shipping</div>
+                      <div className="text-xs text-[color:var(--app-text-muted)]">Versand</div>
                       <div className="text-sm font-semibold">{formatEur(selectedOrder.shipping_gross_cents)}</div>
-                      <div className="mt-1 text-xs text-[color:var(--app-text-muted)]">Lines: {selectedOrder.lines.length}</div>
+                      <div className="mt-1 text-xs text-[color:var(--app-text-muted)]">Positionen: {selectedOrder.lines.length}</div>
                     </div>
                   </div>
 
@@ -523,12 +556,12 @@ export function MarketplacePage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>SKU</TableHead>
-                          <TableHead>Title</TableHead>
-                          <TableHead className="text-right">Sale</TableHead>
-                          <TableHead>Strategy</TableHead>
-                          <TableHead>Matched item</TableHead>
-                          <TableHead>Error</TableHead>
-                          <TableHead className="text-right">Action</TableHead>
+                          <TableHead>Titel</TableHead>
+                          <TableHead className="text-right">Verkauf</TableHead>
+                          <TableHead>Strategie</TableHead>
+                          <TableHead>Zuordnung</TableHead>
+                          <TableHead>Fehler</TableHead>
+                          <TableHead className="text-right">Aktion</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -561,10 +594,10 @@ export function MarketplacePage() {
                             <TableCell className="text-xs text-rose-700 dark:text-rose-300">{l.match_error ?? ""}</TableCell>
                             <TableCell className="text-right">
                               {!l.matched_inventory_item_id && selectedOrder.status !== "APPLIED" ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
                                   onClick={() => {
                                     setOverrideSearch(l.sku.startsWith("IT-") ? l.sku : "");
                                     setOverrideTarget({
@@ -574,7 +607,7 @@ export function MarketplacePage() {
                                     });
                                   }}
                                 >
-                                  Manual override
+                                  Manuell zuordnen
                                 </Button>
                               ) : (
                                 <span className="text-xs text-[color:var(--app-text-muted)]">-</span>
@@ -601,21 +634,24 @@ export function MarketplacePage() {
           >
             <DialogContent className="max-w-3xl">
               <DialogHeader>
-                <DialogTitle>Manual Match Override</DialogTitle>
+                <DialogTitle>Manuelle Match-Zuordnung</DialogTitle>
                 <DialogDescription className="font-mono text-xs">
-                  {overrideTarget ? `Line SKU: ${overrideTarget.sku}` : ""}
+                  {overrideTarget ? `Positions-SKU: ${overrideTarget.sku}` : ""}
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label>Inventory search</Label>
+                  <Label>Lagersuche</Label>
                   <Input
                     value={overrideSearch}
                     onChange={(e) => setOverrideSearch(e.target.value)}
                     placeholder="IT-... oder Produktbegriff"
                   />
                 </div>
+                {overrideSearchTrimmed.length < 2 && (
+                  <InlineMessage tone="neutral">Bitte mindestens 2 Zeichen eingeben.</InlineMessage>
+                )}
 
                 {(overrideCandidates.isError || overrideMatch.isError) && (
                   <InlineMessage tone="error">
@@ -623,43 +659,56 @@ export function MarketplacePage() {
                   </InlineMessage>
                 )}
 
-                {!overrideCandidates.isLoading && !sellableOverrideCandidates.length && (
-                  <InlineMessage tone="neutral">Keine verkaeuflichen Items (AVAILABLE/FBA_WAREHOUSE) gefunden.</InlineMessage>
+                {overrideSearchTrimmed.length >= 2 && !overrideCandidates.isLoading && !sellableOverrideCandidates.length && (
+                  <InlineMessage tone="neutral">Keine verkäuflichen Items (AVAILABLE/FBA_WAREHOUSE) gefunden.</InlineMessage>
                 )}
 
-                {!!sellableOverrideCandidates.length && (
+                {overrideSearchTrimmed.length >= 2 && !!sellableOverrideCandidates.length && (
                   <div className="max-h-[360px] overflow-auto rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface)]">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Item code</TableHead>
+                          <TableHead>Artikelcode</TableHead>
+                          <TableHead>Produkt</TableHead>
+                          <TableHead className="text-right">EK</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>ID</TableHead>
-                          <TableHead className="text-right">Action</TableHead>
+                          <TableHead className="text-right">Aktion</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {sellableOverrideCandidates.map((c) => (
-                          <TableRow key={c.id}>
-                            <TableCell className="font-mono text-xs">{c.item_code}</TableCell>
-                            <TableCell>
-                              <Badge variant={c.status === "FBA_WAREHOUSE" ? "secondary" : "success"} className="font-mono text-[11px]">
-                                {c.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">{c.id}</TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => overrideMatch.mutate(c.id)}
-                                disabled={overrideMatch.isPending}
-                              >
-                                Match this item
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {sellableOverrideCandidates.map((c) => {
+                          const product = masterProductById.get(c.master_product_id);
+                          return (
+                            <TableRow key={c.id}>
+                              <TableCell className="font-mono text-xs">{c.item_code}</TableCell>
+                              <TableCell>
+                                <div className="text-sm font-medium">{product?.title ?? c.master_product_id}</div>
+                                {product ? (
+                                  <div className="text-xs text-[color:var(--app-text-muted)]">
+                                    {product.platform} · {product.region}
+                                    {product.variant ? ` · ${product.variant}` : ""}
+                                  </div>
+                                ) : null}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-xs">{formatEur(c.purchase_price_cents)}</TableCell>
+                              <TableCell>
+                                <Badge variant={c.status === "FBA_WAREHOUSE" ? "secondary" : "success"} className="font-mono text-[11px]">
+                                  {c.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => overrideMatch.mutate(c.id)}
+                                  disabled={overrideMatch.isPending}
+                                >
+                                  Dieses Item matchen
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -672,14 +721,14 @@ export function MarketplacePage() {
         <TabsContent value="apply">
           <Card>
             <CardHeader>
-              <CardTitle>Apply READY Orders</CardTitle>
+              <CardTitle>READY-Bestellungen übernehmen</CardTitle>
               <CardDescription>
-                Erstellt sofort `FINALIZED` SalesOrders (cash_recognition=AT_PAYOUT), setzt Inventory direkt auf SOLD.
+                Erstellt sofort `FINALIZED` Verkaufsaufträge (`cash_recognition=AT_PAYOUT`) und setzt Lageritems direkt auf `SOLD`.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {!lastOrdersBatchId && (
-                <InlineMessage tone="neutral">Noch kein Import-Batch. Bitte zuerst im Tab Orders importieren.</InlineMessage>
+                <InlineMessage tone="neutral">Noch kein Import-Batch. Bitte zuerst im Tab Bestellungen importieren.</InlineMessage>
               )}
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -695,7 +744,7 @@ export function MarketplacePage() {
                   onClick={() => applyReady.mutate()}
                 >
                   <CheckCircle2 className="h-4 w-4" />
-                  Apply READY from batch
+                  READY aus Batch übernehmen
                 </Button>
               </div>
 
@@ -710,10 +759,10 @@ export function MarketplacePage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Staged</TableHead>
-                          <TableHead>Result</TableHead>
-                          <TableHead>Sale ID</TableHead>
-                          <TableHead>Error</TableHead>
+                          <TableHead>Vorgemerkt</TableHead>
+                          <TableHead>Ergebnis</TableHead>
+                          <TableHead>Verkaufs-ID</TableHead>
+                          <TableHead>Fehler</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -729,7 +778,7 @@ export function MarketplacePage() {
                               ) : (
                                 <div className="inline-flex items-center gap-2 text-rose-700 dark:text-rose-300">
                                   <XCircle className="h-4 w-4" />
-                                  Failed
+                                  Fehlgeschlagen
                                 </div>
                               )}
                             </TableCell>
@@ -752,14 +801,14 @@ export function MarketplacePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Upload className="h-5 w-5" />
-                  Import Payouts (CSV)
+                  Auszahlungen importieren (CSV)
                 </CardTitle>
                 <CardDescription>Erzeugt einen Bank LedgerEntry pro Auszahlung (net).</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Delimiter (optional)</Label>
+                    <Label>Trennzeichen (optional)</Label>
                     <Input value={payoutsDelimiter} onChange={(e) => setPayoutsDelimiter(e.target.value)} placeholder="z.B. , oder ;" />
                   </div>
                 </div>
@@ -767,16 +816,26 @@ export function MarketplacePage() {
                 <div className="space-y-2">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <Label>CSV</Label>
-                    <Input
-                      type="file"
-                      className="max-w-xs"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        setPayoutsCsv(await f.text());
-                        e.currentTarget.value = "";
-                      }}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="file"
+                        id="payouts-csv-upload"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          setPayoutsFilename(f.name);
+                          setPayoutsCsv(await f.text());
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      <Label htmlFor="payouts-csv-upload" className="cursor-pointer">
+                        Datei wählen
+                      </Label>
+                      <span className="text-xs text-[color:var(--app-text-muted)]">
+                        {payoutsFilename || "Keine Datei ausgewählt"}
+                      </span>
+                    </div>
                   </div>
                   <textarea
                     value={payoutsCsv}
@@ -793,19 +852,19 @@ export function MarketplacePage() {
 
                 <Button type="button" onClick={() => importPayouts.mutate()} disabled={importPayouts.isPending || !payoutsCsv.trim()}>
                   <Upload className="h-4 w-4" />
-                  Import Payouts
+                  Importieren
                 </Button>
 
                 {payoutsImportOut && (
                   <div className="rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface)] p-3 text-sm">
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="text-[color:var(--app-text-muted)]">Rows</div>
+                      <div className="text-[color:var(--app-text-muted)]">Zeilen</div>
                       <div className="text-right font-semibold">{payoutsImportOut.total_rows}</div>
-                      <div className="text-[color:var(--app-text-muted)]">Imported</div>
+                      <div className="text-[color:var(--app-text-muted)]">Importiert</div>
                       <div className="text-right font-semibold">{payoutsImportOut.imported_count}</div>
-                      <div className="text-[color:var(--app-text-muted)]">Skipped</div>
+                      <div className="text-[color:var(--app-text-muted)]">Übersprungen</div>
                       <div className="text-right font-semibold">{payoutsImportOut.skipped_count}</div>
-                      <div className="text-[color:var(--app-text-muted)]">Failed</div>
+                      <div className="text-[color:var(--app-text-muted)]">Fehlgeschlagen</div>
                       <div className="text-right font-semibold">{payoutsImportOut.failed_count}</div>
                     </div>
                   </div>
@@ -815,7 +874,7 @@ export function MarketplacePage() {
 
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>Payouts</CardTitle>
+                <CardTitle>Auszahlungen</CardTitle>
                 <CardDescription>Liste der importierten Auszahlungen.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -823,23 +882,23 @@ export function MarketplacePage() {
                   <div className="text-sm text-[color:var(--app-text-muted)]">{payouts.isFetching ? "Lade…" : ""}</div>
                   <Button type="button" variant="outline" onClick={() => payouts.refetch()} disabled={payouts.isFetching}>
                     <RefreshCw className="h-4 w-4" />
-                    Refresh
+                    Aktualisieren
                   </Button>
                 </div>
 
                 {payouts.isError && <InlineMessage tone="error">{(payouts.error as Error).message}</InlineMessage>}
                 {!payouts.isLoading && !(payouts.data ?? []).length && (
-                  <div className="text-sm text-[color:var(--app-text-muted)]">Noch keine Payouts.</div>
+                  <div className="text-sm text-[color:var(--app-text-muted)]">Noch keine Auszahlungen.</div>
                 )}
                 {!!(payouts.data ?? []).length && (
                   <div className="overflow-auto rounded-lg border border-[color:var(--app-border)] bg-[color:var(--app-surface)]">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Channel</TableHead>
-                          <TableHead>External ID</TableHead>
-                          <TableHead className="text-right">Net</TableHead>
+                          <TableHead>Datum</TableHead>
+                          <TableHead>Kanal</TableHead>
+                          <TableHead>Externe ID</TableHead>
+                          <TableHead className="text-right">Netto</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>

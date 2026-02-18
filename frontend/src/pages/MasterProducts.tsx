@@ -325,7 +325,7 @@ function resellerTargetSignal(m: MasterProduct): ResellerTargetSignal {
 
   let summary = "Daten unvollstaendig.";
   if (tier === "TOP") summary = "Niedriger BSR + Preisziel erreicht (>= 40 EUR).";
-  if (tier === "STRONG") summary = "Solide Nachfrage-/Preis-Kombination fuer Reselling.";
+  if (tier === "STRONG") summary = "Solide Nachfrage-/Preis-Kombination für Reselling.";
   if (tier === "WATCH") summary = "Interessant, aber Nachfrage oder Preis noch mittel.";
   if (tier === "LOW") summary = "Aktuell schwaches Demand-/Preis-Profil.";
 

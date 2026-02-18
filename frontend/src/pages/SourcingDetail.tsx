@@ -250,8 +250,8 @@ export function SourcingDetailPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Sourcing Detail"
-        description="Match-Review, Kalkulation und Conversion in Einkauf"
+        title="Sourcing-Detail"
+        description="Match-Prüfung, Kalkulation und Conversion in Einkauf"
         actions={
           <Button type="button" variant="outline" asChild>
             <Link to="/sourcing">
@@ -317,7 +317,7 @@ export function SourcingDetailPage() {
                 </Button>
                 <Button type="button" variant="outline" onClick={() => preview.mutate()} disabled={preview.isPending}>
                   {preview.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                  Conversion Preview
+                  Conversion-Vorschau
                 </Button>
                 <Button
                   type="button"
@@ -340,7 +340,7 @@ export function SourcingDetailPage() {
                     disabled={bidbag.isPending || !item.max_purchase_price_cents}
                   >
                     {bidbag.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Send to bidbag
+                    An Bidbag senden
                   </Button>
                 ) : null}
               </div>
@@ -355,12 +355,12 @@ export function SourcingDetailPage() {
           {preview.data ? (
             <Card>
               <CardHeader>
-                <CardTitle>Conversion Preview</CardTitle>
+                <CardTitle>Conversion-Vorschau</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <div>Kind: {preview.data.purchase_kind}</div>
-                <div>Payment: {preview.data.payment_source}</div>
-                <div>Total: {formatEur(preview.data.total_amount_cents)} + Versand {formatEur(preview.data.shipping_cost_cents)}</div>
+                <div>Typ: {preview.data.purchase_kind}</div>
+                <div>Zahlungsweg: {preview.data.payment_source}</div>
+                <div>Gesamt: {formatEur(preview.data.total_amount_cents)} + Versand {formatEur(preview.data.shipping_cost_cents)}</div>
                 {preview.data.lines.map((line, idx) => (
                   <div key={`${line.master_product_id}-${idx}`}>
                     {line.master_product_id}: {line.condition} • {formatEur(line.purchase_price_cents)}

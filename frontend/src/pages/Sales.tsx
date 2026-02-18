@@ -20,8 +20,10 @@ import { TABLE_CELL_NUMERIC_CLASS, TABLE_ROW_COMPACT_CLASS } from "../components
 
 type InventoryItem = {
   id: string;
+  item_code: string;
   master_product_id: string;
   purchase_type: string;
+  purchase_price_cents: number;
   status: string;
 };
 
@@ -119,15 +121,18 @@ export function SalesPage() {
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const inventorySearchTrimmed = searchInv.trim();
+  const canQueryInventory = formOpen && inventorySearchTrimmed.length >= 2;
 
   const inv = useQuery({
     queryKey: ["inventory-available", searchInv],
-    enabled: formOpen,
+    enabled: canQueryInventory,
     queryFn: () =>
       api.request<InventoryItem[]>(
-        `/inventory?status=AVAILABLE&limit=50&offset=0${searchInv.trim() ? `&q=${encodeURIComponent(searchInv.trim())}` : ""}`,
+        `/inventory?status=AVAILABLE&limit=50&offset=0&q=${encodeURIComponent(inventorySearchTrimmed)}`,
       ),
   });
+  const invById = useMemo(() => new Map((inv.data ?? []).map((item) => [item.id, item])), [inv.data]);
 
   const orders = useQuery({
     queryKey: ["sales"],
@@ -912,7 +917,7 @@ export function SalesPage() {
           <DialogHeader>
             <DialogTitle>{editingOrderId ? "Auftrag bearbeiten" : "Auftrag erstellen"}</DialogTitle>
             <DialogDescription>
-              {editingOrderId ? `ID: ${editingOrderId}` : "Entwurf anlegen, Positionen befuellen und spaeter abschliessen."}
+              {editingOrderId ? `ID: ${editingOrderId}` : "Entwurf anlegen, Positionen befüllen und später abschließen."}
             </DialogDescription>
           </DialogHeader>
 
@@ -994,11 +999,19 @@ export function SalesPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Artikel</TableHead>
+                          <TableHead className={TABLE_CELL_NUMERIC_CLASS}>EK</TableHead>
                           <TableHead>Typ</TableHead>
                           <TableHead className="text-right"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
+                        {!canQueryInventory && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">
+                              Bitte mindestens 2 Zeichen suchen.
+                            </TableCell>
+                          </TableRow>
+                        )}
                         {(inv.data ?? []).map((it) => {
                           const mp = mpById.get(it.master_product_id);
                           const already = selectedLines.some((l) => l.inventory_item_id === it.id);
@@ -1012,9 +1025,12 @@ export function SalesPage() {
                                     {mp.variant ? ` · ${mp.variant}` : ""}
                                   </div>
                                 )}
-                                {mp?.sku && <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{mp.sku}</div>}
-                                <div className="text-xs font-mono text-gray-400 dark:text-gray-500">{it.id}</div>
+                                <div className="text-xs font-mono text-gray-400 dark:text-gray-500">
+                                  {it.item_code}
+                                  {mp?.sku ? ` · ${mp.sku}` : ""}
+                                </div>
                               </TableCell>
+                              <TableCell className={TABLE_CELL_NUMERIC_CLASS}>{formatEur(it.purchase_price_cents)}</TableCell>
                               <TableCell>{purchaseTypeLabel(it.purchase_type)}</TableCell>
                               <TableCell className="text-right">
                                 <Button
@@ -1028,9 +1044,9 @@ export function SalesPage() {
                             </TableRow>
                           );
                         })}
-                        {!inv.data?.length && (
+                        {canQueryInventory && !inv.data?.length && (
                           <TableRow>
-                            <TableCell colSpan={3} className="text-sm text-gray-500 dark:text-gray-400">Keine verfügbaren Artikel.</TableCell>
+                            <TableCell colSpan={4} className="text-sm text-gray-500 dark:text-gray-400">Keine verfügbaren Artikel.</TableCell>
                           </TableRow>
                         )}
                       </TableBody>
@@ -1053,7 +1069,19 @@ export function SalesPage() {
                     <TableBody>
                       {selectedLines.map((l, idx) => (
                         <TableRow key={l.inventory_item_id} className={TABLE_ROW_COMPACT_CLASS}>
-                          <TableCell className="font-mono text-xs">{l.inventory_item_id}</TableCell>
+                          <TableCell>
+                            <div className="font-mono text-xs">{invById.get(l.inventory_item_id)?.item_code ?? l.inventory_item_id}</div>
+                            {(() => {
+                              const invItem = invById.get(l.inventory_item_id);
+                              const mp = invItem ? mpById.get(invItem.master_product_id) : undefined;
+                              if (!mp) return null;
+                              return (
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {mp.title}
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Input
                               className="text-right"

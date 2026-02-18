@@ -213,7 +213,7 @@ it("renders amazon intelligence card with key values and opportunities", async (
   expect(screen.getByText("Income (Monat)")).toBeInTheDocument();
   expect(screen.getByText("Expenses (Monat)")).toBeInTheDocument();
   expect(screen.getByText("Net Cash (Monat)")).toBeInTheDocument();
-  expect(screen.getByText("Operating Result")).toBeInTheDocument();
+  expect(screen.getByText("Betriebsergebnis")).toBeInTheDocument();
   expect(screen.getByText("Cash In (EUR)")).toBeInTheDocument();
   expect(screen.getByText("Cash Out (EUR)")).toBeInTheDocument();
   expect(screen.getByText("Cash Net (EUR)")).toBeInTheDocument();
