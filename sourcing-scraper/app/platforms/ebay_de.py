@@ -58,7 +58,13 @@ def _clean_listing_title(value: str) -> str:
     text = _strip_tags(value)
     text = re.sub(r"\s*Wird in neuem Fenster oder Tab geoffnet\s*$", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*Opens in a new window or tab\s*$", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*Neues Angebot\s*[:\-–]?\s*", "", text, flags=re.IGNORECASE)
     return text.strip()
+
+
+def _is_generic_listing_title(value: str) -> bool:
+    text = re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    return text in {"neues angebot", "new listing"}
 
 
 def _parse_price_cents(raw: str) -> int | None:
@@ -100,6 +106,18 @@ def _extract_external_id(url: str) -> str | None:
     if m:
         return m.group(1)
     return None
+
+
+def _normalize_image_url(url: str) -> str | None:
+    text = str(url or "").strip()
+    if not text:
+        return None
+    if text.startswith("data:"):
+        return None
+    lowered = text.lower()
+    if lowered.endswith("/s_1x2.gif") or lowered.endswith("/empty.gif"):
+        return None
+    return _absolute_url(text)
 
 
 def _parse_auction_end_at(raw: str | None, *, now: datetime | None = None) -> datetime | None:
@@ -161,7 +179,7 @@ def _normalize_listing(entry: dict) -> dict | None:
     url = _absolute_url(raw_url)
     external_id = str(entry.get("external_id") or "").strip() or (_extract_external_id(url) or "")
     title = _clean_listing_title(str(entry.get("title") or ""))
-    if not external_id or not title:
+    if not external_id or not title or _is_generic_listing_title(title):
         return None
 
     price_cents = entry.get("price_cents") if isinstance(entry.get("price_cents"), int) else _parse_price_cents(str(entry.get("price_raw") or ""))
@@ -178,10 +196,16 @@ def _normalize_listing(entry: dict) -> dict | None:
         auction_end_at = parsed.isoformat() if parsed else None
 
     image_urls = entry.get("image_urls") if isinstance(entry.get("image_urls"), list) else []
-    normalized_images = [str(v).strip() for v in image_urls if str(v).strip()]
-    primary_image_url = str(entry.get("primary_image_url") or "").strip() or None
+    normalized_images = [
+        cleaned
+        for cleaned in (_normalize_image_url(str(v)) for v in image_urls)
+        if cleaned
+    ]
+    primary_image_url = _normalize_image_url(str(entry.get("primary_image_url") or ""))
     if primary_image_url and primary_image_url not in normalized_images:
         normalized_images.insert(0, primary_image_url)
+    if not primary_image_url and normalized_images:
+        primary_image_url = normalized_images[0]
 
     return {
         "external_id": external_id,
@@ -216,7 +240,11 @@ def _normalize_detail(entry: dict) -> dict:
 
     image_urls: list[str] = []
     if isinstance(entry.get("image_urls"), list):
-        image_urls = [str(v).strip() for v in entry.get("image_urls", []) if str(v).strip()]
+        image_urls = [
+            cleaned
+            for cleaned in (_normalize_image_url(str(v)) for v in entry.get("image_urls", []))
+            if cleaned
+        ]
 
     return {
         "title": str(entry.get("title") or "").strip() or None,
@@ -382,6 +410,7 @@ def _extract_from_html(doc: str) -> list[dict]:
             bids_match = re.search(r"(\d+\s+Gebote)", body, flags=re.IGNORECASE)
         if not time_match:
             time_match = re.search(r"\b(Noch[^<]{0,24}|Heute[^<]{0,24}|Morgen[^<]{0,24})\b", body, flags=re.IGNORECASE)
+        image_match = re.search(r"https://i\.ebayimg\.com/images/[^\s\"']+", body, flags=re.IGNORECASE)
         shipping_match = re.search(
             r"<[^>]*(?:s-item__shipping|s-item__logisticsCost|s-card__shipping)[^>]*>(?P<shipping>.*?)</[^>]+>",
             body,
@@ -399,6 +428,8 @@ def _extract_from_html(doc: str) -> list[dict]:
             "shipping_raw": shipping_match.group("shipping") if shipping_match else "",
             "bids_raw": _strip_tags(bids_match.group("bids")) if bids_match and "bids" in bids_match.groupdict() else _strip_tags(bids_match.group(1)) if bids_match else "",
             "time_left_raw": _strip_tags(time_match.group("time")) if time_match and "time" in time_match.groupdict() else _strip_tags(time_match.group(1)) if time_match else "",
+            "image_urls": [image_match.group(0)] if image_match else [],
+            "primary_image_url": image_match.group(0) if image_match else None,
         }
         normalized = _normalize_listing(entry)
         if normalized is not None:

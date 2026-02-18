@@ -4,6 +4,19 @@
     clean(value)
       .replace(/\s*Wird in neuem Fenster oder Tab geöffnet$/i, "")
       .replace(/\s*Opens in a new window or tab$/i, "");
+  const normalizeImageUrl = (value) => {
+    const url = clean(value);
+    if (!url || url.startsWith("data:")) return null;
+    if (/\/(?:s_1x2|empty)\.gif/i.test(url)) return null;
+    if (url.startsWith("//")) return `https:${url}`;
+    return url;
+  };
+  const firstSrcsetUrl = (rawSrcset) => {
+    const srcset = clean(rawSrcset);
+    if (!srcset) return null;
+    const first = srcset.split(",")[0]?.trim().split(/\s+/)[0];
+    return normalizeImageUrl(first || "");
+  };
 
   const parsePriceCents = (raw) => {
     const text = clean(raw).toLowerCase().replace("eur", "").replace("€", "");
@@ -58,7 +71,14 @@
       const bidsText = clean(bidNode?.textContent) || findTextByRegex(item, /\b\d+\s+Gebote\b/i) || null;
       const timeText =
         clean(timeNode?.textContent) || findTextByRegex(item, /\b(Noch|Heute|Morgen)\b/i) || null;
-      const imageSrc = clean(image?.getAttribute("src") || image?.getAttribute("data-src"));
+      const imageSrc =
+        normalizeImageUrl(image?.getAttribute("data-src")) ||
+        normalizeImageUrl(image?.getAttribute("data-lazy-src")) ||
+        normalizeImageUrl(image?.getAttribute("data-zoom-src")) ||
+        normalizeImageUrl(image?.getAttribute("data-img-src")) ||
+        normalizeImageUrl(image?.getAttribute("src")) ||
+        firstSrcsetUrl(image?.getAttribute("data-srcset")) ||
+        firstSrcsetUrl(image?.getAttribute("srcset"));
 
       return {
         external_id: externalId,
