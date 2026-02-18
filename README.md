@@ -47,6 +47,8 @@ Hinweis: Für Browser-Calls muss CORS erlaubt sein. Setze in `.env` (root) z.B.:
 Alternative via Docker Compose (läuft dauerhaft als Service):
 - `docker compose up -d frontend`
 - Frontend ist dann über `http://localhost:15173` erreichbar.
+- Default ist `build + preview` (ohne Vite-Dev-HMR).
+- Für expliziten Dev-Server in Compose: `FRONTEND_DEV_SERVER=true`.
 
 ## Storage
 
