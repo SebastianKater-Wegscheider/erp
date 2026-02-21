@@ -16,7 +16,7 @@
 - Auth-Flow wird strikt: kein App-Shell-Render, bevor Basic-Auth gegen die API erfolgreich verifiziert wurde; bei `401` wird Session sofort geloescht.
 - Datenlayer via TanStack Query (Caching, Retry, konsistente Loading/Error-States); API-Wrapper bleibt bewusst duenn.
 - Routing via React Router mit `AppShell` Layout (Navigation + Content), damit Module konsistent wirken.
-- Lokale Runtime: Compose bekommt optionalen `frontend-v2` Service auf eigenem Port; CORS-Defaults werden fuer parallelen Betrieb ergaenzt.
+- Lokale Runtime: Compose bekommt optionalen `frontend-v2` Service auf eigenem Port; CORS-Defaults werden fuer parallelen Betrieb ergaenzt (v1 + v2 parallel).
 
 ### Trade-offs
 - Parallelbetrieb bedeutet kurzfristig doppelte UI-Pflege, senkt aber das Risiko und erlaubt eine saubere Migration mit klaren Cutover-Punkten.
@@ -38,6 +38,7 @@
   - "Naechste Schritte" sind direkte Links in die operativen Queues (Sales-Drafts, fehlende Fotos/Lagerplaetze, Altbestand).
   - Cash/Accounting Snapshot (inkl. Insights) ist ausklappbar, damit das Tagesgeschaeft nicht blockiert, aber Finance stets greifbar bleibt.
   - Amazon Opportunities und Produkt-Top/Worst sind bewusst tabellarisch (scanbar, klickbar) statt als Diagramm.
+- Lokaler Betrieb: `docker-compose.yml` fuehrt `frontend` (v1) und `frontend-v2` (v2) als separate Services; Backend-CORS Default erlaubt beide Ports.
 
 ## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
 

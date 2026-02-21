@@ -15,5 +15,12 @@ Default dev URL: `http://localhost:5174`
 
 ## Docker Compose
 
-The root `docker-compose.yml` provides a `frontend-v2` service (preview by default, dev-server opt-in).
+The root `docker-compose.yml` provides a `frontend-v2` service (preview by default, dev-server opt-in):
 
+```bash
+docker compose up -d frontend-v2
+```
+
+Default URL: `http://localhost:15174`
+
+Dev-server opt-in: set `FRONTEND_V2_DEV_SERVER=true`.
