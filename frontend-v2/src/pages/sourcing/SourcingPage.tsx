@@ -68,6 +68,21 @@ type SourcingScrapeTriggerOut = {
   items_ready: number;
 };
 
+type SourcingCleanseIn = {
+  older_than_days: number;
+  limit: number;
+  platform?: SourcingPlatform | null;
+};
+
+type SourcingCleanseOut = {
+  checked: number;
+  discarded: number;
+  kept: number;
+  errors: number;
+  blocked: boolean;
+  blocked_reason?: string | null;
+};
+
 const STATUS_OPTIONS: Array<{ value: SourcingStatus | "ALL"; label: string }> = [
   { value: "READY", label: "Ready" },
   { value: "NEW", label: "Neu" },
@@ -117,6 +132,8 @@ export function SourcingPage() {
   const api = useApi();
   const [params, setParams] = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
+  const [cleanseDays, setCleanseDays] = useState("14");
+  const [cleanseLimit, setCleanseLimit] = useState("25");
 
   const status = (params.get("status") as any) ?? "READY";
   const platform = (params.get("platform") as any) ?? "ALL";
@@ -170,6 +187,20 @@ export function SourcingPage() {
       list.refetch();
     },
     onError: (e: any) => setMessage(String(e?.message ?? "Scrape fehlgeschlagen")),
+  });
+
+  const cleanse = useMutation({
+    mutationFn: (payload: SourcingCleanseIn) =>
+      api.request<SourcingCleanseOut>("/sourcing/jobs/cleanse", { method: "POST", json: payload }),
+    onSuccess: (out) => {
+      const parts = [`Cleansing: checked ${out.checked}`, `discarded ${out.discarded}`, `kept ${out.kept}`, `errors ${out.errors}`];
+      if (out.blocked) parts.push(`blocked: ${out.blocked_reason ?? "captcha"}`);
+      setMessage(parts.join(" · "));
+      health.refetch();
+      stats.refetch();
+      list.refetch();
+    },
+    onError: (e: any) => setMessage(String(e?.message ?? "Cleansing fehlgeschlagen")),
   });
 
   const items = list.data?.items ?? [];
@@ -252,6 +283,51 @@ export function SourcingPage() {
           </div>
         </div>
       ) : null}
+
+      <details className="panel">
+        <summary className="panel-title" style={{ cursor: "pointer" }}>
+          Cleansing
+        </summary>
+        <div className="stack" style={{ marginTop: 10 }}>
+          <div className="muted" style={{ fontSize: 12 }}>
+            Markiert verkaufte/gelöschte Listings automatisch als <span className="mono">DISCARDED</span> (Batch). Kandidaten:{" "}
+            <span className="mono">NEW/ANALYZING/READY</span>, älter als N Tage.
+          </div>
+          <div className="toolbar">
+            <input
+              className="input"
+              style={{ maxWidth: 160 }}
+              value={cleanseDays}
+              onChange={(e) => setCleanseDays(e.target.value)}
+              placeholder="Older than (days)"
+              inputMode="numeric"
+            />
+            <input
+              className="input"
+              style={{ maxWidth: 140 }}
+              value={cleanseLimit}
+              onChange={(e) => setCleanseLimit(e.target.value)}
+              placeholder="Limit"
+              inputMode="numeric"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const days = Number(cleanseDays.trim());
+                const lim = Number(cleanseLimit.trim());
+                const older_than_days = Number.isFinite(days) ? Math.max(0, Math.floor(days)) : 14;
+                const limit = Number.isFinite(lim) ? Math.min(200, Math.max(1, Math.floor(lim))) : 25;
+                const effectivePlatform = platform && platform !== "ALL" ? (platform as SourcingPlatform) : null;
+                cleanse.mutate({ older_than_days, limit, platform: effectivePlatform });
+              }}
+              disabled={cleanse.isPending}
+            >
+              {cleanse.isPending ? "…" : "Run"}
+            </Button>
+          </div>
+        </div>
+      </details>
 
       <div className="panel">
         <div className="toolbar" style={{ marginBottom: 10 }}>
