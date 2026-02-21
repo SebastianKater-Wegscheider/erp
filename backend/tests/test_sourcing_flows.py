@@ -21,6 +21,7 @@ from app.services.sourcing import (
     _compute_max_purchase_price_cents,
     _parse_kleinanzeigen_posted_at,
     build_bidbag_handoff,
+    cleanse_stale_sourcing_items,
     convert_item_to_purchase,
     execute_sourcing_run,
     load_resolved_settings,
@@ -231,6 +232,123 @@ def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
     absolute_no_time = _parse_kleinanzeigen_posted_at("13.02.2026", now=now)
     assert absolute_no_time is not None
     assert absolute_no_time == datetime(2026, 2, 12, 23, 0, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_execute_sourcing_run_updates_scraped_at_for_existing_items(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old = datetime.now(UTC) - timedelta(days=30)
+    async with session_factory() as session:
+        item = SourcingItem(
+            platform=SourcingPlatform.KLEINANZEIGEN,
+            external_id="existing-1",
+            url="https://www.kleinanzeigen.de/s-anzeige/existing-1",
+            title="Nintendo Konvolut",
+            price_cents=1_000,
+            status=SourcingStatus.READY,
+            scraped_at=old,
+        )
+        session.add(item)
+        await session.commit()
+
+    async def _fake_scrape_fetch(*, app_settings, platform, search_terms, options=None, max_pages=None) -> dict:
+        return {
+            "blocked": False,
+            "error_type": None,
+            "error_message": None,
+            "listings": [
+                {
+                    "external_id": "existing-1",
+                    "title": "Nintendo Konvolut",
+                    "url": "https://www.kleinanzeigen.de/s-anzeige/existing-1-updated",
+                    "price_cents": 1_000,
+                    "image_urls": [],
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.services.sourcing.SessionLocal", session_factory)
+    monkeypatch.setattr("app.services.sourcing._scraper_fetch", _fake_scrape_fetch)
+
+    result = await execute_sourcing_run(force=True, search_terms=["nintendo"], trigger="test")
+    assert result.status in {"completed", "blocked", "degraded", "error"}
+
+    async with session_factory() as session:
+        refreshed = (
+            await session.execute(
+                select(SourcingItem).where(
+                    SourcingItem.platform == SourcingPlatform.KLEINANZEIGEN,
+                    SourcingItem.external_id == "existing-1",
+                )
+            )
+        ).scalar_one()
+        assert refreshed.url.endswith("existing-1-updated")
+        refreshed_scraped_at = refreshed.scraped_at.replace(tzinfo=UTC) if refreshed.scraped_at.tzinfo is None else refreshed.scraped_at
+        assert refreshed_scraped_at > old
+
+
+@pytest.mark.asyncio
+async def test_cleanse_stale_sourcing_items_discards_unavailable_and_keeps_ok(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old = datetime.now(UTC) - timedelta(days=60)
+    gone = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="gone-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/gone",
+        title="Gone Listing",
+        price_cents=1_000,
+        status=SourcingStatus.READY,
+        scraped_at=old,
+    )
+    ok = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="ok-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/ok",
+        title="OK Listing",
+        price_cents=1_000,
+        status=SourcingStatus.NEW,
+        scraped_at=old,
+    )
+    db_session.add_all([gone, ok])
+    await db_session.commit()
+
+    async def _fake_detail_fetch(*, app_settings, platform, url: str) -> dict:
+        if url.endswith("/gone"):
+            return {
+                "blocked": False,
+                "error_type": "not_found",
+                "error_message": "404 Not Found",
+                "listing": {},
+            }
+        return {
+            "blocked": False,
+            "error_type": None,
+            "error_message": None,
+            "listing": {"title": "OK"},
+        }
+
+    monkeypatch.setattr("app.services.sourcing._scraper_fetch_listing_detail", _fake_detail_fetch)
+
+    out = await cleanse_stale_sourcing_items(session=db_session, actor="tester", older_than_days=14, limit=25)
+    assert out.checked == 2
+    assert out.discarded == 1
+    assert out.kept == 1
+    assert out.errors == 0
+    assert out.blocked is False
+
+    gone_refreshed = (await db_session.execute(select(SourcingItem).where(SourcingItem.external_id == "gone-1"))).scalar_one()
+    assert gone_refreshed.status == SourcingStatus.DISCARDED
+    assert gone_refreshed.status_reason and "Auto-cleanse" in gone_refreshed.status_reason
+    assert gone_refreshed.scraped_at == old
+
+    ok_refreshed = (await db_session.execute(select(SourcingItem).where(SourcingItem.external_id == "ok-1"))).scalar_one()
+    assert ok_refreshed.status == SourcingStatus.NEW
+    ok_scraped_at = ok_refreshed.scraped_at.replace(tzinfo=UTC) if ok_refreshed.scraped_at.tzinfo is None else ok_refreshed.scraped_at
+    assert ok_scraped_at > old
 
 
 @pytest.mark.asyncio

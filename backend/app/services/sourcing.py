@@ -52,6 +52,16 @@ class SourcingRunResult:
 
 
 @dataclass
+class SourcingCleanseResult:
+    checked: int = 0
+    discarded: int = 0
+    kept: int = 0
+    errors: int = 0
+    blocked: bool = False
+    blocked_reason: str | None = None
+
+
+@dataclass
 class _ResolvedSettings:
     bsr_max_threshold: int
     price_min_cents: int
@@ -980,13 +990,22 @@ async def execute_sourcing_run(
 
                 existing = (
                     await session.execute(
-                        select(SourcingItem.id).where(
+                        select(SourcingItem).where(
                             SourcingItem.platform == run_platform,
                             SourcingItem.external_id == external_id,
                         )
                     )
                 ).scalar_one_or_none()
                 if existing is not None:
+                    existing.scraped_at = utcnow()
+                    existing.last_run_id = run.id
+                    if agent_id is not None:
+                        existing.agent_id = agent_id
+                    if agent_query_id is not None:
+                        existing.agent_query_id = agent_query_id
+                    next_url = str(listing.get("url") or "").strip()
+                    if next_url:
+                        existing.url = next_url
                     continue
 
                 item = SourcingItem(
@@ -1259,6 +1278,91 @@ async def prune_old_sourcing_items(
     await session.execute(delete(SourcingMatch).where(SourcingMatch.sourcing_item_id.in_(item_ids)))
     await session.execute(delete(SourcingItem).where(SourcingItem.id.in_(item_ids)))
     return len(item_ids)
+
+
+async def cleanse_stale_sourcing_items(
+    *,
+    session: AsyncSession,
+    actor: str,
+    older_than_days: int,
+    limit: int,
+    platform: SourcingPlatform | None = None,
+    app_settings: Settings | None = None,
+) -> SourcingCleanseResult:
+    app_settings = app_settings or get_settings()
+    max_limit = max(1, min(200, int(limit)))
+    stale_days = max(0, int(older_than_days))
+    cutoff = utcnow() - timedelta(days=stale_days)
+
+    stmt = select(SourcingItem.id, SourcingItem.platform, SourcingItem.url).where(
+        SourcingItem.scraped_at < cutoff,
+        SourcingItem.status.in_([SourcingStatus.NEW, SourcingStatus.ANALYZING, SourcingStatus.READY]),
+    )
+    if platform is not None:
+        stmt = stmt.where(SourcingItem.platform == platform)
+    stmt = stmt.order_by(SourcingItem.scraped_at.asc()).limit(max_limit)
+
+    candidates = (await session.execute(stmt)).all()
+
+    # Close any implicit read transaction before doing network IO.
+    await session.commit()
+
+    result = SourcingCleanseResult()
+    if not candidates:
+        return result
+
+    outcomes: dict[uuid.UUID, str] = {}
+    for item_id, item_platform, url in candidates:
+        result.checked += 1
+        if not str(url or "").strip():
+            result.errors += 1
+            continue
+
+        try:
+            payload = await _scraper_fetch_listing_detail(
+                app_settings=app_settings,
+                platform=item_platform,
+                url=str(url),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Sourcing cleanse detail fetch failed",
+                extra={"item_id": str(item_id), "platform": item_platform.value, "url": str(url), "error_type": type(exc).__name__},
+                exc_info=True,
+            )
+            result.errors += 1
+            continue
+
+        if payload.get("blocked") is True:
+            result.blocked = True
+            result.blocked_reason = str(payload.get("error_message") or payload.get("error_type") or "blocked")
+            break
+
+        err_type = str(payload.get("error_type") or "").strip().lower()
+        if err_type in {"not_found", "not_available"}:
+            outcomes[item_id] = err_type
+        elif err_type:
+            result.errors += 1
+        else:
+            outcomes[item_id] = "ok"
+
+    if not outcomes:
+        return result
+
+    now = utcnow()
+    for item_id, outcome in outcomes.items():
+        item = await session.get(SourcingItem, item_id)
+        if item is None:
+            continue
+        if outcome in {"not_found", "not_available"}:
+            await discard_item(session=session, actor=actor, item=item, reason=f"Auto-cleanse: listing {outcome}")
+            result.discarded += 1
+            continue
+        item.scraped_at = now
+        result.kept += 1
+
+    await session.commit()
+    return result
 
 
 async def update_settings_values(

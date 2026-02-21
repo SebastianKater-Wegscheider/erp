@@ -28,6 +28,21 @@ class SourcingScrapeTriggerOut(BaseModel):
     items_ready: int = 0
 
 
+class SourcingCleanseIn(BaseModel):
+    older_than_days: int = Field(default=14, ge=0, le=3650)
+    limit: int = Field(default=25, ge=1, le=200)
+    platform: SourcingPlatform | None = None
+
+
+class SourcingCleanseOut(BaseModel):
+    checked: int = 0
+    discarded: int = 0
+    kept: int = 0
+    errors: int = 0
+    blocked: bool = False
+    blocked_reason: str | None = None
+
+
 class SourcingHealthOut(BaseModel):
     status: str
     last_scrape_at: datetime | None

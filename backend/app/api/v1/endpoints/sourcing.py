@@ -25,6 +25,8 @@ from app.schemas.sourcing import (
     SourcingAgentRunOut,
     SourcingAgentRunQueryOut,
     SourcingBidbagHandoffOut,
+    SourcingCleanseIn,
+    SourcingCleanseOut,
     SourcingConversionPreviewIn,
     SourcingConversionPreviewOut,
     SourcingConvertIn,
@@ -49,6 +51,7 @@ from app.schemas.sourcing import (
 from app.services.target_pricing import fba_payout_cents
 from app.services.sourcing import (
     build_bidbag_handoff,
+    cleanse_stale_sourcing_items,
     build_conversion_preview,
     convert_item_to_purchase,
     discard_item,
@@ -113,6 +116,34 @@ async def trigger_sourcing_scrape(data: SourcingScrapeTriggerIn) -> SourcingScra
         items_scraped=result.items_scraped,
         items_new=result.items_new,
         items_ready=result.items_ready,
+    )
+
+
+@router.post("/jobs/cleanse", response_model=SourcingCleanseOut)
+async def cleanse_sourcing_items(
+    data: SourcingCleanseIn,
+    session: AsyncSession = Depends(get_session),
+    actor: str = Depends(require_basic_auth),
+) -> SourcingCleanseOut:
+    settings = get_settings()
+    if not settings.sourcing_enabled:
+        raise HTTPException(status_code=409, detail="Sourcing is disabled")
+
+    out = await cleanse_stale_sourcing_items(
+        session=session,
+        actor=actor,
+        older_than_days=data.older_than_days,
+        limit=data.limit,
+        platform=data.platform,
+        app_settings=settings,
+    )
+    return SourcingCleanseOut(
+        checked=out.checked,
+        discarded=out.discarded,
+        kept=out.kept,
+        errors=out.errors,
+        blocked=out.blocked,
+        blocked_reason=out.blocked_reason,
     )
 
 

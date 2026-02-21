@@ -39,6 +39,9 @@
   - Cash/Accounting Snapshot (inkl. Insights) ist ausklappbar, damit das Tagesgeschaeft nicht blockiert, aber Finance stets greifbar bleibt.
   - Amazon Opportunities und Produkt-Top/Worst sind bewusst tabellarisch (scanbar, klickbar) statt als Diagramm.
 - Lokaler Betrieb: `docker-compose.yml` fuehrt `frontend` (v1) und `frontend-v2` (v2) als separate Services; Backend-CORS Default erlaubt beide Ports.
+- Sourcing Cleanup: Da Listings (z.B. verkauft/geloescht) sonst dauerhaft im Bestand bleiben, bekommt das System einen Cleansing-Mechanismus:
+  - `scraped_at` wird als "zuletzt gesehen/validiert" genutzt (Update bei erneutem Auftauchen in Scrapes).
+  - Batch-Job markiert nicht mehr verfuegbare Listings automatisch als `DISCARDED` (mit Reason), damit die aktive Queue klein bleibt und Retention/Pruning greifen kann.
 
 ## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
 
