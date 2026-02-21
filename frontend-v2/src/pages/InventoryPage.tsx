@@ -626,7 +626,7 @@ export function InventoryPage() {
                 <th>Status</th>
                 <th className="numeric">Buy</th>
                 <th className="numeric">Target</th>
-                <th className="numeric">Quelle</th>
+                <th className="numeric hide-mobile">Quelle</th>
               </tr>
             </thead>
             <tbody>
@@ -704,7 +704,7 @@ export function InventoryPage() {
                     </td>
                     <td className="numeric nowrap">{fmtEur(row.purchase_price_cents + row.allocated_costs_cents)}</td>
                     <td className="numeric nowrap">{fmtEur(row.effective_target_sell_price_cents)}</td>
-                    <td className="numeric muted nowrap">{effectiveSourceLabel(row.effective_target_price_source)}</td>
+                    <td className="numeric muted nowrap hide-mobile">{effectiveSourceLabel(row.effective_target_price_source)}</td>
                   </tr>
                 );
               })}

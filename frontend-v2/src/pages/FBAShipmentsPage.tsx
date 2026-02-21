@@ -311,7 +311,7 @@ export function FBAShipmentsPage() {
                 <th>Status</th>
                 <th className="numeric">Items</th>
                 <th className="numeric">Kosten</th>
-                <th className="numeric">Shipped</th>
+                <th className="numeric hide-mobile">Shipped</th>
               </tr>
             </thead>
             <tbody>
@@ -338,7 +338,7 @@ export function FBAShipmentsPage() {
                   </td>
                   <td className="numeric">{s.items.length}</td>
                   <td className="numeric nowrap">{fmtEur(s.shipping_cost_cents)}</td>
-                  <td className="numeric muted nowrap">{formatDateTimeLocal(s.shipped_at ?? null)}</td>
+                  <td className="numeric muted nowrap hide-mobile">{formatDateTimeLocal(s.shipped_at ?? null)}</td>
                 </tr>
               ))}
               {!pagedShipments.items.length && !shipments.isLoading ? (

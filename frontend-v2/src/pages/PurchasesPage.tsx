@@ -1190,11 +1190,11 @@ export function PurchasesPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Datum</th>
-                <th>Art</th>
+                <th className="hide-mobile">Datum</th>
+                <th className="hide-mobile">Art</th>
                 <th>Gegenpartei</th>
                 <th className="numeric">Bezahlt</th>
-                <th>Beleg</th>
+                <th className="hide-mobile">Beleg</th>
               </tr>
             </thead>
             <tbody>
@@ -1216,13 +1216,23 @@ export function PurchasesPage() {
                       })
                     }
                   >
-                    <td className="nowrap mono">{p.purchase_date}</td>
-                    <td>{optionLabel(KIND_OPTIONS, p.kind)}</td>
+                    <td className="nowrap mono hide-mobile">{p.purchase_date}</td>
+                    <td className="hide-mobile">{optionLabel(KIND_OPTIONS, p.kind)}</td>
                     <td>
                       <div style={{ fontWeight: 650 }}>{p.counterparty_name}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
+                      <div className="muted only-desktop" style={{ fontSize: 12 }}>
                         {p.source_platform ?? "—"}
                         {mileageMissing ? " · Bar ohne Fahrt" : ""}
+                      </div>
+                      <div className="muted only-mobile" style={{ fontSize: 12, marginTop: 2 }}>
+                        <span className="mono">{p.purchase_date}</span> · {optionLabel(KIND_OPTIONS, p.kind)} · {p.source_platform ?? "—"}
+                        {mileageMissing ? " · Bar ohne Fahrt" : ""}
+                        {p.document_number ? (
+                          <>
+                            {" "}
+                            · <span className="badge mono">{p.document_number}</span>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                     <td className="numeric mono">
@@ -1237,7 +1247,7 @@ export function PurchasesPage() {
                         </div>
                       )}
                     </td>
-                    <td className="nowrap">
+                    <td className="nowrap hide-mobile">
                       {p.document_number ? <span className="badge mono">{p.document_number}</span> : <span className="muted">—</span>}
                     </td>
                   </tr>

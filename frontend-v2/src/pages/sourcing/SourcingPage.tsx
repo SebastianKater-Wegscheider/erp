@@ -410,13 +410,13 @@ export function SourcingPage() {
           <thead>
             <tr>
               <th>Listing</th>
-              <th className="numeric">Preis</th>
-              <th className="numeric">Profit</th>
-              <th className="numeric">ROI</th>
-              <th>Meta</th>
-              <th className="numeric">Matches</th>
-              <th>Status</th>
-              <th className="numeric">Max Buy</th>
+              <th className="numeric hide-mobile">Preis</th>
+              <th className="numeric hide-mobile">Profit</th>
+              <th className="numeric hide-mobile">ROI</th>
+              <th className="hide-mobile">Meta</th>
+              <th className="numeric hide-mobile">Matches</th>
+              <th className="hide-mobile">Status</th>
+              <th className="numeric hide-mobile">Max Buy</th>
             </tr>
           </thead>
           <tbody>
@@ -454,6 +454,15 @@ export function SourcingPage() {
                           </>
                         ) : null}
                       </div>
+                      <div className="only-mobile" style={{ marginTop: 6 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                          <span className={badgeClassForStatus(item.status)}>{item.status}</span>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {fmtEur(item.price_cents)} · Profit {fmtEur(item.estimated_profit_cents)} · ROI {fmtBp(item.estimated_roi_bp)} · Max{" "}
+                            {fmtEur(item.max_purchase_price_cents)} · {item.match_count} Matches
+                          </span>
+                        </div>
+                      </div>
                       <div style={{ marginTop: 6 }}>
                         <a className="link" href={item.url} target="_blank" rel="noreferrer">
                           <ExternalLink size={14} /> öffnen
@@ -462,10 +471,10 @@ export function SourcingPage() {
                     </div>
                   </div>
                 </td>
-                <td className="numeric nowrap">{fmtEur(item.price_cents)}</td>
-                <td className="numeric nowrap">{fmtEur(item.estimated_profit_cents)}</td>
-                <td className="numeric nowrap">{fmtBp(item.estimated_roi_bp)}</td>
-                <td>
+                <td className="numeric nowrap hide-mobile">{fmtEur(item.price_cents)}</td>
+                <td className="numeric nowrap hide-mobile">{fmtEur(item.estimated_profit_cents)}</td>
+                <td className="numeric nowrap hide-mobile">{fmtBp(item.estimated_roi_bp)}</td>
+                <td className="hide-mobile">
                   <div className="muted" style={{ fontSize: 12 }}>
                     Posted: {formatDateTimeLocal(item.posted_at ?? null)}
                   </div>
@@ -478,11 +487,11 @@ export function SourcingPage() {
                     </div>
                   ) : null}
                 </td>
-                <td className="numeric">{item.match_count}</td>
-                <td>
+                <td className="numeric hide-mobile">{item.match_count}</td>
+                <td className="hide-mobile">
                   <span className={badgeClassForStatus(item.status)}>{item.status}</span>
                 </td>
-                <td className="numeric nowrap">{fmtEur(item.max_purchase_price_cents)}</td>
+                <td className="numeric nowrap hide-mobile">{fmtEur(item.max_purchase_price_cents)}</td>
               </tr>
             ))}
             {!items.length && !list.isLoading ? (

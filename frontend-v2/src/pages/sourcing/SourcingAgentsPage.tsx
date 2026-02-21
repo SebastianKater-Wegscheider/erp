@@ -211,8 +211,8 @@ export function SourcingAgentsPage() {
               <tr>
                 <th>Agent</th>
                 <th>Status</th>
-                <th className="numeric">Interval</th>
-                <th className="numeric">Next</th>
+                <th className="numeric hide-mobile">Interval</th>
+                <th className="numeric hide-mobile">Next</th>
               </tr>
             </thead>
             <tbody>
@@ -228,8 +228,8 @@ export function SourcingAgentsPage() {
                   <td>
                     <span className={a.enabled ? "badge badge--ok" : "badge"}>{a.enabled ? "enabled" : "disabled"}</span>
                   </td>
-                  <td className="numeric">{Math.round(a.interval_seconds / 3600)}h</td>
-                  <td className="numeric muted">{formatDateTimeLocal(a.next_run_at ?? null)}</td>
+                  <td className="numeric hide-mobile">{Math.round(a.interval_seconds / 3600)}h</td>
+                  <td className="numeric muted hide-mobile">{formatDateTimeLocal(a.next_run_at ?? null)}</td>
                 </tr>
               ))}
               {!agents.length && !q.isLoading ? (

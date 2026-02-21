@@ -549,9 +549,9 @@ export function SalesPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Datum</th>
-                <th>Kanal</th>
-                <th>Status</th>
+                <th className="hide-mobile">Datum</th>
+                <th className="hide-mobile">Kanal</th>
+                <th className="hide-mobile">Status</th>
                 <th>Käufer</th>
                 <th className="numeric">Brutto</th>
               </tr>
@@ -573,9 +573,9 @@ export function SalesPage() {
                       })
                     }
                   >
-                    <td className="nowrap mono">{o.order_date}</td>
-                    <td>{optionLabel(CHANNEL_OPTIONS, o.channel)}</td>
-                    <td>
+                    <td className="nowrap mono hide-mobile">{o.order_date}</td>
+                    <td className="hide-mobile">{optionLabel(CHANNEL_OPTIONS, o.channel)}</td>
+                    <td className="hide-mobile">
                       <span className={o.status === "FINALIZED" ? "badge badge--ok" : o.status === "DRAFT" ? "badge badge--warn" : "badge"}>
                         {optionLabel(STATUS_OPTIONS, o.status)}
                       </span>
@@ -587,8 +587,17 @@ export function SalesPage() {
                     </td>
                     <td>
                       <div style={{ fontWeight: 650 }}>{o.buyer_name}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        {o.lines.length} Position{ o.lines.length === 1 ? "" : "en" }
+                      <div className="muted only-desktop" style={{ fontSize: 12 }}>
+                        {o.lines.length} Position{o.lines.length === 1 ? "" : "en"}
+                      </div>
+                      <div className="only-mobile" style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                        <span className={o.status === "FINALIZED" ? "badge badge--ok" : o.status === "DRAFT" ? "badge badge--warn" : "badge"}>
+                          {optionLabel(STATUS_OPTIONS, o.status)}
+                        </span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          <span className="mono">{o.order_date}</span> · {optionLabel(CHANNEL_OPTIONS, o.channel)} · {o.lines.length} Pos.
+                          {o.invoice_number ? ` · #${o.invoice_number}` : ""}
+                        </span>
                       </div>
                     </td>
                     <td className="numeric mono">{fmtEur(gross)}</td>

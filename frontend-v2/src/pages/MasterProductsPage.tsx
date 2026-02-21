@@ -357,12 +357,12 @@ export function MasterProductsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>SKU</th>
+                <th className="hide-mobile">SKU</th>
                 <th>Produkt</th>
-                <th>ASIN</th>
-                <th className="numeric">BSR</th>
-                <th className="numeric">Used</th>
-                <th>Amazon</th>
+                <th className="hide-mobile">ASIN</th>
+                <th className="numeric hide-mobile">BSR</th>
+                <th className="numeric hide-mobile">Used</th>
+                <th className="hide-mobile">Amazon</th>
               </tr>
             </thead>
             <tbody>
@@ -377,18 +377,43 @@ export function MasterProductsPage() {
                     }}
                     style={{ cursor: "pointer" }}
                   >
-                    <td className="mono">{m.sku}</td>
+                    <td className="mono hide-mobile">{m.sku}</td>
                     <td>
                       <div style={{ fontWeight: 650 }}>{m.title}</div>
                       <div className="muted" style={{ fontSize: 12 }}>
                         {m.platform} · {m.region}
                         {m.variant ? ` · ${m.variant}` : ""}
                       </div>
+                      <div className="only-mobile muted" style={{ fontSize: 12, marginTop: 4 }}>
+                        <span className="mono">{m.sku}</span> · ASIN <span className="mono">{m.asin ?? "—"}</span> · Used{" "}
+                        {fmtEur(
+                          m.amazon_price_used_good_cents ??
+                            m.amazon_price_used_very_good_cents ??
+                            m.amazon_price_used_like_new_cents ??
+                            m.amazon_price_used_acceptable_cents,
+                        )}
+                      </div>
+                      <div className="only-mobile" style={{ marginTop: 4 }}>
+                        {m.asin ? (
+                          <span className={m.amazon_blocked_last ? "badge badge--danger" : stale ? "badge badge--warn" : "badge badge--ok"}>
+                            {m.amazon_blocked_last ? "blocked" : stale ? "stale" : "fresh"}
+                          </span>
+                        ) : (
+                          <span className="badge">no ASIN</span>
+                        )}
+                      </div>
                     </td>
-                    <td className="mono">{m.asin ?? "—"}</td>
-                    <td className="numeric">{m.amazon_rank_specific ?? m.amazon_rank_overall ?? "—"}</td>
-                    <td className="numeric nowrap">{fmtEur(m.amazon_price_used_good_cents ?? m.amazon_price_used_very_good_cents ?? m.amazon_price_used_like_new_cents ?? m.amazon_price_used_acceptable_cents)}</td>
-                    <td>
+                    <td className="mono hide-mobile">{m.asin ?? "—"}</td>
+                    <td className="numeric hide-mobile">{m.amazon_rank_specific ?? m.amazon_rank_overall ?? "—"}</td>
+                    <td className="numeric nowrap hide-mobile">
+                      {fmtEur(
+                        m.amazon_price_used_good_cents ??
+                          m.amazon_price_used_very_good_cents ??
+                          m.amazon_price_used_like_new_cents ??
+                          m.amazon_price_used_acceptable_cents,
+                      )}
+                    </td>
+                    <td className="hide-mobile">
                       {m.asin ? (
                         <span className={m.amazon_blocked_last ? "badge badge--danger" : stale ? "badge badge--warn" : "badge badge--ok"}>
                           {m.amazon_blocked_last ? "blocked" : stale ? "stale" : "fresh"}

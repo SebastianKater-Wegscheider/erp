@@ -507,11 +507,11 @@ export function MarketplacePage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Datum</th>
-                  <th>Kanal</th>
+                  <th className="hide-mobile">Datum</th>
+                  <th className="hide-mobile">Kanal</th>
                   <th>Externe ID</th>
-                  <th>Status</th>
-                  <th className="numeric">Lines</th>
+                  <th className="hide-mobile">Status</th>
+                  <th className="numeric hide-mobile">Lines</th>
                   <th className="numeric">No Match</th>
                 </tr>
               </thead>
@@ -522,13 +522,21 @@ export function MarketplacePage() {
                     style={{ cursor: "pointer", background: o.id === selectedOrderId ? "var(--surface-2)" : undefined }}
                     onClick={() => setSelectedOrderId(o.id)}
                   >
-                    <td className="mono nowrap">{o.order_date}</td>
-                    <td className="mono">{o.channel}</td>
-                    <td className="mono">{o.external_order_id}</td>
-                    <td>
+                    <td className="mono nowrap hide-mobile">{o.order_date}</td>
+                    <td className="mono hide-mobile">{o.channel}</td>
+                    <td className="mono">
+                      {o.external_order_id}
+                      <div className="only-mobile" style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                        <span className={badgeClassForStatus(o.status)}>{STAGED_STATUS_LABEL[o.status]}</span>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          <span className="mono">{o.order_date}</span> · {o.channel} · {o.lines.length} Lines
+                        </span>
+                      </div>
+                    </td>
+                    <td className="hide-mobile">
                       <span className={badgeClassForStatus(o.status)}>{STAGED_STATUS_LABEL[o.status]}</span>
                     </td>
-                    <td className="numeric mono">{o.lines.length}</td>
+                    <td className="numeric mono hide-mobile">{o.lines.length}</td>
                     <td className="numeric mono">{countUnmatched(o)}</td>
                   </tr>
                 ))}
