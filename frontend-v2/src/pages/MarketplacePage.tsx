@@ -487,7 +487,7 @@ export function MarketplacePage() {
       ) : null}
 
       {tab === "review" ? (
-        <div className="split" style={{ gridTemplateColumns: "1fr 520px" }}>
+        <div className="split" style={{ gridTemplateColumns: "1fr 520px" }} data-mobile={selectedOrderId ? "detail" : "list"}>
           <div className="panel">
             <div className="toolbar" style={{ marginBottom: 10 }}>
               <select className="input" style={{ width: 180 }} value={reviewStatus} onChange={(e) => setReviewStatus(e.target.value)}>
@@ -551,6 +551,13 @@ export function MarketplacePage() {
           </div>
 
           <div className="panel">
+            {selectedOrderId ? (
+              <div className="only-mobile" style={{ marginBottom: 8 }}>
+                <Button variant="secondary" size="sm" onClick={() => setSelectedOrderId(null)}>
+                  ← Zur Liste
+                </Button>
+              </div>
+            ) : null}
             {!selectedOrder ? (
               <div className="muted" style={{ fontSize: 13 }}>
                 Bestellung auswählen.

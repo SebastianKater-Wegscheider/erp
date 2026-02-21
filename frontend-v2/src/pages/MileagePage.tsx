@@ -292,6 +292,16 @@ export function MileagePage() {
     });
   }
 
+  function backToList() {
+    resetForm();
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("mode", "view");
+      next.delete("selected");
+      return next;
+    });
+  }
+
   async function calculateRoute() {
     if (!start.trim() || !destination.trim()) {
       setRouteError("Bitte Start und Ziel ausfüllen.");
@@ -353,7 +363,7 @@ export function MileagePage() {
 
       {errors.length ? <InlineAlert tone="error">{errors[0].message}</InlineAlert> : null}
 
-      <div className="split" style={{ gridTemplateColumns: "1fr 540px" }}>
+      <div className="split" style={{ gridTemplateColumns: "1fr 540px" }} data-mobile={selectedId ? "detail" : "list"}>
         <div className="panel">
           <div className="toolbar" style={{ marginBottom: 10 }}>
             <input
@@ -424,6 +434,13 @@ export function MileagePage() {
         </div>
 
         <div className="panel">
+          {selectedId ? (
+            <div className="only-mobile" style={{ marginBottom: 8 }}>
+              <Button variant="secondary" size="sm" onClick={backToList}>
+                ← Zur Liste
+              </Button>
+            </div>
+          ) : null}
           {mode === "edit" ? (
             <div className="stack">
               <div className="toolbar" style={{ justifyContent: "space-between" }}>
@@ -562,4 +579,3 @@ export function MileagePage() {
     </div>
   );
 }
-

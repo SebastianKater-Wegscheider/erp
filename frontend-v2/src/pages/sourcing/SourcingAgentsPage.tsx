@@ -190,7 +190,7 @@ export function SourcingAgentsPage() {
 
       {q.isError ? <InlineAlert tone="error">Agents konnten nicht geladen werden.</InlineAlert> : null}
 
-      <div className="split">
+      <div className="split" data-mobile={selectedId ? "detail" : "list"}>
         <div className="panel">
           <div className="panel-title">Agent Liste</div>
           <div className="panel-sub">Klicke einen Agenten, um ihn zu bearbeiten.</div>
@@ -244,6 +244,13 @@ export function SourcingAgentsPage() {
         </div>
 
         <div className="panel">
+          {selectedId ? (
+            <div className="only-mobile" style={{ marginBottom: 8 }}>
+              <Button variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
+                ← Zur Liste
+              </Button>
+            </div>
+          ) : null}
           <div className="panel-title">Agent bearbeiten</div>
           <div className="panel-sub">{selected ? selected.id : "Wähle links einen Agenten aus."}</div>
 

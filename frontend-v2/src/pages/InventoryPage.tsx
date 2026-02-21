@@ -570,7 +570,7 @@ export function InventoryPage() {
         </InlineAlert>
       ) : null}
 
-      <div className="split">
+      <div className="split" data-mobile={selectedId ? "detail" : "list"}>
         <div className="panel">
           <div className="toolbar" style={{ marginBottom: 10 }}>
             <input
@@ -861,6 +861,20 @@ export function InventoryPage() {
         </div>
 
         <div className="panel">
+          {selectedId ? (
+            <div className="only-mobile" style={{ marginBottom: 8 }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  params.delete("selected");
+                  setParams(params, { replace: true });
+                }}
+              >
+                ← Zur Liste
+              </Button>
+            </div>
+          ) : null}
           <div className="panel-title">Item Details</div>
           <div className="panel-sub">{selected ? selected.id : "Wähle links ein Item aus."}</div>
 

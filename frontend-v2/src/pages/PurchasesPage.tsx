@@ -1038,6 +1038,22 @@ export function PurchasesPage() {
     });
   }
 
+  function backToList() {
+    if (mode === "edit") {
+      if (hasDraftChanges()) {
+        const ok = window.confirm("Ungespeicherte Eingaben oder Uploads gehen verloren. Trotzdem zur Liste zurück?");
+        if (!ok) return;
+      }
+      resetDraft();
+    }
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("mode", "view");
+      next.delete("selected");
+      return next;
+    });
+  }
+
   function openEditorForSelected() {
     if (!selectedPurchase) return;
     if (lockedSelected) return;
@@ -1127,7 +1143,7 @@ export function PurchasesPage() {
         </InlineAlert>
       )}
 
-      <div className="split" style={{ gridTemplateColumns: "1fr 540px" }}>
+      <div className="split" style={{ gridTemplateColumns: "1fr 540px" }} data-mobile={selectedId ? "detail" : "list"}>
         <div className="panel">
           <div className="toolbar" style={{ marginBottom: 10 }}>
             <input
@@ -1239,6 +1255,13 @@ export function PurchasesPage() {
         </div>
 
         <div className="panel">
+          {selectedId ? (
+            <div className="only-mobile" style={{ marginBottom: 8 }}>
+              <Button variant="secondary" size="sm" onClick={backToList}>
+                ← Zur Liste
+              </Button>
+            </div>
+          ) : null}
           {selectedId === "new" || mode === "edit" ? (
             <div className="stack">
               <div className="toolbar" style={{ justifyContent: "space-between" }}>

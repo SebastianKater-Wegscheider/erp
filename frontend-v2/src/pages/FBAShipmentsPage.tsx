@@ -213,8 +213,7 @@ export function FBAShipmentsPage() {
     onError: (e: any) => setMessage(String(e?.message ?? "Receive fehlgeschlagen")),
   });
 
-  function openCreate() {
-    setSelectedId(null);
+  function resetDraft() {
     setMode("edit");
     setName("");
     setShippingCost("0,00");
@@ -224,6 +223,16 @@ export function FBAShipmentsPage() {
     setSelectedItemIds([]);
     setSearchInventory("");
     setReceiveStateByItemId({});
+  }
+
+  function openCreate() {
+    resetDraft();
+    setSelectedId("new");
+  }
+
+  function backToList() {
+    resetDraft();
+    setSelectedId(null);
   }
 
   function openEdit(shipment: ShipmentOut) {
@@ -280,7 +289,7 @@ export function FBAShipmentsPage() {
         </InlineAlert>
       ) : null}
 
-      <div className="split">
+      <div className="split" data-mobile={selectedId ? "detail" : "list"}>
         <div className="panel">
           <div className="toolbar" style={{ marginBottom: 10 }}>
             <input
@@ -344,6 +353,13 @@ export function FBAShipmentsPage() {
         </div>
 
         <div className="panel">
+          {selectedId ? (
+            <div className="only-mobile" style={{ marginBottom: 8 }}>
+              <Button variant="secondary" size="sm" onClick={backToList}>
+                ← Zur Liste
+              </Button>
+            </div>
+          ) : null}
           <div className="panel-title">{mode === "receive" ? "Empfang" : selected ? "Draft bearbeiten" : "Neue Sendung"}</div>
           <div className="panel-sub">{selected ? selected.id : "Erstelle eine neue Sendung oder wähle links eine aus."}</div>
 

@@ -300,7 +300,7 @@ export function MasterProductsPage() {
         </InlineAlert>
       ) : null}
 
-      <div className="split">
+      <div className="split" data-mobile={selectedId ? "detail" : "list"}>
         <div className="panel">
           <div className="toolbar" style={{ marginBottom: 10 }}>
             <input
@@ -330,7 +330,7 @@ export function MasterProductsPage() {
               variant="primary"
               size="sm"
               onClick={() => {
-                params.delete("selected");
+                params.set("selected", "new");
                 setParams(params, { replace: true });
                 setDraft({
                   kind: "GAME",
@@ -427,6 +427,35 @@ export function MasterProductsPage() {
         </div>
 
         <div className="panel">
+          {selectedId ? (
+            <div className="only-mobile" style={{ marginBottom: 8 }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (
+                    selectedId === "new" &&
+                    (draft.title.trim() ||
+                      draft.platform.trim() ||
+                      draft.variant.trim() ||
+                      String(draft.ean ?? "").trim() ||
+                      String(draft.asin ?? "").trim() ||
+                      String(draft.manufacturer ?? "").trim() ||
+                      String(draft.model ?? "").trim() ||
+                      String(draft.genre ?? "").trim() ||
+                      String(draft.reference_image_url ?? "").trim())
+                  ) {
+                    const ok = window.confirm("Ungespeicherte Eingaben gehen verloren. Trotzdem zur Liste zurück?");
+                    if (!ok) return;
+                  }
+                  params.delete("selected");
+                  setParams(params, { replace: true });
+                }}
+              >
+                ← Zur Liste
+              </Button>
+            </div>
+          ) : null}
           <div className="panel-title">{selected ? "Bearbeiten" : "Neues Master Product"}</div>
           <div className="panel-sub">{selected ? selected.id : "Fülle die Felder aus und erstelle ein neues Produkt."}</div>
 
@@ -599,4 +628,3 @@ export function MasterProductsPage() {
     </div>
   );
 }
-
