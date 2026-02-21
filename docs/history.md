@@ -28,6 +28,9 @@
   - Attachment-Flow: Upload sofort, Verknuepfung nach Save; MARKET_COMP kann (PAIV) an konkrete Positionen gebunden werden.
   - Mileage: optionale Fahrt direkt am Einkauf inkl. OSRM/Nominatim Routen-Preview (Leaflet), damit km nicht manuell geschaetzt werden.
   - Minimal UI-Primitives (`Modal`, `SearchCombo`) werden bewusst generisch gehalten, um sie fuer Sales/Marketplace wiederzuverwenden.
+- Danach wird **Verkaeufe** portiert (ebenfalls Split-View) mit Fokus auf:
+  - Draft → Finalize → Invoice PDF, inkl. Reopen-Guardrails (keine Corrections) und Status-getriebenen Actions.
+  - Korrekturen/Returns direkt am Auftrag (inkl. PDF-Generierung), damit Accounting-Durchlauf ohne Kontextwechsel klappt.
 
 ## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
 
