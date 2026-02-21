@@ -33,6 +33,11 @@
   - Korrekturen/Returns direkt am Auftrag (inkl. PDF-Generierung), damit Accounting-Durchlauf ohne Kontextwechsel klappt.
 - **Marktplatz** wird als Import-Pipeline umgesetzt: CSV → Auto-Matching → Review/Override → Apply; separater Payout-CSV Import erzeugt Ledger-Entries.
 - Accounting-Operatoren in v2: **Kostenverteilung**, **OpEx**, **Fahrtenbuch**, **USt-Report** werden portiert (ohne UI-Overhead, mit den gleichen API-Guards wie v1).
+- Dashboard v2 wird als **Tagesarbeits-Queue** gedacht statt als "Charts-Page":
+  - KPI-Topline (Lagerwert/Profit/Umsatz) als schneller Kontext, ohne visuelle Ablenkung.
+  - "Naechste Schritte" sind direkte Links in die operativen Queues (Sales-Drafts, fehlende Fotos/Lagerplaetze, Altbestand).
+  - Cash/Accounting Snapshot (inkl. Insights) ist ausklappbar, damit das Tagesgeschaeft nicht blockiert, aber Finance stets greifbar bleibt.
+  - Amazon Opportunities und Produkt-Top/Worst sind bewusst tabellarisch (scanbar, klickbar) statt als Diagramm.
 
 ## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
 
