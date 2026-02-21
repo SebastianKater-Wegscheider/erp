@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { useApi } from "../api/api";
 import { formatDateLocal, formatDateTimeLocal } from "../lib/dates";
 import { fmtEur } from "../lib/money";
+import { resolveReferenceImageSrc } from "../lib/referenceImages";
 import { Button } from "../ui/Button";
 import { InlineAlert } from "../ui/InlineAlert";
 
@@ -631,7 +632,8 @@ export function InventoryPage() {
             <tbody>
               {rows.map((row) => {
                 const mp = mpById.get(row.master_product_id) ?? null;
-                const thumb = rowThumbUrls[row.id] ?? "";
+                const customThumb = rowThumbUrls[row.id] ?? "";
+                const referenceThumb = mp ? resolveReferenceImageSrc(mp.reference_image_url) : "";
                 const isSelected = selectedId === row.id;
                 return (
                   <tr
@@ -644,24 +646,51 @@ export function InventoryPage() {
                   >
                     <td>
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                        <div
-                          style={{
-                            width: 44,
-                            height: 44,
-                            borderRadius: 12,
-                            border: "1px solid var(--border)",
-                            background: "var(--surface-2)",
-                            overflow: "hidden",
-                            flex: "0 0 auto",
-                          }}
-                        >
-                          {thumb ? (
-                            <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          ) : null}
+                        <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
+                          <div
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: 12,
+                              border: "1px solid var(--border)",
+                              background: "var(--surface-2)",
+                              overflow: "hidden",
+                              flex: "0 0 auto",
+                            }}
+                            title="Item Fotos"
+                          >
+                            {customThumb ? (
+                              <img src={customThumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 12 }}>
+                                —
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: 12,
+                              border: "1px solid var(--border)",
+                              background: "var(--surface-2)",
+                              overflow: "hidden",
+                              flex: "0 0 auto",
+                            }}
+                            title="Master Product Referenzbild"
+                          >
+                            {referenceThumb ? (
+                              <img src={referenceThumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 12 }}>
+                                —
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 650, letterSpacing: "-0.01em" }}>
-                            <span className="mono">{row.item_code}</span>{" "}
                             {mp ? <span title={mp.title}>{mp.title}</span> : <span className="muted">({row.master_product_id})</span>}
                           </div>
                           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
@@ -854,7 +883,7 @@ export function InventoryPage() {
                 <div className="card" style={{ boxShadow: "none" }}>
                   <div style={{ fontWeight: 650 }}>Master Product</div>
                   <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                    {selectedMaster.sku} · {selectedMaster.platform} · {selectedMaster.region}
+                    {selectedMaster.platform} · {selectedMaster.region}
                     {selectedMaster.variant ? ` · ${selectedMaster.variant}` : ""}
                   </div>
                   <div style={{ marginTop: 8 }}>{selectedMaster.title}</div>
