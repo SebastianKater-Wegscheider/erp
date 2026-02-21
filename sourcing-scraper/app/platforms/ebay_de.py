@@ -27,6 +27,19 @@ _CAPTCHA_EVAL_SCRIPT = """(() => {
   return t.includes("captcha") || t.includes("sicherheitsabfrage") || Boolean(document.querySelector("iframe[src*='captcha']"));
 })()"""
 
+_UNAVAILABLE_EVAL_SCRIPT = """(() => {
+  const t = (document.body && document.body.innerText ? document.body.innerText : "").toLowerCase();
+  const title = (document.title || "").toLowerCase();
+  const hints = [
+    "angebot wurde beendet",
+    "this listing was ended",
+    "dieses angebot ist nicht mehr verf",
+    "the item is no longer available",
+    "doesn't exist",
+  ];
+  return hints.some((h) => t.includes(h)) || title.includes("404");
+})()"""
+
 _EXTRACTION_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "extraction" / "extract_ebay_listings.js"
 _DETAIL_EXTRACTION_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "extraction" / "extract_ebay_listing_detail.js"
 _AGENT_BROWSER_BINARY = "agent-browser"
@@ -577,6 +590,27 @@ async def scrape_ebay_de_listing_detail(
                     error_message="Captcha detected",
                     listing={},
                 )
+            try:
+                unavailable_payload = _run_agent_browser(
+                    args=[
+                        "--session",
+                        f"{agent_browser_session_name}-ebay",
+                        "--profile",
+                        agent_browser_profile_path,
+                        "eval",
+                        _UNAVAILABLE_EVAL_SCRIPT,
+                    ],
+                    timeout_seconds=timeout_seconds,
+                )
+                if unavailable_payload.get("data", {}).get("result") is True:
+                    return EbayListingDetailResult(
+                        blocked=False,
+                        error_type="not_available",
+                        error_message="Listing is not available",
+                        listing={},
+                    )
+            except Exception:
+                pass
             return EbayListingDetailResult(
                 blocked=False,
                 error_type=None,
@@ -594,6 +628,13 @@ async def scrape_ebay_de_listing_detail(
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         try:
             resp = await client.get(listing_url, headers=headers)
+            if resp.status_code == 404:
+                return EbayListingDetailResult(
+                    blocked=False,
+                    error_type="not_found",
+                    error_message="404 Not Found",
+                    listing={},
+                )
             resp.raise_for_status()
             body = resp.text
         except Exception as exc:
@@ -610,6 +651,22 @@ async def scrape_ebay_de_listing_detail(
             blocked=True,
             error_type="captcha",
             error_message="Captcha detected",
+            listing={},
+        )
+    if any(
+        token in lowered
+        for token in (
+            "angebot wurde beendet",
+            "this listing was ended",
+            "dieses angebot ist nicht mehr verf",
+            "the item is no longer available",
+            "doesn't exist",
+        )
+    ):
+        return EbayListingDetailResult(
+            blocked=False,
+            error_type="not_available",
+            error_message="Listing is not available",
             listing={},
         )
 

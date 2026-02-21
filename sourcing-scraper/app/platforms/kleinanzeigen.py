@@ -26,6 +26,21 @@ _CAPTCHA_EVAL_SCRIPT = """(() => {
   return hasCaptchaNode || t.includes("sicherheitsabfrage") || t.includes("captcha");
 })()"""
 
+_UNAVAILABLE_EVAL_SCRIPT = """(() => {
+  const t = (document.body && document.body.innerText ? document.body.innerText : "").toLowerCase();
+  const title = (document.title || "").toLowerCase();
+  const hints = [
+    "anzeige ist nicht mehr verf",
+    "leider ist diese anzeige nicht mehr verf",
+    "diese anzeige ist nicht mehr verf",
+    "anzeige wurde gel",
+    "anzeige wurde deaktiv",
+    "angebot ist nicht mehr verf",
+    "nicht mehr online",
+  ];
+  return hints.some((h) => t.includes(h)) || title.includes("404");
+})()"""
+
 _EXTRACTION_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "extraction" / "extract_listings.js"
 _DETAIL_EXTRACTION_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "extraction" / "extract_listing_detail.js"
 _AGENT_BROWSER_BINARY = "agent-browser"
@@ -550,6 +565,27 @@ async def scrape_kleinanzeigen_listing_detail(
                     error_message="Captcha detected",
                     listing={},
                 )
+            try:
+                unavailable_payload = _run_agent_browser(
+                    args=[
+                        "--session",
+                        agent_browser_session_name,
+                        "--profile",
+                        agent_browser_profile_path,
+                        "eval",
+                        _UNAVAILABLE_EVAL_SCRIPT,
+                    ],
+                    timeout_seconds=timeout_seconds,
+                )
+                if unavailable_payload.get("data", {}).get("result") is True:
+                    return KleinanzeigenListingDetailResult(
+                        blocked=False,
+                        error_type="not_available",
+                        error_message="Listing is not available",
+                        listing={},
+                    )
+            except Exception:
+                pass
             return KleinanzeigenListingDetailResult(
                 blocked=False,
                 error_type=None,
@@ -568,6 +604,13 @@ async def scrape_kleinanzeigen_listing_detail(
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         try:
             resp = await client.get(listing_url, headers=headers)
+            if resp.status_code == 404:
+                return KleinanzeigenListingDetailResult(
+                    blocked=False,
+                    error_type="not_found",
+                    error_message="404 Not Found",
+                    listing={},
+                )
             resp.raise_for_status()
             body = resp.text
         except Exception as exc:
@@ -584,6 +627,24 @@ async def scrape_kleinanzeigen_listing_detail(
             blocked=True,
             error_type="captcha",
             error_message="Captcha detected",
+            listing={},
+        )
+    if any(
+        token in lowered
+        for token in (
+            "anzeige ist nicht mehr verf",
+            "leider ist diese anzeige nicht mehr verf",
+            "diese anzeige ist nicht mehr verf",
+            "anzeige wurde gel",
+            "anzeige wurde deaktiv",
+            "angebot ist nicht mehr verf",
+            "nicht mehr online",
+        )
+    ):
+        return KleinanzeigenListingDetailResult(
+            blocked=False,
+            error_type="not_available",
+            error_message="Listing is not available",
             listing={},
         )
 
