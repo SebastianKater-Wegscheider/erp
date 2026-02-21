@@ -1,5 +1,27 @@
 # History
 
+## 2026-02-21 - Frontend v2: Minimalistische UX-Neustartlinie (parallel zu v1)
+
+### Ausgangslage
+- Frontend v1 ist funktional und feature-reich, wirkt aber visuell und strukturell ueberladen (hohe kognitive Last, inkonsistente Patterns).
+- Der UX-Audit (2026-02-17) zeigt zusaetzlich konkrete Guardrail-Themen: Auth-Flow, Sprachmix sowie Betriebs-/Build-Hygiene.
+
+### Business-Entscheidungen
+- V2 wird **parallel** zu v1 aufgebaut (kein Big-Bang-Replace). v1 bleibt als Referenz und Fallback fuer Vollstaendigkeit bestehen.
+- Ziel ist eine Operator-UX mit maximalem Signal/Rauschen-Verhaeltnis: klare Informationshierarchie, schnelle Navigation, praezise States/Fehlermeldungen.
+- Iterationsstrategie: zuerst ein stabiler Kern (Auth + Shell + Kernmodule), danach schrittweises Portieren/Neudenken der restlichen Module.
+
+### Technische Entscheidungen
+- Neues Paket `frontend-v2/` als eigenstaendiger Vite+React+TypeScript Client, bewusst **minimal** in Dependencies und UI-Frameworking.
+- Auth-Flow wird strikt: kein App-Shell-Render, bevor Basic-Auth gegen die API erfolgreich verifiziert wurde; bei `401` wird Session sofort geloescht.
+- Datenlayer via TanStack Query (Caching, Retry, konsistente Loading/Error-States); API-Wrapper bleibt bewusst duenn.
+- Routing via React Router mit `AppShell` Layout (Navigation + Content), damit Module konsistent wirken.
+- Lokale Runtime: Compose bekommt optionalen `frontend-v2` Service auf eigenem Port; CORS-Defaults werden fuer parallelen Betrieb ergaenzt.
+
+### Trade-offs
+- Parallelbetrieb bedeutet kurzfristig doppelte UI-Pflege, senkt aber das Risiko und erlaubt eine saubere Migration mit klaren Cutover-Punkten.
+- Minimalismus verzichtet initial auf dekorative UI und manche Komfortfunktionen; Fokus liegt zuerst auf Stabilitaet, Klarheit und Geschwindigkeit.
+
 ## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
 
 ### Ausgangslage
