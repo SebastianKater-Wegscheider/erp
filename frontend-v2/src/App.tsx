@@ -8,10 +8,13 @@ import { FBAShipmentsPage } from "./pages/FBAShipmentsPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { MasterProductsPage } from "./pages/MasterProductsPage";
 import { MarketplacePage } from "./pages/MarketplacePage";
+import { MileagePage } from "./pages/MileagePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { OpexPage } from "./pages/OpexPage";
 import { PurchasesPage } from "./pages/PurchasesPage";
 import { SalesPage } from "./pages/SalesPage";
-import { StubPage } from "./pages/StubPage";
+import { VatPage } from "./pages/VatPage";
+import { CostAllocationsPage } from "./pages/CostAllocationsPage";
 import { SourcingAgentsPage } from "./pages/sourcing/SourcingAgentsPage";
 import { SourcingDetailPage } from "./pages/sourcing/SourcingDetailPage";
 import { SourcingPage } from "./pages/sourcing/SourcingPage";
@@ -37,10 +40,10 @@ export function App() {
           <Route path="/purchases" element={<PurchasesPage />} />
           <Route path="/sales" element={<SalesPage />} />
           <Route path="/marketplace" element={<MarketplacePage />} />
-          <Route path="/cost-allocations" element={<StubPage title="Kostenverteilung" />} />
-          <Route path="/opex" element={<StubPage title="Betriebsausgaben" />} />
-          <Route path="/mileage" element={<StubPage title="Fahrtenbuch" />} />
-          <Route path="/vat" element={<StubPage title="Umsatzsteuer" />} />
+          <Route path="/cost-allocations" element={<CostAllocationsPage />} />
+          <Route path="/opex" element={<OpexPage />} />
+          <Route path="/mileage" element={<MileagePage />} />
+          <Route path="/vat" element={<VatPage />} />
         </Route>
       </Route>
 

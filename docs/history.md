@@ -32,6 +32,7 @@
   - Draft → Finalize → Invoice PDF, inkl. Reopen-Guardrails (keine Corrections) und Status-getriebenen Actions.
   - Korrekturen/Returns direkt am Auftrag (inkl. PDF-Generierung), damit Accounting-Durchlauf ohne Kontextwechsel klappt.
 - **Marktplatz** wird als Import-Pipeline umgesetzt: CSV → Auto-Matching → Review/Override → Apply; separater Payout-CSV Import erzeugt Ledger-Entries.
+- Accounting-Operatoren in v2: **Kostenverteilung**, **OpEx**, **Fahrtenbuch**, **USt-Report** werden portiert (ohne UI-Overhead, mit den gleichen API-Guards wie v1).
 
 ## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
 
