@@ -4,7 +4,9 @@ import { AppShell } from "./app/AppShell";
 import { LoginPage } from "./auth/LoginPage";
 import { RequireAuth } from "./auth/RequireAuth";
 import { DashboardPage } from "./pages/DashboardPage";
+import { FBAShipmentsPage } from "./pages/FBAShipmentsPage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { MasterProductsPage } from "./pages/MasterProductsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { StubPage } from "./pages/StubPage";
 import { SourcingAgentsPage } from "./pages/sourcing/SourcingAgentsPage";
@@ -27,8 +29,8 @@ export function App() {
           <Route path="/sourcing/:id" element={<SourcingDetailPage />} />
           <Route path="/sourcing/settings" element={<SourcingSettingsPage />} />
           <Route path="/sourcing/agents" element={<SourcingAgentsPage />} />
-          <Route path="/master-products" element={<StubPage title="Produktstamm" />} />
-          <Route path="/fba-shipments" element={<StubPage title="FBA Sendungen" />} />
+          <Route path="/master-products" element={<MasterProductsPage />} />
+          <Route path="/fba-shipments" element={<FBAShipmentsPage />} />
           <Route path="/purchases" element={<StubPage title="Einkäufe" />} />
           <Route path="/sales" element={<StubPage title="Verkäufe" />} />
           <Route path="/marketplace" element={<StubPage title="Marktplatz" />} />

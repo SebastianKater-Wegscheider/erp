@@ -66,8 +66,58 @@ export function useApi() {
     () => ({
       request: <T,>(path: string, options?: RequestInit & { json?: unknown }) =>
         requestInternal<T>(path, options, credentials, logout),
+      uploadFile: async (file: File): Promise<{ upload_path: string }> => {
+        if (!credentials) throw new ApiError("Nicht angemeldet", 401);
+        const headers = new Headers();
+        headers.set("Authorization", basicAuthHeader(credentials));
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch(`${API_BASE_URL}/uploads`, { method: "POST", headers, body: fd });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => undefined);
+          if (res.status === 401) logout();
+          throw new ApiError("Upload fehlgeschlagen", res.status, detail);
+        }
+        return (await res.json()) as { upload_path: string };
+      },
+      fileBlob: async (relPath: string): Promise<Blob> => {
+        if (!credentials) throw new ApiError("Nicht angemeldet", 401);
+        const headers = new Headers();
+        headers.set("Authorization", basicAuthHeader(credentials));
+        const safeRel = relPath.replace(/^\/+/, "");
+        const url = `${API_BASE_URL}/files/${safeRel}?t=${Date.now()}`;
+        const res = await fetch(url, { headers, cache: "no-store" });
+        if (!res.ok) {
+          if (res.status === 401) logout();
+          throw new ApiError("Download fehlgeschlagen", res.status);
+        }
+        return await res.blob();
+      },
+      download: async (relPath: string, filename?: string): Promise<void> => {
+        const blob = await (async () => {
+          if (!credentials) throw new ApiError("Nicht angemeldet", 401);
+          const headers = new Headers();
+          headers.set("Authorization", basicAuthHeader(credentials));
+          const safeRel = relPath.replace(/^\/+/, "");
+          const url = `${API_BASE_URL}/files/${safeRel}?t=${Date.now()}`;
+          const res = await fetch(url, { headers, cache: "no-store" });
+          if (!res.ok) {
+            if (res.status === 401) logout();
+            throw new ApiError("Download fehlgeschlagen", res.status);
+          }
+          return await res.blob();
+        })();
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename ?? relPath.split("/").pop() ?? "download";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      },
     }),
     [credentials, logout],
   );
 }
-
