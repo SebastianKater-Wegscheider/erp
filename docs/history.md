@@ -1022,3 +1022,22 @@
 ### Validation
 - `frontend`: `npm test`, `npm run typecheck`, `npm run build` erfolgreich.
 - `sourcing-scraper`: `python3 -m py_compile sourcing-scraper/app/platforms/ebay_de.py` erfolgreich.
+
+## 2026-02-21 - Planned mobile UX optimization for frontend-v2 (keep desktop consistent)
+
+### Business perspective
+- Operator nutzt das ERP auch am Handy (schnelle Checks/Änderungen unterwegs). Das bisherige responsive Verhalten (Split-Panels stapeln) erzeugt zu viel Scroll/Context-Switching und erhöht Fehlbedienungsrisiko.
+- Ziel: mobile-first Master/Detail-Flows (Liste → Detail → zurück) ohne Desktop-Regression.
+
+### Technical intent
+- Globales responsive UI-Toolkit in `frontend-v2`:
+  - Utility-Klassen (`only-mobile`, `only-desktop`, `hide-mobile`) für gezieltes Ein-/Ausblenden.
+  - Mobile Master/Detail für `.split` über `data-mobile="list|detail"`: auf kleinen Viewports wird je nach State entweder Liste oder Detail angezeigt (kein „Liste + Detail untereinander“).
+- Seitenweise Umsetzung ohne neue Routen:
+  - Bestehende `selected`/`mode` Query-Params bzw. lokaler `selectedId` werden genutzt, um `data-mobile` zu setzen.
+  - Mobile „Zurück“-CTA im Detail-Panel leert die Selection (und schützt ggf. vor Datenverlust im Edit-Modus).
+- Tabellen auf Mobile reduzieren:
+  - Low-value Spalten ausblenden, Kerninfos in erste Spalte verdichten.
+
+### Risk handling
+- Änderungen sind viewport-gebunden (nur `max-width: 900px`) und additive CSS/React-UI Anpassungen; keine Backend/API Änderungen.

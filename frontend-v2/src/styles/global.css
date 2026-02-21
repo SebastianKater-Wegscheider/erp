@@ -71,6 +71,10 @@ textarea {
   color: var(--muted);
 }
 
+.only-mobile {
+  display: none !important;
+}
+
 .h1 {
   font-size: 18px;
   font-weight: 650;
@@ -666,12 +670,29 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .only-mobile {
+    display: revert !important;
+  }
+
+  .only-desktop,
+  .hide-mobile {
+    display: none !important;
+  }
+
   .shell {
     grid-template-columns: 1fr;
   }
 
   .split {
     grid-template-columns: 1fr;
+  }
+
+  .split[data-mobile="list"] > :nth-child(2) {
+    display: none;
+  }
+
+  .split[data-mobile="detail"] > :first-child {
+    display: none;
   }
 
   .topbar-menu {
