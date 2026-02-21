@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 
 import "./styles/global.css";
+import "leaflet/dist/leaflet.css";
 import { applyTheme, getInitialTheme } from "./app/theme";
 import { App } from "./App";
 import { AuthProvider } from "./auth/auth";

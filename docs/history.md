@@ -22,6 +22,13 @@
 - Parallelbetrieb bedeutet kurzfristig doppelte UI-Pflege, senkt aber das Risiko und erlaubt eine saubere Migration mit klaren Cutover-Punkten.
 - Minimalismus verzichtet initial auf dekorative UI und manche Komfortfunktionen; Fokus liegt zuerst auf Stabilitaet, Klarheit und Geschwindigkeit.
 
+### Umsetzung (Start)
+- `frontend-v2` erhaelt als erstes grosses "Operator-Modul" **Einkaeufe** inkl.:
+  - Split-View (Liste links, Editor/Detail rechts) fuer schnelle Bearbeitung ohne Kontextwechsel.
+  - Attachment-Flow: Upload sofort, Verknuepfung nach Save; MARKET_COMP kann (PAIV) an konkrete Positionen gebunden werden.
+  - Mileage: optionale Fahrt direkt am Einkauf inkl. OSRM/Nominatim Routen-Preview (Leaflet), damit km nicht manuell geschaetzt werden.
+  - Minimal UI-Primitives (`Modal`, `SearchCombo`) werden bewusst generisch gehalten, um sie fuer Sales/Marketplace wiederzuverwenden.
+
 ## 2026-02-17 - Phase 2 Umsetzung: Hardening mit Fokus auf Beobachtbarkeit, Deduplizierung und Guardrails
 
 ### Ausgangslage

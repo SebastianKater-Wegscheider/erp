@@ -8,6 +8,7 @@ import { FBAShipmentsPage } from "./pages/FBAShipmentsPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { MasterProductsPage } from "./pages/MasterProductsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { PurchasesPage } from "./pages/PurchasesPage";
 import { StubPage } from "./pages/StubPage";
 import { SourcingAgentsPage } from "./pages/sourcing/SourcingAgentsPage";
 import { SourcingDetailPage } from "./pages/sourcing/SourcingDetailPage";
@@ -31,7 +32,7 @@ export function App() {
           <Route path="/sourcing/agents" element={<SourcingAgentsPage />} />
           <Route path="/master-products" element={<MasterProductsPage />} />
           <Route path="/fba-shipments" element={<FBAShipmentsPage />} />
-          <Route path="/purchases" element={<StubPage title="Einkäufe" />} />
+          <Route path="/purchases" element={<PurchasesPage />} />
           <Route path="/sales" element={<StubPage title="Verkäufe" />} />
           <Route path="/marketplace" element={<StubPage title="Marktplatz" />} />
           <Route path="/cost-allocations" element={<StubPage title="Kostenverteilung" />} />
