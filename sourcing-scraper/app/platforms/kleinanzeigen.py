@@ -224,6 +224,52 @@ def _normalize_listing_detail(entry: dict) -> dict:
     }
 
 
+def _detail_needs_http_fallback(detail: dict) -> bool:
+    description_full = str(detail.get("description_full") or "").strip()
+    image_urls = detail.get("image_urls") if isinstance(detail.get("image_urls"), list) else []
+    posted_at_text = str(detail.get("posted_at_text") or "").strip()
+    return not description_full or not image_urls or not posted_at_text
+
+
+def _merge_listing_detail_sources(primary: dict | None, secondary: dict | None) -> dict:
+    left = _normalize_listing_detail(primary or {})
+    right = _normalize_listing_detail(secondary or {})
+
+    merged_images = list(
+        dict.fromkeys(
+            [
+                *[str(v).strip() for v in (left.get("image_urls") or []) if str(v).strip()],
+                *[str(v).strip() for v in (right.get("image_urls") or []) if str(v).strip()],
+            ]
+        )
+    )
+
+    def _prefer_longer_text(first: object, second: object) -> str | None:
+        a = str(first or "").strip()
+        b = str(second or "").strip()
+        if len(b) > len(a):
+            return b or None
+        return a or b or None
+
+    merged = {
+        "title": _prefer_longer_text(left.get("title"), right.get("title")),
+        "description_full": _prefer_longer_text(left.get("description_full"), right.get("description_full")),
+        "posted_at_text": _prefer_longer_text(left.get("posted_at_text"), right.get("posted_at_text")),
+        "price_cents": left.get("price_cents") if left.get("price_cents") is not None else right.get("price_cents"),
+        "price_negotiable": left.get("price_negotiable") if left.get("price_negotiable") is not None else right.get("price_negotiable"),
+        "old_price_cents": left.get("old_price_cents") if left.get("old_price_cents") is not None else right.get("old_price_cents"),
+        "image_urls": merged_images,
+        "image_count": len(merged_images) if merged_images else left.get("image_count") or right.get("image_count"),
+        "seller_name": _prefer_longer_text(left.get("seller_name"), right.get("seller_name")),
+        "seller_member_since_text": _prefer_longer_text(left.get("seller_member_since_text"), right.get("seller_member_since_text")),
+        "seller_type": left.get("seller_type") or right.get("seller_type"),
+        "shipping_possible": left.get("shipping_possible") if left.get("shipping_possible") is not None else right.get("shipping_possible"),
+        "direct_buy": left.get("direct_buy") if left.get("direct_buy") is not None else right.get("direct_buy"),
+        "view_count": left.get("view_count") if left.get("view_count") is not None else right.get("view_count"),
+    }
+    return _normalize_listing_detail(merged)
+
+
 def _extract_from_html(doc: str) -> list[dict]:
     entries: list[dict] = []
     pattern = re.compile(
@@ -550,6 +596,7 @@ async def scrape_kleinanzeigen_listing_detail(
             listing={},
         )
 
+    agent_detail: dict | None = None
     if use_agent_browser and _agent_browser_available():
         try:
             blocked, detail = _extract_listing_detail_via_agent_browser(
@@ -586,12 +633,14 @@ async def scrape_kleinanzeigen_listing_detail(
                     )
             except Exception:
                 pass
-            return KleinanzeigenListingDetailResult(
-                blocked=False,
-                error_type=None,
-                error_message=None,
-                listing=detail,
-            )
+            agent_detail = detail
+            if not _detail_needs_http_fallback(agent_detail):
+                return KleinanzeigenListingDetailResult(
+                    blocked=False,
+                    error_type=None,
+                    error_message=None,
+                    listing=agent_detail,
+                )
         except Exception:
             # Fallback to HTTP parsing if agent-browser is unavailable or unhealthy.
             pass
@@ -605,6 +654,13 @@ async def scrape_kleinanzeigen_listing_detail(
         try:
             resp = await client.get(listing_url, headers=headers)
             if resp.status_code == 404:
+                if agent_detail is not None:
+                    return KleinanzeigenListingDetailResult(
+                        blocked=False,
+                        error_type=None,
+                        error_message=None,
+                        listing=agent_detail,
+                    )
                 return KleinanzeigenListingDetailResult(
                     blocked=False,
                     error_type="not_found",
@@ -614,6 +670,13 @@ async def scrape_kleinanzeigen_listing_detail(
             resp.raise_for_status()
             body = resp.text
         except Exception as exc:
+            if agent_detail is not None:
+                return KleinanzeigenListingDetailResult(
+                    blocked=False,
+                    error_type=None,
+                    error_message=None,
+                    listing=agent_detail,
+                )
             return KleinanzeigenListingDetailResult(
                 blocked=False,
                 error_type="network",
@@ -623,6 +686,13 @@ async def scrape_kleinanzeigen_listing_detail(
 
     lowered = body.lower()
     if "g-recaptcha" in lowered or "sicherheitsabfrage" in lowered:
+        if agent_detail is not None:
+            return KleinanzeigenListingDetailResult(
+                blocked=False,
+                error_type=None,
+                error_message=None,
+                listing=agent_detail,
+            )
         return KleinanzeigenListingDetailResult(
             blocked=True,
             error_type="captcha",
@@ -641,16 +711,24 @@ async def scrape_kleinanzeigen_listing_detail(
             "nicht mehr online",
         )
     ):
+        if agent_detail is not None:
+            return KleinanzeigenListingDetailResult(
+                blocked=False,
+                error_type=None,
+                error_message=None,
+                listing=agent_detail,
+            )
         return KleinanzeigenListingDetailResult(
             blocked=False,
             error_type="not_available",
             error_message="Listing is not available",
             listing={},
         )
-
+    http_detail = _extract_listing_detail_from_html(body)
+    merged_detail = _merge_listing_detail_sources(agent_detail, http_detail)
     return KleinanzeigenListingDetailResult(
         blocked=False,
         error_type=None,
         error_message=None,
-        listing=_extract_listing_detail_from_html(body),
+        listing=merged_detail,
     )

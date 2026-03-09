@@ -1,5 +1,15 @@
 # History
 
+## 2026-03-09 - Kleinanzeigen detail extraction must merge browser and HTTP sources
+
+### Business perspective
+- Codex review quality depends on listing evidence, not just catalog context.
+- If the scraper returns `description_full=null` even though the page contains the full description, the review workflow remains materially blind.
+
+### Technical decision
+- Treat agent-browser detail extraction as the first source, but not as authoritative when core fields are missing.
+- For Kleinanzeigen detail pages, merge agent-browser output with HTTP HTML parsing and keep the richer description/image set before persisting to ERP.
+
 ## 2026-03-09 - Review packet must guarantee full listing context for Codex
 
 ### Business perspective
