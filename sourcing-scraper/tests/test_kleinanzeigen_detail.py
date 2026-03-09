@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.platforms.kleinanzeigen import (
+    _dedupe_image_urls,
     _detail_needs_http_fallback,
     _extract_listing_detail_from_html,
     _merge_listing_detail_sources,
@@ -70,3 +71,20 @@ def test_extract_listing_detail_from_html_reads_description_from_p_tag() -> None
     assert detail["description_full"] == "Volle Beschreibung mit Lieferumfang"
     assert detail["posted_at_text"] == "02.08.2025"
     assert detail["price_cents"] == 20000
+
+
+def test_dedupe_image_urls_collapses_kleinanzeigen_rule_variants() -> None:
+    urls = [
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.AUTO",
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_2.AUTO",
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.JPG",
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_35.AUTO",
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_57.AUTO",
+    ]
+
+    deduped = _dedupe_image_urls(urls)
+
+    assert deduped == [
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.JPG",
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_57.AUTO",
+    ]

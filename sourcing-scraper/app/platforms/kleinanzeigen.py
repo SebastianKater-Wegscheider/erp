@@ -10,6 +10,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
+from urllib.parse import parse_qs
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -89,6 +91,33 @@ def _absolute_url(url: str) -> str:
     return f"https://www.kleinanzeigen.de/{url}"
 
 
+def _image_asset_key(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}"
+
+
+def _image_variant_score(url: str) -> tuple[int, int]:
+    parts = urlsplit(url)
+    rule = (parse_qs(parts.query).get("rule", [""])[0] or "").upper()
+    format_score = 2 if ".JPG" in rule else 1 if ".AUTO" in rule else 0
+    size_match = re.search(r"\$_(\d+)", rule)
+    size_score = int(size_match.group(1)) if size_match else 0
+    return (format_score, size_score)
+
+
+def _dedupe_image_urls(values: list[str]) -> list[str]:
+    best_by_asset: dict[str, str] = {}
+    for raw in values:
+        cleaned = _absolute_url(str(raw).strip())
+        if not cleaned:
+            continue
+        key = _image_asset_key(cleaned)
+        current = best_by_asset.get(key)
+        if current is None or _image_variant_score(cleaned) > _image_variant_score(current):
+            best_by_asset[key] = cleaned
+    return list(best_by_asset.values())
+
+
 def _parse_location(text: str) -> tuple[str | None, str | None]:
     cleaned = re.sub(r"\s+", " ", text.replace("\u200b", " ")).strip()
     zip_match = re.search(r"\b(\d{5})\b", cleaned)
@@ -146,10 +175,12 @@ def _normalize_listing(entry: dict) -> dict | None:
     image_urls = entry.get("image_urls")
     normalized_images: list[str] = []
     if isinstance(image_urls, list):
-        normalized_images = [str(v).strip() for v in image_urls if str(v).strip()]
+        normalized_images = _dedupe_image_urls([str(v).strip() for v in image_urls if str(v).strip()])
     primary_image_url = str(entry.get("primary_image_url") or "").strip() or None
-    if primary_image_url and primary_image_url not in normalized_images:
-        normalized_images.insert(0, primary_image_url)
+    if primary_image_url:
+        normalized_primary = _dedupe_image_urls([primary_image_url])[0]
+        normalized_images = _dedupe_image_urls([normalized_primary, *normalized_images])
+        primary_image_url = normalized_primary
 
     old_price_cents = None
     if isinstance(entry.get("old_price_cents"), int):
@@ -183,12 +214,8 @@ def _normalize_listing_detail(entry: dict) -> dict:
     normalized_images: list[str] = []
     image_urls = entry.get("image_urls")
     if isinstance(image_urls, list):
-        for value in image_urls:
-            cleaned = str(value).strip()
-            if not cleaned:
-                continue
-            normalized_images.append(_absolute_url(cleaned))
-    deduped_images = list(dict.fromkeys(normalized_images))
+        normalized_images = _dedupe_image_urls([str(value).strip() for value in image_urls if str(value).strip()])
+    deduped_images = normalized_images
 
     image_count = _extract_first_int(entry.get("image_count"))
     if image_count is None and deduped_images:

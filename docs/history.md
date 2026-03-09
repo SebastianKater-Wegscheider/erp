@@ -1,5 +1,15 @@
 # History
 
+## 2026-03-09 - Kleinanzeigen image variants should collapse to unique photos
+
+### Business perspective
+- Codex does not benefit from seeing five URL variants of the same photo.
+- Variant-heavy image payloads waste tokens, inflate image counts, and make listings look noisier than they are.
+
+### Technical decision
+- Normalize Kleinanzeigen image URLs by asset identity, not full URL string.
+- Keep one preferred variant per photo and expose only unique photo URLs to ERP and Codex-facing review packets.
+
 ## 2026-03-09 - Kleinanzeigen detail extraction must merge browser and HTTP sources
 
 ### Business perspective
