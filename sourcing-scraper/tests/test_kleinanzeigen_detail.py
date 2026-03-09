@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from app.platforms.kleinanzeigen import _detail_needs_http_fallback, _merge_listing_detail_sources
+from app.platforms.kleinanzeigen import (
+    _detail_needs_http_fallback,
+    _extract_listing_detail_from_html,
+    _merge_listing_detail_sources,
+)
 
 
 def test_detail_needs_http_fallback_when_description_missing() -> None:
@@ -45,3 +49,24 @@ def test_merge_listing_detail_sources_prefers_richer_http_description() -> None:
         "https://img.example/thumb.jpg",
         "https://img.example/2.jpg",
     ]
+
+
+def test_extract_listing_detail_from_html_reads_description_from_p_tag() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Nintendo GameCube Set – Komplettpaket</h1>
+        <div id="viewad-extra-info"><span>02.08.2025</span></div>
+        <p id="viewad-price">200 € VB</p>
+        <p id="viewad-description-text" itemprop="description">
+          Volle Beschreibung<br />mit Lieferumfang
+        </p>
+      </body>
+    </html>
+    """
+
+    detail = _extract_listing_detail_from_html(html)
+
+    assert detail["description_full"] == "Volle Beschreibung mit Lieferumfang"
+    assert detail["posted_at_text"] == "02.08.2025"
+    assert detail["price_cents"] == 20000

@@ -424,7 +424,7 @@ def _extract_listing_detail_from_html(doc: str) -> dict:
 
     title_match = re.search(r"<h1[^>]*>(?P<title>.*?)</h1>", doc, flags=re.IGNORECASE | re.DOTALL)
     description_match = re.search(
-        r"<div[^>]*id=\"viewad-description-text\"[^>]*>(?P<description>.*?)</div>",
+        r"<[^>]+id=\"viewad-description-text\"[^>]*>(?P<description>.*?)</[^>]+>",
         doc,
         flags=re.IGNORECASE | re.DOTALL,
     )
