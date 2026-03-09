@@ -77,6 +77,8 @@ async def _begin_tx(session: AsyncSession):
 
 
 def _evaluation_out(item: SourcingItem) -> SourcingEvaluationResultOut | None:
+    if item.evaluation_status != SourcingEvaluationStatus.COMPLETED:
+        return None
     payload = item.evaluation_result_json if isinstance(item.evaluation_result_json, dict) else None
     if payload is None:
         return None
@@ -111,6 +113,7 @@ def _evaluation_out(item: SourcingItem) -> SourcingEvaluationResultOut | None:
 
 
 def _item_list_out(item: SourcingItem) -> SourcingItemListOut:
+    evaluation_is_current = item.evaluation_status == SourcingEvaluationStatus.COMPLETED
     return SourcingItemListOut(
         id=item.id,
         platform=item.platform,
@@ -122,11 +125,11 @@ def _item_list_out(item: SourcingItem) -> SourcingItemListOut:
         primary_image_url=item.primary_image_url,
         status=item.status,
         evaluation_status=item.evaluation_status,
-        recommendation=item.recommendation,
-        evaluation_summary=item.evaluation_summary,
-        expected_profit_cents=item.expected_profit_cents,
-        expected_roi_bp=item.expected_roi_bp,
-        max_buy_price_cents=item.max_buy_price_cents,
+        recommendation=item.recommendation if evaluation_is_current else None,
+        evaluation_summary=item.evaluation_summary if evaluation_is_current else None,
+        expected_profit_cents=item.expected_profit_cents if evaluation_is_current else None,
+        expected_roi_bp=item.expected_roi_bp if evaluation_is_current else None,
+        max_buy_price_cents=item.max_buy_price_cents if evaluation_is_current else None,
         evaluation_finished_at=item.evaluation_finished_at,
         evaluation_last_error=item.evaluation_last_error,
         scraped_at=item.scraped_at,
@@ -136,6 +139,7 @@ def _item_list_out(item: SourcingItem) -> SourcingItemListOut:
 
 
 def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
+    evaluation_is_current = item.evaluation_status == SourcingEvaluationStatus.COMPLETED
     return SourcingItemDetailOut(
         id=item.id,
         platform=item.platform,
@@ -156,14 +160,14 @@ def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
         evaluation_finished_at=item.evaluation_finished_at,
         evaluation_attempt_count=item.evaluation_attempt_count,
         evaluation_last_error=item.evaluation_last_error,
-        evaluation_summary=item.evaluation_summary,
+        evaluation_summary=item.evaluation_summary if evaluation_is_current else None,
         evaluation_prompt_version=item.evaluation_prompt_version,
-        recommendation=item.recommendation,
-        expected_profit_cents=item.expected_profit_cents,
-        expected_roi_bp=item.expected_roi_bp,
-        max_buy_price_cents=item.max_buy_price_cents,
-        evaluation_confidence=item.evaluation_confidence,
-        amazon_source_used=item.amazon_source_used,
+        recommendation=item.recommendation if evaluation_is_current else None,
+        expected_profit_cents=item.expected_profit_cents if evaluation_is_current else None,
+        expected_roi_bp=item.expected_roi_bp if evaluation_is_current else None,
+        max_buy_price_cents=item.max_buy_price_cents if evaluation_is_current else None,
+        evaluation_confidence=item.evaluation_confidence if evaluation_is_current else None,
+        amazon_source_used=item.amazon_source_used if evaluation_is_current else None,
         evaluation=_evaluation_out(item),
         raw_data=item.raw_data if isinstance(item.raw_data, dict) else None,
         scraped_at=item.scraped_at,

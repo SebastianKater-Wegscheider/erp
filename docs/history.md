@@ -21,6 +21,10 @@
 - The Codex skill can stay stable even if internal tables or frontend contracts change.
 - This keeps the future frontend cleanup easy: removing sourcing UI later does not affect the operator workflow.
 
+### Follow-up cleanup
+- The review packet must expose only authoritative evaluation state.
+- If a sourcing item is not in `COMPLETED`, the API should hide nested evaluation payloads and all denormalized evaluation verdict fields, even if stale database values remain from an older run or a manual reset.
+
 ## 2026-03-09 - Sourcing pivot: ERP as scrape inbox, Codex as evaluator, frontend-v2 abandoned
 
 ### Ausgangslage

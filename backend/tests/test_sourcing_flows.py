@@ -605,6 +605,73 @@ async def test_sourcing_review_latest_packet_returns_items_and_catalog(db_sessio
     assert packet.catalog[0].amazon_cached.buybox_total_cents == 4599
 
 
+@pytest.mark.asyncio
+async def test_sourcing_review_packet_hides_stale_evaluation_for_non_completed_items(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.sourcing import sourcing_review_latest_packet
+
+    run = SourcingRun(
+        trigger="manual",
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        ok=True,
+        items_scraped=1,
+        items_new=1,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="review-item-stale",
+        url="https://www.kleinanzeigen.de/s-anzeige/review-item-stale",
+        title="Ambiguous Bundle",
+        price_cents=1234,
+        last_run_id=run.id,
+        evaluation_status=SourcingEvaluationStatus.FAILED,
+        recommendation="SKIP",
+        evaluation_summary="Old summary",
+        expected_profit_cents=-100,
+        expected_roi_bp=-200,
+        max_buy_price_cents=0,
+        evaluation_confidence=12,
+        amazon_source_used="cached",
+        evaluation_result_json={
+            "recommendation": "SKIP",
+            "summary": "Old nested payload",
+            "expected_profit_cents": -100,
+            "expected_roi_bp": -200,
+            "max_buy_price_cents": 0,
+            "confidence": 12,
+            "amazon_source_used": "cached",
+            "matched_products": [],
+            "risks": [],
+            "reasoning_notes": [],
+        },
+        evaluation_last_error="Timed out",
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    packet = await sourcing_review_latest_packet(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        limit=10,
+        in_stock_only=False,
+        session=db_session,
+    )
+
+    assert len(packet.items) == 1
+    out = packet.items[0]
+    assert out.evaluation_status == SourcingEvaluationStatus.FAILED
+    assert out.recommendation is None
+    assert out.evaluation_summary is None
+    assert out.expected_profit_cents is None
+    assert out.max_buy_price_cents is None
+    assert out.evaluation_confidence is None
+    assert out.amazon_source_used is None
+    assert out.evaluation is None
+
+
 def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
     now = datetime(2026, 2, 17, 8, 0, tzinfo=UTC)
 
