@@ -3,8 +3,14 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.VITE_BASE_PATH || "/",
   server: {
     port: 5173,
+  },
+  preview: {
+    host: true,
+    port: 5173,
+    allowedHosts: ["kater-lan", "kater-lan.fritz.box", "192.168.178.72"],
   },
   test: {
     globals: true,

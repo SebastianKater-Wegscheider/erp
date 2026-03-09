@@ -13,7 +13,15 @@ export class ApiError extends Error {
   }
 }
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+function defaultApiBaseUrl(): string {
+  if (typeof window === "undefined") return "http://localhost:8000/api/v1";
+  if (window.location.pathname.startsWith("/company/") || window.location.pathname.startsWith("/company-v2/")) {
+    return `${window.location.origin}/company-api/api/v1`;
+  }
+  return `http://${window.location.hostname}:18000/api/v1`;
+}
+
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl()).replace(/\/$/, "");
 
 export function basicAuthHeader(credentials: Credentials): string {
   return `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
