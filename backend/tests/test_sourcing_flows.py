@@ -747,6 +747,77 @@ async def test_sourcing_review_packet_refreshes_missing_detail_context(
     assert out.raw_data["detail_enriched_at"]
 
 
+@pytest.mark.asyncio
+async def test_sourcing_review_packet_refreshes_incomplete_prior_detail_enrichment(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1.endpoints.sourcing import sourcing_review_latest_packet
+
+    run = SourcingRun(
+        trigger="manual",
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        ok=True,
+        items_scraped=1,
+        items_new=0,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="review-item-detail-stale",
+        url="https://www.kleinanzeigen.de/s-anzeige/review-item-detail-stale",
+        title="Detail Candidate",
+        description="Kurzbeschreibung...",
+        price_cents=4500,
+        image_urls=["https://img.example/thumb.jpg"],
+        primary_image_url="https://img.example/thumb.jpg",
+        raw_data={
+            "description_full": None,
+            "posted_at_text": "02.08.2025",
+            "image_urls": ["https://img.example/thumb.jpg"],
+            "detail_enriched_at": "2026-03-09T12:00:00+00:00",
+        },
+        last_run_id=run.id,
+        evaluation_status=SourcingEvaluationStatus.PENDING,
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    async def _fake_listing_detail(*, app_settings, platform, url):  # noqa: ARG001
+        return {
+            "listing": {
+                "description_full": "Volle Beschreibung aus nachgezogener Detailabfrage.",
+                "image_urls": [
+                    "https://img.example/1.jpg",
+                    "https://img.example/2.jpg",
+                ],
+                "seller_type": "private",
+                "price_cents": 4300,
+                "posted_at_text": "02.08.2025",
+            }
+        }
+
+    monkeypatch.setattr("app.api.v1.endpoints.sourcing._scraper_fetch_listing_detail", _fake_listing_detail)
+
+    packet = await sourcing_review_latest_packet(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        limit=10,
+        in_stock_only=False,
+        ensure_detail=True,
+        session=db_session,
+    )
+
+    assert len(packet.items) == 1
+    out = packet.items[0]
+    assert out.description == "Volle Beschreibung aus nachgezogener Detailabfrage."
+    assert out.raw_data is not None
+    assert out.raw_data["description_full"] == "Volle Beschreibung aus nachgezogener Detailabfrage."
+
+
 def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
     now = datetime(2026, 2, 17, 8, 0, tzinfo=UTC)
 

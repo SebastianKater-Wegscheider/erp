@@ -185,11 +185,12 @@ def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
 
 def _item_has_detail_enrichment(item: SourcingItem) -> bool:
     raw = item.raw_data if isinstance(item.raw_data, dict) else {}
-    detail_enriched_at = str(raw.get("detail_enriched_at") or "").strip()
-    if detail_enriched_at:
-        return True
     description_full = str(raw.get("description_full") or "").strip()
-    return bool(description_full)
+    image_urls = raw.get("image_urls") if isinstance(raw.get("image_urls"), list) else item.image_urls or []
+    posted_at_text = str(raw.get("posted_at_text") or "").strip()
+    description = str(item.description or "").strip()
+    has_description = bool(description_full) or (bool(description) and not description.endswith("..."))
+    return bool(has_description and image_urls and (posted_at_text or item.posted_at is not None))
 
 
 async def _ensure_review_item_detail(
