@@ -73,10 +73,11 @@ class Settings(BaseSettings):
     codex_binary_path: str = Field("/usr/local/bin/codex", alias="CODEX_BINARY_PATH")
     codex_auth_source_dir: Path = Field(default_factory=lambda: Path.home() / ".codex", alias="CODEX_AUTH_SOURCE_DIR")
     codex_model: str | None = Field(None, alias="CODEX_MODEL")
+    codex_reasoning_effort: str | None = Field(None, alias="CODEX_REASONING_EFFORT")
     codex_timeout_seconds: int = Field(180, alias="CODEX_TIMEOUT_SECONDS")
     codex_max_attempts: int = Field(2, alias="CODEX_MAX_ATTEMPTS")
     codex_queue_tick_seconds: int = Field(30, alias="CODEX_QUEUE_TICK_SECONDS")
-    codex_search_enabled: bool = Field(True, alias="CODEX_SEARCH_ENABLED")
+    codex_search_enabled: bool = Field(False, alias="CODEX_SEARCH_ENABLED")
 
     # Amazon fee estimates (global defaults; for margin heuristics, not accounting).
     amazon_fba_referral_fee_bp: int = Field(1500, alias="AMAZON_FBA_REFERRAL_FEE_BP")

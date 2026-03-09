@@ -1089,3 +1089,31 @@
 ### Expected effect
 - Reale Backend-Evaluierungen werden robuster und besser reproduzierbar.
 - Ein vorhandenes Login genügt weiterhin, aber beschädigte lokale Codex-State-Dateien blockieren den ERP-Worker nicht mehr direkt.
+
+## 2026-03-09 - Codex first-pass runtime hardening after production timeout test
+
+### Business perspective
+- Der erste echte Prod-Test gegen reale Sourcing-Items hat gezeigt: die neue Pipeline läuft grundsätzlich, aber der aktuelle erste Evaluationspass ist operativ zu langsam.
+- Reine Modellreduktion reicht nicht; für den Operator zählt, dass Listings zügig einen ersten verwertbaren Verdict bekommen statt minutenlang in `RUNNING` zu hängen oder mit Timeout zu enden.
+
+### Technical findings
+- Reale Prod-Items timen auch mit schnellerem Codex-Modell innerhalb des aktuellen 180s-Budgets aus.
+- Der Worker isoliert bewusst die Codex-Home-Umgebung; dadurch werden serverseitige Modell-/Reasoning-Änderungen in `~/.codex/config.toml` aktuell nicht übernommen.
+- `RUNNING`-Rows bleiben nach Restart/Timeout potenziell hängen und blockieren den sequentiellen Queue-Fortschritt.
+- Ein manueller Live-Test mit derselben realen Listing-Nutzlast war deutlich schneller, sobald die Listing-Daten direkt inline an Codex gingen, Websuche deaktiviert war und kein ERP-seitiges Kandidatenmatching im Weg stand.
+- Der Produktkatalog in Prod ist klein genug (`91` `master_products`), um ihn als neutralen ERP-Preis-/Amazon-Cache-Snapshot vollständig an Codex zu übergeben, statt ihn im Backend heuristisch vorzuselektieren.
+
+### Decision
+- Erster Pass wird auf Geschwindigkeit optimiert:
+  kein Live-Web-Search/Amazon-Fallback im First Pass, nur ERP-/DB-/Cache-Kontext.
+- Die isolierte Runtime übernimmt weiterhin nur sichere, minimale Codex-Konfiguration:
+  `model` und `model_reasoning_effort` aus App-Env oder aus der Source-`config.toml`.
+- ERP-seitige "Item-Detection" im Listing wird aus dem Codex-Handoff entfernt.
+  Das Backend liefert rohe Listing-Daten plus den vollständigen bekannten Produkt-/Pricing-Snapshot; Codex identifiziert die tatsächlichen Artikel selbst und vergleicht sie dann mit dem ERP-Katalog.
+- Prompt-Transport wird listing-first inline gehalten, weil das im Live-Test schneller und robuster war als Dateilesen plus heuristische Kandidatenvorauswahl.
+- Stale `RUNNING`-Items werden beim Claim-Schritt automatisch in einen retrybaren `PENDING`-Zustand zurückgeführt, statt dauerhaft Queue-Slots zu blockieren.
+
+### Expected effect
+- Serverseitige Codex-Modell-/Reasoning-Anpassungen greifen endlich auch im ERP-Worker.
+- First-pass Evaluierungen sollten deutlich schneller werden, weil keine Websuche mehr geöffnet wird.
+- Queue-Durchsatz steigt, weil alte `RUNNING`-Leichen nicht mehr den Kopf der Verarbeitung verfälschen.

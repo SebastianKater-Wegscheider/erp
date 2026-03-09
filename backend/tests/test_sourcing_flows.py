@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,12 +11,15 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
+from app.models.amazon_scrape import AmazonProductMetricsLatest
+from app.models.master_product import MasterProduct
 from app.models.sourcing import SourcingItem, SourcingRun
 from app.services.sourcing import _parse_kleinanzeigen_posted_at, execute_sourcing_run
 from app.services.sourcing_codex import (
     PROMPT_VERSION,
     _build_codex_command,
     _workspace_for_item,
+    claim_next_pending_item,
     evaluate_item_by_id,
     stage_workspace,
 )
@@ -50,6 +53,20 @@ def _write_stub_codex(path: Path, payload: str) -> None:
 def _write_fake_codex_auth(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     (path / "auth.json").write_text('{"provider":"chatgpt"}', encoding="utf-8")
+
+
+def _write_fake_codex_config(path: Path, *, model: str = "gpt-5.4", reasoning_effort: str = "low") -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "config.toml").write_text(
+        "\n".join(
+            [
+                f'model = "{model}"',
+                f'model_reasoning_effort = "{reasoning_effort}"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.asyncio
@@ -117,6 +134,29 @@ async def test_execute_sourcing_run_enqueues_new_items_after_detail_enrichment(
 async def test_stage_workspace_writes_summary_and_full_payloads(
     db_session: AsyncSession,
 ) -> None:
+    product = MasterProduct(
+        title="Super Mario Sunshine",
+        platform="Nintendo GameCube",
+        region="PAL",
+        variant="Player's Choice",
+        asin="B000123456",
+        ean="0045496961025",
+    )
+    db_session.add(product)
+    await db_session.flush()
+    db_session.add(
+        AmazonProductMetricsLatest(
+            master_product_id=product.id,
+            last_attempt_at=datetime.now(UTC),
+            last_success_at=datetime.now(UTC),
+            rank_overall=1234,
+            price_new_cents=4999,
+            price_used_good_cents=3299,
+            buybox_total_cents=4599,
+            offers_count_total=7,
+            offers_count_used_priced_total=4,
+        )
+    )
     item = SourcingItem(
         platform=SourcingPlatform.KLEINANZEIGEN,
         external_id="workspace-1",
@@ -135,9 +175,17 @@ async def test_stage_workspace_writes_summary_and_full_payloads(
     full = json.loads(workspace.full_path.read_text(encoding="utf-8"))
 
     assert summary["listing"]["title"] == "Nintendo Gamecube Paket"
-    assert summary["task"]["rules"][0] == "Do not fetch the marketplace listing URL."
+    assert "Do not fetch the marketplace listing URL." in summary["task"]["rules"]
+    assert summary["erp_context"]["catalog_total_products"] == 1
+    assert "candidate_products" not in summary["erp_context"]
+    assert summary["erp_context"]["known_product_catalog"][0]["title"] == "Super Mario Sunshine"
+    assert summary["erp_context"]["known_product_catalog"][0]["amazon_cached"]["best_used_price_cents"] == 3299
     assert full["listing"]["raw_data"]["shipping_possible"] is True
-    assert workspace.prompt_path.read_text(encoding="utf-8")
+    prompt = workspace.prompt_path.read_text(encoding="utf-8")
+    assert "summary.json:" in prompt
+    assert "full.json:" in prompt
+    assert "Do not use live web search in this first pass." in prompt
+    assert "Do not assume the ERP catalog has already been filtered down to likely matches." in prompt
 
 
 @pytest.mark.asyncio
@@ -266,6 +314,117 @@ def test_build_codex_command_uses_feature_override_instead_of_search_flag(monkey
 
     assert "--search" not in command
     assert "features.search_tool=true" in command
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_item_stages_minimal_runtime_config_from_source_codex_config(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    stub = tmp_path / "codex-success"
+    auth_dir = tmp_path / "codex-auth"
+    _write_stub_codex(
+        stub,
+        json.dumps(
+            {
+                "recommendation": "WATCH",
+                "summary": "Config smoke test.",
+                "expected_profit_cents": None,
+                "expected_roi_bp": None,
+                "max_buy_price_cents": None,
+                "confidence": 50,
+                "amazon_source_used": "cached",
+                "matched_products": [],
+                "risks": [],
+                "reasoning_notes": [],
+            }
+        ),
+    )
+    _write_fake_codex_auth(auth_dir)
+    _write_fake_codex_config(auth_dir, model="gpt-5.4", reasoning_effort="low")
+
+    monkeypatch.setenv("CODEX_ENABLED", "true")
+    monkeypatch.setenv("CODEX_BINARY_PATH", str(stub))
+    monkeypatch.setenv("CODEX_AUTH_SOURCE_DIR", str(auth_dir))
+    monkeypatch.delenv("CODEX_MODEL", raising=False)
+    monkeypatch.delenv("CODEX_REASONING_EFFORT", raising=False)
+    monkeypatch.setenv("CODEX_SEARCH_ENABLED", "false")
+    get_settings.cache_clear()
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="eval-config-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/eval-config-1",
+        title="Nintendo Bundle",
+        price_cents=7500,
+        evaluation_status=SourcingEvaluationStatus.PENDING,
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    await evaluate_item_by_id(session=db_session, item_id=item.id, settings=get_settings())
+    await db_session.commit()
+
+    runtime_config = (
+        get_settings().app_storage_dir
+        / "sourcing-evals"
+        / str(item.id)
+        / ".codex-home"
+        / ".codex"
+        / "config.toml"
+    ).read_text(encoding="utf-8")
+    assert 'model = "gpt-5.4"' in runtime_config
+    assert 'model_reasoning_effort = "low"' in runtime_config
+    assert "search_tool = false" in runtime_config
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_claim_next_pending_item_requeues_stale_running_rows(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CODEX_TIMEOUT_SECONDS", "60")
+    get_settings.cache_clear()
+
+    stale_item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="stale-run-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/stale-run-1",
+        title="Stale Run",
+        price_cents=1000,
+        evaluation_status=SourcingEvaluationStatus.RUNNING,
+        evaluation_started_at=datetime.now(UTC) - timedelta(seconds=120),
+        evaluation_attempt_count=0,
+        status=SourcingStatus.NEW,
+    )
+    fresh_item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="pending-run-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/pending-run-1",
+        title="Pending Run",
+        price_cents=1200,
+        evaluation_status=SourcingEvaluationStatus.PENDING,
+        evaluation_attempt_count=0,
+        status=SourcingStatus.NEW,
+    )
+    db_session.add_all([stale_item, fresh_item])
+    await db_session.commit()
+
+    claimed_id = await claim_next_pending_item(db_session, settings=get_settings())
+    await db_session.commit()
+
+    refreshed_stale = await db_session.get(SourcingItem, stale_item.id)
+    refreshed_fresh = await db_session.get(SourcingItem, fresh_item.id)
+    assert refreshed_stale is not None
+    assert refreshed_fresh is not None
+    assert claimed_id == stale_item.id
+    assert refreshed_stale.evaluation_status == SourcingEvaluationStatus.RUNNING
+    assert refreshed_stale.evaluation_attempt_count == 1
+    assert refreshed_stale.evaluation_last_error is None
+    assert refreshed_fresh.evaluation_status == SourcingEvaluationStatus.PENDING
     get_settings.cache_clear()
 
 

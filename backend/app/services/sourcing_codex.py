@@ -4,15 +4,16 @@ import asyncio
 import json
 import logging
 import os
-import re
 import subprocess
 import shutil
+import tomllib
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -24,7 +25,7 @@ from app.models.sourcing import SourcingItem, SourcingSetting
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "2026-03-09-v1"
+PROMPT_VERSION = "2026-03-09-v2"
 SUPPORTED_SOURCING_PLATFORMS = {
     SourcingPlatform.KLEINANZEIGEN,
     SourcingPlatform.EBAY_DE,
@@ -74,49 +75,6 @@ def ensure_supported_platform(platform: SourcingPlatform) -> None:
         raise ValueError(f"Unsupported sourcing platform: {platform.value}")
 
 
-def _fold(value: str) -> str:
-    return (
-        value.replace("Ä", "Ae")
-        .replace("Ö", "Oe")
-        .replace("Ü", "Ue")
-        .replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
-        .lower()
-    )
-
-
-def _tokenize_title(value: str) -> list[str]:
-    parts = re.split(r"[^a-z0-9]+", _fold(value))
-    seen: set[str] = set()
-    out: list[str] = []
-    for part in parts:
-        if len(part) < 3 or part in seen:
-            continue
-        seen.add(part)
-        out.append(part)
-        if len(out) >= 6:
-            break
-    return out
-
-
-def _score_title_match(title: str, candidate: str) -> int:
-    base = _fold(title)
-    other = _fold(candidate)
-    if not base or not other:
-        return 0
-    base_tokens = set(_tokenize_title(base))
-    other_tokens = set(_tokenize_title(other))
-    overlap = len(base_tokens & other_tokens)
-    if not overlap:
-        return 0
-    ratio = int((overlap / max(1, len(base_tokens))) * 100)
-    if base in other or other in base:
-        ratio = max(ratio, 85)
-    return min(100, ratio)
-
-
 async def _load_sourcing_int_setting(
     session: AsyncSession,
     key: str,
@@ -131,34 +89,33 @@ async def _load_sourcing_int_setting(
         return default
 
 
-async def _candidate_context(session: AsyncSession, item: SourcingItem, limit: int = 5) -> list[dict[str, Any]]:
-    tokens = _tokenize_title(item.title)
+def _best_used_price_cents(metrics: AmazonProductMetricsLatest | None) -> int | None:
+    if metrics is None:
+        return None
+    for value in (
+        metrics.price_used_like_new_cents,
+        metrics.price_used_very_good_cents,
+        metrics.price_used_good_cents,
+        metrics.price_used_acceptable_cents,
+    ):
+        if isinstance(value, int):
+            return value
+    return None
+
+
+async def _catalog_pricing_context(session: AsyncSession) -> list[dict[str, Any]]:
     stmt = select(MasterProduct, AmazonProductMetricsLatest).outerjoin(
         AmazonProductMetricsLatest,
         AmazonProductMetricsLatest.master_product_id == MasterProduct.id,
     )
-    if tokens:
-        patterns = [f"%{token}%" for token in tokens[:3]]
-        stmt = stmt.where(
-            or_(
-                *[MasterProduct.title.ilike(pattern) for pattern in patterns],
-                *[MasterProduct.platform.ilike(pattern) for pattern in patterns],
-            )
-        )
-    stmt = stmt.limit(80)
+    stmt = stmt.order_by(MasterProduct.title.asc(), MasterProduct.platform.asc(), MasterProduct.variant.asc())
     rows = (await session.execute(stmt)).all()
-    scored: list[tuple[int, MasterProduct, AmazonProductMetricsLatest | None]] = []
-    for product, metrics in rows:
-        score = _score_title_match(item.title, f"{product.title} {product.platform} {product.variant}".strip())
-        if score <= 0:
-            continue
-        scored.append((score, product, metrics))
-    scored.sort(key=lambda row: row[0], reverse=True)
     out: list[dict[str, Any]] = []
-    for score, product, metrics in scored[:limit]:
+    for product, metrics in rows:
         out.append(
             {
                 "master_product_id": str(product.id),
+                "kind": product.kind.value if hasattr(product.kind, "value") else str(product.kind),
                 "sku": product.sku,
                 "title": product.title,
                 "platform": product.platform,
@@ -166,7 +123,10 @@ async def _candidate_context(session: AsyncSession, item: SourcingItem, limit: i
                 "variant": product.variant,
                 "asin": product.asin,
                 "ean": product.ean,
-                "match_score": score,
+                "manufacturer": product.manufacturer,
+                "model": product.model,
+                "genre": product.genre,
+                "release_year": product.release_year,
                 "amazon_cached": {
                     "last_success_at": metrics.last_success_at.isoformat() if metrics and metrics.last_success_at else None,
                     "rank_overall": metrics.rank_overall if metrics else None,
@@ -176,6 +136,7 @@ async def _candidate_context(session: AsyncSession, item: SourcingItem, limit: i
                     "price_used_very_good_cents": metrics.price_used_very_good_cents if metrics else None,
                     "price_used_good_cents": metrics.price_used_good_cents if metrics else None,
                     "price_used_acceptable_cents": metrics.price_used_acceptable_cents if metrics else None,
+                    "best_used_price_cents": _best_used_price_cents(metrics),
                     "buybox_total_cents": metrics.buybox_total_cents if metrics else None,
                     "offers_count_total": metrics.offers_count_total if metrics else None,
                     "offers_count_used_priced_total": metrics.offers_count_used_priced_total if metrics else None,
@@ -191,7 +152,7 @@ async def build_evaluation_payload(
     item: SourcingItem,
     settings: Settings,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    candidates = await _candidate_context(session, item)
+    catalog = await _catalog_pricing_context(session)
     shipping_cost_cents = await _load_sourcing_int_setting(session, "shipping_cost_cents", 690)
     handling_cost_cents = await _load_sourcing_int_setting(session, "handling_cost_per_item_cents", 150)
 
@@ -201,10 +162,11 @@ async def build_evaluation_payload(
         "task": {
             "goal": "Evaluate whether this sourcing listing looks attractive for resale.",
             "rules": [
+                "Identify the concrete sellable items in the listing yourself from the listing data.",
                 "Do not fetch the marketplace listing URL.",
-                "Read summary.json first and inspect full.json only if needed.",
-                "Use ERP-provided candidate and Amazon cache context first.",
-                "Only use live Amazon lookup when ERP evidence is insufficient or stale.",
+                "Use the staged listing data only.",
+                "Use the provided ERP product catalog and cached Amazon data for price comparisons.",
+                "Do not use live web search in this first pass.",
                 "Return JSON only, following schema.json exactly.",
             ],
         },
@@ -230,7 +192,9 @@ async def build_evaluation_payload(
             "price_negotiable": raw.get("price_negotiable"),
         },
         "erp_context": {
-            "candidate_products": candidates,
+            "catalog_scope": "Full ERP product catalog with cached Amazon metrics. This data was not prefiltered to the listing.",
+            "catalog_total_products": len(catalog),
+            "known_product_catalog": catalog,
             "cost_assumptions": {
                 "shipping_cost_cents": shipping_cost_cents,
                 "handling_cost_per_item_cents": handling_cost_cents,
@@ -313,17 +277,23 @@ def _schema_json() -> dict[str, Any]:
     }
 
 
-def _prompt_text() -> str:
+def _prompt_text(summary: dict[str, Any], full: dict[str, Any]) -> str:
     return "\n".join(
         [
-            "Evaluate the listing using the local files in this directory.",
-            "Read summary.json first.",
-            "Read full.json only if summary.json is insufficient.",
-            "Do not fetch or inspect the marketplace listing URL.",
-            "Use ERP candidate and cached Amazon data first.",
-            "Only use live Amazon lookup if ERP evidence is insufficient or stale.",
+            "Evaluate this listing for resale using only the provided inline JSON.",
+            "Identify any individual games, consoles, accessories, bundles, or variants yourself from the listing data.",
+            "Then compare your identified items against the full ERP product catalog and cached Amazon pricing data included below.",
+            "Do not fetch the marketplace URL.",
+            "Do not use live web search in this first pass.",
+            "Do not assume the ERP catalog has already been filtered down to likely matches.",
             "Estimate profit, ROI, and max buy price in cents/basis points.",
             "Return JSON only matching schema.json.",
+            "",
+            "summary.json:",
+            json.dumps(summary, ensure_ascii=True, separators=(",", ":")),
+            "",
+            "full.json:",
+            json.dumps(full, ensure_ascii=True, separators=(",", ":")),
         ]
     )
 
@@ -352,7 +322,7 @@ async def stage_workspace(
     workspace.summary_path.write_text(json.dumps(summary, ensure_ascii=True, indent=2), encoding="utf-8")
     workspace.full_path.write_text(json.dumps(full, ensure_ascii=True, indent=2), encoding="utf-8")
     workspace.schema_path.write_text(json.dumps(_schema_json(), ensure_ascii=True, indent=2), encoding="utf-8")
-    workspace.prompt_path.write_text(_prompt_text(), encoding="utf-8")
+    workspace.prompt_path.write_text(_prompt_text(summary, full), encoding="utf-8")
     return workspace
 
 
@@ -384,6 +354,31 @@ def _build_codex_command(settings: Settings, workspace: CodexWorkspace) -> list[
     return cmd
 
 
+def _load_codex_source_config(settings: Settings) -> dict[str, Any]:
+    config_path = settings.codex_auth_source_dir / "config.toml"
+    if not config_path.exists():
+        return {}
+    try:
+        return tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        logger.warning("Could not parse Codex config.toml", extra={"path": str(config_path)}, exc_info=True)
+        return {}
+
+
+def _runtime_codex_model(settings: Settings, source_config: dict[str, Any]) -> str | None:
+    if settings.codex_model:
+        return settings.codex_model.strip() or None
+    value = source_config.get("model")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _runtime_codex_reasoning_effort(settings: Settings, source_config: dict[str, Any]) -> str | None:
+    if settings.codex_reasoning_effort:
+        return settings.codex_reasoning_effort.strip() or None
+    value = source_config.get("model_reasoning_effort")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
 def _prepare_codex_home(*, workspace: CodexWorkspace, settings: Settings) -> Path:
     runtime_home = workspace.root / ".codex-home"
     runtime_codex_dir = runtime_home / ".codex"
@@ -394,6 +389,17 @@ def _prepare_codex_home(*, workspace: CodexWorkspace, settings: Settings) -> Pat
         raise RuntimeError(f"Codex auth.json not found at {auth_source}")
 
     shutil.copyfile(auth_source, runtime_codex_dir / "auth.json")
+    source_config = _load_codex_source_config(settings)
+    runtime_config_lines: list[str] = []
+    model = _runtime_codex_model(settings, source_config)
+    reasoning_effort = _runtime_codex_reasoning_effort(settings, source_config)
+    if model:
+        runtime_config_lines.append(f'model = "{model}"')
+    if reasoning_effort:
+        runtime_config_lines.append(f'model_reasoning_effort = "{reasoning_effort}"')
+    runtime_config_lines.append("[features]")
+    runtime_config_lines.append(f"search_tool = {'true' if settings.codex_search_enabled else 'false'}")
+    (runtime_codex_dir / "config.toml").write_text("\n".join(runtime_config_lines) + "\n", encoding="utf-8")
     return runtime_home
 
 
@@ -508,6 +514,35 @@ def _apply_evaluation_failure(item: SourcingItem, error_message: str) -> None:
 
 async def claim_next_pending_item(session: AsyncSession, settings: Settings | None = None) -> Any | None:
     settings = settings or get_settings()
+    stale_before = utcnow() - timedelta(seconds=max(60, int(settings.codex_timeout_seconds) + 30))
+    stale_stmt = select(SourcingItem).where(
+        SourcingItem.evaluation_status == SourcingEvaluationStatus.RUNNING,
+        SourcingItem.evaluation_started_at.is_not(None),
+        SourcingItem.evaluation_started_at < stale_before,
+        SourcingItem.evaluation_attempt_count < max(1, int(settings.codex_max_attempts)),
+    ).order_by(SourcingItem.evaluation_started_at.asc())
+    stale_items = (await session.execute(stale_stmt)).scalars().all()
+    stale_claim_id: Any | None = None
+    for item in stale_items:
+        queue_item_for_evaluation(item)
+        item.status = SourcingStatus.NEW
+        item.status_reason = "Requeued after stale Codex run"
+        item.evaluation_last_error = "Previous Codex run exceeded timeout window and was requeued"
+        if stale_claim_id is None:
+            stale_claim_id = item.id
+
+    if stale_claim_id is not None:
+        item = await session.get(SourcingItem, stale_claim_id)
+        if item is not None:
+            item.evaluation_status = SourcingEvaluationStatus.RUNNING
+            item.evaluation_started_at = utcnow()
+            item.evaluation_finished_at = None
+            item.evaluation_attempt_count = int(item.evaluation_attempt_count or 0) + 1
+            item.evaluation_last_error = None
+            item.evaluation_prompt_version = PROMPT_VERSION
+            await session.flush()
+            return stale_claim_id
+
     stmt = (
         select(SourcingItem.id)
         .where(
