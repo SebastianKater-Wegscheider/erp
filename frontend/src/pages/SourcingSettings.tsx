@@ -20,20 +20,10 @@ type SourcingSetting = {
 };
 
 type FormState = {
-  bsr_max_threshold: string;
-  price_min_cents: string;
-  price_max_cents: string;
-  confidence_min_score: string;
-  profit_min_cents: string;
-  roi_min_bp: string;
   scrape_interval_seconds: string;
-  handling_cost_per_item_cents: string;
-  shipping_cost_cents: string;
-  ebay_bid_buffer_cents: string;
   ebay_empty_results_degraded_after_runs: string;
   sourcing_retention_days: string;
   sourcing_retention_max_delete_per_tick: string;
-  bidbag_deeplink_template: string;
   search_terms_json: string;
 };
 
@@ -61,20 +51,10 @@ export function SourcingSettingsPage() {
     if (form || !settingsQuery.data) return;
     const searchTerms = mapped.get("search_terms")?.value_json;
     setForm({
-      bsr_max_threshold: String(mapped.get("bsr_max_threshold")?.value_int ?? 50000),
-      price_min_cents: String(mapped.get("price_min_cents")?.value_int ?? 500),
-      price_max_cents: String(mapped.get("price_max_cents")?.value_int ?? 30000),
-      confidence_min_score: String(mapped.get("confidence_min_score")?.value_int ?? 80),
-      profit_min_cents: String(mapped.get("profit_min_cents")?.value_int ?? 3000),
-      roi_min_bp: String(mapped.get("roi_min_bp")?.value_int ?? 5000),
       scrape_interval_seconds: String(mapped.get("scrape_interval_seconds")?.value_int ?? 1800),
-      handling_cost_per_item_cents: String(mapped.get("handling_cost_per_item_cents")?.value_int ?? 150),
-      shipping_cost_cents: String(mapped.get("shipping_cost_cents")?.value_int ?? 690),
-      ebay_bid_buffer_cents: String(mapped.get("ebay_bid_buffer_cents")?.value_int ?? 0),
       ebay_empty_results_degraded_after_runs: String(mapped.get("ebay_empty_results_degraded_after_runs")?.value_int ?? 3),
       sourcing_retention_days: String(mapped.get("sourcing_retention_days")?.value_int ?? 180),
       sourcing_retention_max_delete_per_tick: String(mapped.get("sourcing_retention_max_delete_per_tick")?.value_int ?? 500),
-      bidbag_deeplink_template: String(mapped.get("bidbag_deeplink_template")?.value_text ?? ""),
       search_terms_json: JSON.stringify(searchTerms ?? ["videospiele konvolut"], null, 2),
     });
   }, [form, mapped, settingsQuery.data]);
@@ -87,20 +67,10 @@ export function SourcingSettingsPage() {
         method: "PUT",
         json: {
           values: {
-            bsr_max_threshold: { value_int: toInt(form.bsr_max_threshold) },
-            price_min_cents: { value_int: toInt(form.price_min_cents) },
-            price_max_cents: { value_int: toInt(form.price_max_cents) },
-            confidence_min_score: { value_int: toInt(form.confidence_min_score) },
-            profit_min_cents: { value_int: toInt(form.profit_min_cents) },
-            roi_min_bp: { value_int: toInt(form.roi_min_bp) },
             scrape_interval_seconds: { value_int: toInt(form.scrape_interval_seconds) },
-            handling_cost_per_item_cents: { value_int: toInt(form.handling_cost_per_item_cents) },
-            shipping_cost_cents: { value_int: toInt(form.shipping_cost_cents) },
-            ebay_bid_buffer_cents: { value_int: toInt(form.ebay_bid_buffer_cents) },
             ebay_empty_results_degraded_after_runs: { value_int: toInt(form.ebay_empty_results_degraded_after_runs) },
             sourcing_retention_days: { value_int: toInt(form.sourcing_retention_days) },
             sourcing_retention_max_delete_per_tick: { value_int: toInt(form.sourcing_retention_max_delete_per_tick) },
-            bidbag_deeplink_template: { value_text: form.bidbag_deeplink_template },
             search_terms: { value_json: parsedSearchTerms },
           },
         },
@@ -108,66 +78,59 @@ export function SourcingSettingsPage() {
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["sourcing-settings"] });
-      await qc.invalidateQueries({ queryKey: ["sourcing-items"] });
     },
   });
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Sourcing Settings" description="Thresholds, Frequenz und Suchbegriffe" />
+      <PageHeader title="Sourcing Settings" description="Scrape cadence, retention, and default search terms for the Codex-backed sourcing inbox." />
 
       {settingsQuery.isLoading ? <InlineMessage>Lade Settings…</InlineMessage> : null}
       {settingsQuery.error ? <InlineMessage tone="error">Settings konnten nicht geladen werden</InlineMessage> : null}
 
       {form ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Konfiguration</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="BSR Max" value={form.bsr_max_threshold} onChange={(v) => setForm({ ...form, bsr_max_threshold: v })} />
-              <Field label="Price Min (cents)" value={form.price_min_cents} onChange={(v) => setForm({ ...form, price_min_cents: v })} />
-              <Field label="Price Max (cents)" value={form.price_max_cents} onChange={(v) => setForm({ ...form, price_max_cents: v })} />
-              <Field label="Confidence Min" value={form.confidence_min_score} onChange={(v) => setForm({ ...form, confidence_min_score: v })} />
-              <Field label="Profit Min (cents)" value={form.profit_min_cents} onChange={(v) => setForm({ ...form, profit_min_cents: v })} />
-              <Field label="ROI Min (bp)" value={form.roi_min_bp} onChange={(v) => setForm({ ...form, roi_min_bp: v })} />
-              <Field label="Scrape Intervall (s)" value={form.scrape_interval_seconds} onChange={(v) => setForm({ ...form, scrape_interval_seconds: v })} />
-              <Field label="Handling pro Item (cents)" value={form.handling_cost_per_item_cents} onChange={(v) => setForm({ ...form, handling_cost_per_item_cents: v })} />
-              <Field label="Versandkosten (cents)" value={form.shipping_cost_cents} onChange={(v) => setForm({ ...form, shipping_cost_cents: v })} />
-              <Field label="eBay Bid Buffer (cents)" value={form.ebay_bid_buffer_cents} onChange={(v) => setForm({ ...form, ebay_bid_buffer_cents: v })} />
-              <Field label="eBay Empty->Degraded (runs)" value={form.ebay_empty_results_degraded_after_runs} onChange={(v) => setForm({ ...form, ebay_empty_results_degraded_after_runs: v })} />
-              <Field label="Retention (days)" value={form.sourcing_retention_days} onChange={(v) => setForm({ ...form, sourcing_retention_days: v })} />
-              <Field label="Retention delete cap/tick" value={form.sourcing_retention_max_delete_per_tick} onChange={(v) => setForm({ ...form, sourcing_retention_max_delete_per_tick: v })} />
-            </div>
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Konfiguration</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Scrape Intervall (s)" value={form.scrape_interval_seconds} onChange={(v) => setForm({ ...form, scrape_interval_seconds: v })} />
+                <Field label="eBay Empty -> Degraded (runs)" value={form.ebay_empty_results_degraded_after_runs} onChange={(v) => setForm({ ...form, ebay_empty_results_degraded_after_runs: v })} />
+                <Field label="Retention (days)" value={form.sourcing_retention_days} onChange={(v) => setForm({ ...form, sourcing_retention_days: v })} />
+                <Field label="Retention delete cap/tick" value={form.sourcing_retention_max_delete_per_tick} onChange={(v) => setForm({ ...form, sourcing_retention_max_delete_per_tick: v })} />
+              </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="bidbag_deeplink_template">Bidbag Deeplink Template</Label>
-              <Input
-                id="bidbag_deeplink_template"
-                value={form.bidbag_deeplink_template}
-                onChange={(e) => setForm({ ...form, bidbag_deeplink_template: e.target.value })}
-                placeholder="https://bidbag.de/...{listing_url}...{max_bid_eur}"
-              />
-            </div>
+              <div className="space-y-1">
+                <Label htmlFor="search_terms_json">Search Terms (JSON Array)</Label>
+                <textarea
+                  id="search_terms_json"
+                  className="min-h-[180px] w-full rounded-md border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-3 py-2 text-sm"
+                  value={form.search_terms_json}
+                  onChange={(e) => setForm({ ...form, search_terms_json: e.target.value })}
+                />
+              </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="search_terms_json">Search Terms (JSON Array)</Label>
-              <textarea
-                id="search_terms_json"
-                className="min-h-[180px] w-full rounded-md border border-[color:var(--app-border)] bg-[color:var(--app-surface)] px-3 py-2 text-sm"
-                value={form.search_terms_json}
-                onChange={(e) => setForm({ ...form, search_terms_json: e.target.value })}
-              />
-            </div>
+              <Button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
+                <Save className="h-4 w-4" />
+                Speichern
+              </Button>
+              {save.error ? <InlineMessage tone="error">Speichern fehlgeschlagen: {String(save.error)}</InlineMessage> : null}
+            </CardContent>
+          </Card>
 
-            <Button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
-              <Save className="h-4 w-4" />
-              Speichern
-            </Button>
-            {save.error ? <InlineMessage tone="error">Speichern fehlgeschlagen: {String(save.error)}</InlineMessage> : null}
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Hinweis zu Codex Runtime</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-[color:var(--app-text-muted)]">
+                Codex CLI Runtime-Parameter wie Binary-Pfad, Timeout, Worker-Takt und Web-Search werden bewusst als Container-Umgebungsvariablen verwaltet, nicht in der Datenbank.
+              </p>
+            </CardContent>
+          </Card>
+        </>
       ) : null}
     </div>
   );

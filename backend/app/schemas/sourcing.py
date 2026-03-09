@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.enums import SourcingPlatform, SourcingStatus
+from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
 
 
 class SourcingScrapeTriggerIn(BaseModel):
@@ -25,7 +25,7 @@ class SourcingScrapeTriggerOut(BaseModel):
     finished_at: datetime | None = None
     items_scraped: int = 0
     items_new: int = 0
-    items_ready: int = 0
+    items_queued: int = 0
 
 
 class SourcingCleanseIn(BaseModel):
@@ -47,7 +47,8 @@ class SourcingHealthOut(BaseModel):
     status: str
     last_scrape_at: datetime | None
     scraper_status: str
-    items_pending_analysis: int = 0
+    items_pending_evaluation: int = 0
+    items_failed_evaluation: int = 0
     last_error_type: str | None = None
     last_error_message: str | None = None
 
@@ -55,8 +56,30 @@ class SourcingHealthOut(BaseModel):
 class SourcingStatsOut(BaseModel):
     total_items_scraped: int = 0
     items_by_status: dict[str, int] = Field(default_factory=dict)
-    avg_profit_cents: int = 0
-    conversion_rate_bp: int = 0
+    items_by_evaluation_status: dict[str, int] = Field(default_factory=dict)
+    items_by_recommendation: dict[str, int] = Field(default_factory=dict)
+
+
+class SourcingEvaluationMatchedProductOut(BaseModel):
+    master_product_id: UUID | None = None
+    sku: str | None = None
+    title: str | None = None
+    asin: str | None = None
+    confidence: int | None = None
+    basis: str | None = None
+
+
+class SourcingEvaluationResultOut(BaseModel):
+    recommendation: str | None = None
+    summary: str | None = None
+    expected_profit_cents: int | None = None
+    expected_roi_bp: int | None = None
+    max_buy_price_cents: int | None = None
+    confidence: int | None = None
+    amazon_source_used: str | None = None
+    matched_products: list[SourcingEvaluationMatchedProductOut] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    reasoning_notes: list[str] = Field(default_factory=list)
 
 
 class SourcingItemListOut(BaseModel):
@@ -70,18 +93,18 @@ class SourcingItemListOut(BaseModel):
     price_cents: int
     location_city: str | None
     primary_image_url: str | None
-    estimated_profit_cents: int | None
-    estimated_roi_bp: int | None
-    auction_end_at: datetime | None
-    auction_current_price_cents: int | None
-    auction_bid_count: int | None
-    max_purchase_price_cents: int | None
-    bidbag_sent_at: datetime | None
     status: SourcingStatus
+    evaluation_status: SourcingEvaluationStatus
+    recommendation: str | None
+    evaluation_summary: str | None
+    expected_profit_cents: int | None
+    expected_roi_bp: int | None
+    max_buy_price_cents: int | None
+    evaluation_finished_at: datetime | None
+    evaluation_last_error: str | None
     scraped_at: datetime
     posted_at: datetime | None
     url: str
-    match_count: int = 0
 
 
 class SourcingItemListResponse(BaseModel):
@@ -89,30 +112,6 @@ class SourcingItemListResponse(BaseModel):
     total: int
     limit: int
     offset: int
-
-
-class SourcingMatchMasterProductOut(BaseModel):
-    id: UUID
-    title: str
-    platform: str
-    asin: str | None
-
-
-class SourcingMatchOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    master_product: SourcingMatchMasterProductOut
-    confidence_score: int
-    match_method: str
-    matched_substring: str | None
-    snapshot_bsr: int | None
-    snapshot_new_price_cents: int | None
-    snapshot_used_price_cents: int | None
-    snapshot_fba_payout_cents: int | None
-    user_confirmed: bool
-    user_rejected: bool
-    user_adjusted_condition: str | None
 
 
 class SourcingItemDetailOut(BaseModel):
@@ -128,60 +127,28 @@ class SourcingItemDetailOut(BaseModel):
     image_urls: list[str] = Field(default_factory=list)
     location_zip: str | None
     location_city: str | None
+    seller_type: str | None
     status: SourcingStatus
     status_reason: str | None
-    estimated_revenue_cents: int | None
-    estimated_profit_cents: int | None
-    estimated_roi_bp: int | None
-    auction_end_at: datetime | None
-    auction_current_price_cents: int | None
-    auction_bid_count: int | None
-    max_purchase_price_cents: int | None
-    bidbag_sent_at: datetime | None
-    bidbag_last_payload: dict[str, Any] | None
+    evaluation_status: SourcingEvaluationStatus
+    evaluation_queued_at: datetime | None
+    evaluation_started_at: datetime | None
+    evaluation_finished_at: datetime | None
+    evaluation_attempt_count: int
+    evaluation_last_error: str | None
+    evaluation_summary: str | None
+    evaluation_prompt_version: str | None
+    recommendation: str | None
+    expected_profit_cents: int | None
+    expected_roi_bp: int | None
+    max_buy_price_cents: int | None
+    evaluation_confidence: int | None
+    amazon_source_used: str | None
+    evaluation: SourcingEvaluationResultOut | None = None
+    raw_data: dict[str, Any] | None = None
     scraped_at: datetime
     posted_at: datetime | None
-    analyzed_at: datetime | None
     url: str
-    matches: list[SourcingMatchOut] = Field(default_factory=list)
-
-
-class SourcingMatchPatchIn(BaseModel):
-    user_confirmed: bool | None = None
-    user_rejected: bool | None = None
-    user_adjusted_condition: str | None = None
-
-
-class SourcingMatchPatchOut(BaseModel):
-    item_id: UUID
-    match_id: UUID
-    status: SourcingStatus
-    estimated_revenue_cents: int | None
-    estimated_profit_cents: int | None
-    estimated_roi_bp: int | None
-
-
-class SourcingManualMatchCandidateOut(BaseModel):
-    id: UUID
-    sku: str
-    title: str
-    platform: str
-    region: str
-    variant: str
-    asin: str | None = None
-    rank_overall: int | None = None
-    price_used_good_cents: int | None = None
-    price_new_cents: int | None = None
-
-
-class SourcingManualMatchCreateIn(BaseModel):
-    master_product_id: UUID
-    user_confirmed: bool = True
-    user_adjusted_condition: str | None = None
-
-
-class SourcingConversionPreviewIn(BaseModel):
-    confirmed_match_ids: list[UUID] | None = None
 
 
 class SourcingConversionLineOut(BaseModel):
@@ -199,10 +166,6 @@ class SourcingConversionPreviewOut(BaseModel):
     lines: list[SourcingConversionLineOut]
 
 
-class SourcingConvertIn(BaseModel):
-    confirmed_match_ids: list[UUID]
-
-
 class SourcingConvertOut(BaseModel):
     purchase_id: UUID
     purchase_kind: str
@@ -211,15 +174,21 @@ class SourcingConvertOut(BaseModel):
     lines: list[SourcingConversionLineOut]
 
 
-class SourcingDiscardIn(BaseModel):
-    reason: str | None = None
-
-
 class SourcingBidbagHandoffOut(BaseModel):
     item_id: UUID
     deep_link_url: str | None
     payload: dict[str, Any]
     sent_at: datetime
+
+
+class SourcingEvaluateOut(BaseModel):
+    item_id: UUID
+    evaluation_status: SourcingEvaluationStatus
+    evaluation_queued_at: datetime
+
+
+class SourcingDiscardIn(BaseModel):
+    reason: str | None = None
 
 
 class SourcingSettingOut(BaseModel):
@@ -302,7 +271,7 @@ class SourcingAgentRunQueryOut(BaseModel):
     status: str
     items_scraped: int
     items_new: int
-    items_ready: int
+    items_queued: int
 
 
 class SourcingAgentRunOut(BaseModel):

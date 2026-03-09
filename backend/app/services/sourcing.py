@@ -24,6 +24,7 @@ from app.schemas.purchase import PurchaseCreate, PurchaseLineCreate
 from app.schemas.sourcing import SourcingBidbagHandoffOut, SourcingConversionLineOut, SourcingConversionPreviewOut, SourcingConvertOut
 from app.services.audit import audit_log
 from app.services.purchases import create_purchase, normalize_source_platform_label
+from app.services.sourcing_codex import ensure_supported_platform, queue_item_for_evaluation
 from app.services.target_pricing import fba_payout_cents
 
 
@@ -48,7 +49,7 @@ class SourcingRunResult:
     finished_at: datetime | None
     items_scraped: int
     items_new: int
-    items_ready: int
+    items_queued: int
 
 
 @dataclass
@@ -873,6 +874,7 @@ async def execute_sourcing_run(
     app_settings = app_settings or get_settings()
     started_at = utcnow()
     run_platform = platform or SourcingPlatform.KLEINANZEIGEN
+    ensure_supported_platform(run_platform)
 
     async with _get_session_local()() as session:
         cfg = await _load_resolved_settings(session, app_settings)
@@ -890,7 +892,7 @@ async def execute_sourcing_run(
                         finished_at=started_at,
                         items_scraped=0,
                         items_new=0,
-                        items_ready=0,
+                        items_queued=0,
                     )
 
     terms = [t for t in (search_terms or []) if t.strip()]
@@ -957,8 +959,9 @@ async def execute_sourcing_run(
         )
 
     items_new = 0
-    items_ready = 0
+    items_queued = 0
     detail_candidates: list[tuple[uuid.UUID, str]] = []
+    new_item_ids: list[uuid.UUID] = []
 
     async with _get_session_local()() as session:
         async with session.begin():
@@ -967,25 +970,12 @@ async def execute_sourcing_run(
                 raise RuntimeError("Sourcing run not found")
 
             cfg = await _load_resolved_settings(session, app_settings)
-
-            candidate_rows = (
-                await session.execute(
-                    select(MasterProduct, AmazonProductMetricsLatest)
-                    .outerjoin(AmazonProductMetricsLatest, AmazonProductMetricsLatest.master_product_id == MasterProduct.id)
-                    .where(MasterProduct.asin.is_not(None), func.trim(MasterProduct.asin) != "")
-                )
-            ).all()
-            candidates = [(row[0], row[1]) for row in candidate_rows]
-            candidate_titles = [row[0].title for row in candidate_rows]
+            enrich_enabled = True if detail_enrichment_enabled is None else bool(detail_enrichment_enabled)
 
             for listing in listings:
                 title = str(listing.get("title") or "").strip()
                 external_id = str(listing.get("external_id") or "").strip()
                 if not title or not external_id:
-                    continue
-
-                pre_reason = _pre_discard_reason(title=title, seller_type=str(listing.get("seller_type") or "").strip() or None)
-                if pre_reason is not None:
                     continue
 
                 existing = (
@@ -1003,9 +993,16 @@ async def execute_sourcing_run(
                         existing.agent_id = agent_id
                     if agent_query_id is not None:
                         existing.agent_query_id = agent_query_id
-                    next_url = str(listing.get("url") or "").strip()
-                    if next_url:
-                        existing.url = next_url
+                    existing.url = str(listing.get("url") or "").strip() or existing.url
+                    existing.title = title
+                    existing.description = str(listing.get("description") or "").strip() or None
+                    existing.price_cents = _to_int(listing.get("price_cents"), existing.price_cents)
+                    existing.location_zip = str(listing.get("location_zip") or "").strip() or None
+                    existing.location_city = str(listing.get("location_city") or "").strip() or None
+                    existing.seller_type = str(listing.get("seller_type") or "").strip() or None
+                    existing.image_urls = [str(u) for u in listing.get("image_urls", []) if str(u).strip()] if isinstance(listing.get("image_urls"), list) else None
+                    existing.primary_image_url = str(listing.get("primary_image_url") or "").strip() or None
+                    existing.raw_data = listing
                     continue
 
                 item = SourcingItem(
@@ -1053,24 +1050,13 @@ async def execute_sourcing_run(
                 session.add(item)
                 await session.flush()
                 items_new += 1
-
-                await _analyze_item(
-                    session=session,
-                    item=item,
-                    cfg=cfg,
-                    app_settings=app_settings,
-                    candidates=candidates,
-                    candidate_titles=candidate_titles,
-                )
-                if item.status == SourcingStatus.READY:
-                    items_ready += 1
-                enrich_enabled = True if detail_enrichment_enabled is None else bool(detail_enrichment_enabled)
-                if enrich_enabled and _is_detail_enrichment_candidate(item=item, cfg=cfg):
+                new_item_ids.append(item.id)
+                if enrich_enabled:
                     detail_candidates.append((item.id, item.url))
 
             run.items_scraped = len(listings)
             run.items_new = items_new
-            run.items_ready = items_ready
+            run.items_ready = 0
             run.finished_at = utcnow()
             run.blocked = blocked
 
@@ -1127,12 +1113,12 @@ async def execute_sourcing_run(
         if isinstance(listing_detail, dict) and listing_detail:
             detail_payloads[item_id] = listing_detail
 
-    if detail_payloads:
+    if new_item_ids:
         async with _get_session_local()() as session:
             async with session.begin():
                 rows = (
                     await session.execute(
-                        select(SourcingItem).where(SourcingItem.id.in_(list(detail_payloads.keys())))
+                        select(SourcingItem).where(SourcingItem.id.in_(new_item_ids))
                     )
                 ).scalars().all()
                 by_id = {row.id: row for row in rows}
@@ -1141,6 +1127,12 @@ async def execute_sourcing_run(
                     if item is None:
                         continue
                     _merge_detail_payload_into_item(item=item, detail=detail)
+                for item_id in new_item_ids:
+                    item = by_id.get(item_id)
+                    if item is None:
+                        continue
+                    queue_item_for_evaluation(item)
+                    items_queued += 1
 
     status = "completed"
     if err_type == _EBAY_EMPTY_RESULTS_DEGRADED_ERROR_TYPE:
@@ -1157,7 +1149,7 @@ async def execute_sourcing_run(
         finished_at=utcnow(),
         items_scraped=len(listings),
         items_new=items_new,
-        items_ready=items_ready,
+        items_queued=items_queued,
     )
 
 

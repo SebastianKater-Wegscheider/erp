@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.db import engine
 from app.core.security import require_basic_auth
 from app.services.amazon_scrape_scheduler import amazon_scrape_scheduler_loop
+from app.services.sourcing_codex import codex_evaluation_worker_loop
 from app.services.sourcing_scheduler import sourcing_scheduler_loop
 
 
@@ -160,6 +161,8 @@ def create_app() -> FastAPI:
             app.state.amazon_scrape_task = asyncio.create_task(amazon_scrape_scheduler_loop(settings))
         if settings.sourcing_enabled:
             app.state.sourcing_task = asyncio.create_task(sourcing_scheduler_loop(settings))
+        if settings.sourcing_enabled and settings.codex_enabled:
+            app.state.codex_eval_task = asyncio.create_task(codex_evaluation_worker_loop(settings))
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
@@ -169,6 +172,11 @@ def create_app() -> FastAPI:
             with suppress(asyncio.CancelledError):
                 await task
         task = getattr(app.state, "sourcing_task", None)
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        task = getattr(app.state, "codex_eval_task", None)
         if task is not None:
             task.cancel()
             with suppress(asyncio.CancelledError):

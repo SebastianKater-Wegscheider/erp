@@ -151,6 +151,13 @@ class SourcingStatus(StrEnum):
     ERROR = "ERROR"
 
 
+class SourcingEvaluationStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class SourcingPlatform(StrEnum):
     KLEINANZEIGEN = "KLEINANZEIGEN"
     WILLHABEN = "WILLHABEN"

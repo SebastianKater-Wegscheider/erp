@@ -8,9 +8,9 @@ from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, In
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.enums import SourcingPlatform, SourcingStatus
+from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.sql_enums import sourcing_platform_enum, sourcing_status_enum
+from app.models.sql_enums import sourcing_evaluation_status_enum, sourcing_platform_enum, sourcing_status_enum
 
 if TYPE_CHECKING:
     from app.models.master_product import MasterProduct
@@ -100,6 +100,8 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("platform", "external_id", name="uq_sourcing_item_platform_external"),
         Index("ix_sourcing_items_status", "status"),
+        Index("ix_sourcing_items_evaluation_status", "evaluation_status"),
+        Index("ix_sourcing_items_recommendation", "recommendation"),
         Index("ix_sourcing_items_scraped_at", "scraped_at"),
         Index("ix_sourcing_items_posted_at", "posted_at"),
         Index("ix_sourcing_items_run_id", "last_run_id"),
@@ -144,6 +146,26 @@ class SourcingItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     bidbag_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     bidbag_last_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evaluation_status: Mapped[SourcingEvaluationStatus] = mapped_column(
+        sourcing_evaluation_status_enum,
+        nullable=False,
+        default=SourcingEvaluationStatus.PENDING,
+    )
+    evaluation_queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evaluation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evaluation_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evaluation_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    evaluation_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluation_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluation_result_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    evaluation_raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluation_prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    recommendation: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    expected_profit_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expected_roi_bp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_buy_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evaluation_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    amazon_source_used: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     converted_purchase_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

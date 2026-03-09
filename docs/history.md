@@ -1,5 +1,32 @@
 # History
 
+## 2026-03-09 - Sourcing pivot: ERP as scrape inbox, Codex as evaluator, frontend-v2 abandoned
+
+### Ausgangslage
+- Das bisherige Sourcing-Modul bewertet Listings im ERP selbst: fuzzy Matching gegen `master_products`, interne Profit-/ROI-Logik, `READY`/`LOW_VALUE`-Status, Bidbag-Handoff und Conversion-Richtung Einkauf.
+- Diese Logik ist teuer in Wartung, dupliziert Bewertungswissen und ist zu starr fuer den eigentlichen Operator-Workflow.
+- `frontend-v2` wurde parallel aufgebaut, hat aber den erwarteten Mehrwert nicht geliefert und erhoeht nur Pflege- und Deploy-Aufwand.
+
+### Business-Entscheidungen
+- Sourcing wird auf eine klare Verantwortungsgrenze reduziert:
+  ERP scraped und persistiert Listings, Codex bewertet sie.
+- Die kaufmaennische Entscheidung wird nicht mehr im ERP hart kodiert, sondern von Codex mit ERP-Kontext plus Amazon-Fallback ermittelt.
+- Sourcing wird zu einer Inbox fuer bewertete Chancen; Einkaufserfassung bleibt vorerst manuell im bestehenden Purchase-Flow.
+- `frontend-v2` wird komplett entfernt, damit nur noch ein aktiver Frontend-Pfad gepflegt wird.
+
+### Technische Entscheidungen
+- Neue Codex-Evaluierungspipeline im Backend:
+  pro Listing ein lokales Workspace-Verzeichnis mit `summary.json`, `full.json`, `schema.json`, `prompt.txt`; Ausfuehrung via `codex exec`.
+- Token-Strategie:
+  Codex darf das Marketplace-Listing nicht selbst live laden; das Backend staged die relevanten Daten lokal und gibt nur Amazon-Websuche als Fallback frei.
+- Bestehende Sourcing-Matching-/Profit-Felder bleiben zunaechst aus Kompatibilitaetsgruenden im Schema, werden fuer neue Listings aber nicht mehr geschrieben.
+- Search Agents und Scheduler bleiben erhalten, fuettern aber nur noch die Codex-Queue.
+
+### Trade-offs
+- Die Bewertung wird flexibler und zentraler, kostet aber eine neue operative Abhaengigkeit auf den Codex-CLI-Run im Backend-Container.
+- Legacy-Sourcing-Daten bleiben vorerst im Schema, was den Refactor risikoaermer macht, aber kurzfristig technische Altlasten bestehen laesst.
+- Der Verzicht auf `frontend-v2` beschleunigt den Fokus, bedeutet aber, dass fruehere UX-Experimente bewusst verworfen werden.
+
 ## 2026-02-21 - Frontend v2: Minimalistische UX-Neustartlinie (parallel zu v1)
 
 ### Ausgangslage
@@ -1041,3 +1068,24 @@
 
 ### Risk handling
 - Änderungen sind viewport-gebunden (nur `max-width: 900px`) und additive CSS/React-UI Anpassungen; keine Backend/API Änderungen.
+
+## 2026-03-09 - Real Codex CLI validation and runtime isolation for sourcing evaluations
+
+### Business perspective
+- Für die neue Sourcing-Architektur reicht ein Stub-Test nicht aus; der Operator muss wissen, ob `codex exec` auf dieser Maschine real lauffähig ist und ob zusätzliche Auth-Schritte nötig sind.
+- Ergebnis der Live-Prüfung: Auth ist bereits vorhanden, aber die bestehende lokale Codex-State/Config-Umgebung ist nicht stabil genug, um sie direkt für den Backend-Worker zu verwenden.
+
+### Technical findings
+- `codex login status` meldet eine gültige ChatGPT-Anmeldung.
+- Reale `codex exec` Aufrufe mit dem bestehenden `~/.codex` hängen bzw. emitten State-DB-Warnungen (`migration 11 ... missing`) und produzieren teils kein Output-Artefakt.
+- Derselbe reale Aufruf funktioniert zuverlässig, wenn `HOME` auf ein frisches Verzeichnis zeigt, das nur `auth.json` enthält; damit werden fehlerhafte State-DB/MCP-Konfigurationen umgangen.
+- Zusätzlich wurde verifiziert, dass das installierte `codex-cli 0.104.0` kein `--search`-Flag für `exec` kennt; Feature-Overrides müssen über `-c features.search_tool=...` erfolgen.
+
+### Decision
+- Backend-Codex-Runs werden von der Host-`~/.codex`-State isoliert:
+  pro Evaluation wird eine minimale Codex-Home-Struktur erzeugt, die nur Auth übernimmt.
+- Der Worker darf keine ambient Config/MCP-Server der Operator-Maschine erben; Suchverhalten wird explizit über CLI-Config gesetzt.
+
+### Expected effect
+- Reale Backend-Evaluierungen werden robuster und besser reproduzierbar.
+- Ein vorhandenes Login genügt weiterhin, aber beschädigte lokale Codex-State-Dateien blockieren den ERP-Worker nicht mehr direkt.

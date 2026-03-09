@@ -38,13 +38,23 @@ afterEach(() => {
   requestMock.mockReset();
 });
 
-it("uses 40-item pagination and supports inline discard", async () => {
+it("uses 40-item pagination and supports discard in the codex inbox", async () => {
   requestMock.mockImplementation(async (path: string, opts?: RequestInit & { json?: unknown }) => {
     if (path === "/sourcing/health") {
       return {
         status: "healthy",
         scraper_status: "ok",
-        items_pending_analysis: 0,
+        items_pending_evaluation: 1,
+        items_failed_evaluation: 0,
+      };
+    }
+
+    if (path === "/sourcing/stats") {
+      return {
+        total_items_scraped: 80,
+        items_by_status: { NEW: 2 },
+        items_by_evaluation_status: { PENDING: 1, COMPLETED: 1 },
+        items_by_recommendation: { BUY: 1, WATCH: 1 },
       };
     }
 
@@ -64,13 +74,18 @@ it("uses 40-item pagination and supports inline discard", async () => {
               price_cents: 9500,
               location_city: "Wien",
               primary_image_url: null,
-              estimated_profit_cents: 3200,
-              estimated_roi_bp: 5100,
-              status: "READY",
-              scraped_at: "2026-02-17T18:00:00Z",
-              posted_at: "2026-02-17T17:30:00Z",
+              status: "NEW",
+              evaluation_status: "COMPLETED",
+              recommendation: "BUY",
+              evaluation_summary: "Strong margin after Codex review.",
+              expected_profit_cents: 3200,
+              expected_roi_bp: 5100,
+              max_buy_price_cents: 11000,
+              evaluation_finished_at: "2026-03-09T10:00:00Z",
+              evaluation_last_error: null,
+              scraped_at: "2026-03-09T09:00:00Z",
+              posted_at: "2026-03-09T08:30:00Z",
               url: "https://example.com/1",
-              match_count: 3,
             },
           ],
           total: 80,
@@ -80,25 +95,27 @@ it("uses 40-item pagination and supports inline discard", async () => {
       }
 
       if (offset === 40) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 60);
-        });
         return {
           items: [
             {
               id: "item-2",
-              platform: "KLEINANZEIGEN",
+              platform: "EBAY_DE",
               title: "Gamecube Bundle 2",
               price_cents: 12000,
               location_city: "Graz",
               primary_image_url: null,
-              estimated_profit_cents: 4200,
-              estimated_roi_bp: 6000,
-              status: "READY",
-              scraped_at: "2026-02-17T18:10:00Z",
-              posted_at: "2026-02-17T17:50:00Z",
+              status: "NEW",
+              evaluation_status: "PENDING",
+              recommendation: null,
+              evaluation_summary: null,
+              expected_profit_cents: null,
+              expected_roi_bp: null,
+              max_buy_price_cents: null,
+              evaluation_finished_at: null,
+              evaluation_last_error: null,
+              scraped_at: "2026-03-09T09:10:00Z",
+              posted_at: "2026-03-09T08:50:00Z",
               url: "https://example.com/2",
-              match_count: 4,
             },
           ],
           total: 80,
@@ -114,17 +131,14 @@ it("uses 40-item pagination and supports inline discard", async () => {
       return undefined;
     }
 
-    if (path === "/sourcing/agents" && !opts?.method) {
-      return [];
-    }
-
     throw new Error(`Unhandled request in test: ${path}`);
   });
 
   await renderPage();
   await screen.findByText("Gamecube Bundle 1", {}, { timeout: 20_000 });
+  await screen.findByText("BUY");
 
-  fireEvent.click(screen.getByRole("button", { name: /Uninteressant/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Verwerfen/i }));
 
   await waitFor(() => {
     expect(requestMock).toHaveBeenCalledWith(
@@ -145,4 +159,4 @@ it("uses 40-item pagination and supports inline discard", async () => {
     ).toBe(true);
   });
   await screen.findByText("Seite 2 von 2");
-}, 40_000);
+});

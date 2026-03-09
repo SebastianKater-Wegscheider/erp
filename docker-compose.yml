@@ -24,10 +24,18 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://erp:erp@db:5432/erp}
       APP_STORAGE_DIR: ${APP_STORAGE_DIR:-/data}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:15173,http://localhost:15174,http://localhost:5173,http://localhost:5174}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:15173,http://localhost:5173}
       BACKEND_DEV_RELOAD: ${BACKEND_DEV_RELOAD:-false}
       # Reliable reload on Docker Desktop file sharing (Mac/Windows).
       WATCHFILES_FORCE_POLLING: "true"
+      CODEX_ENABLED: ${CODEX_ENABLED:-false}
+      CODEX_BINARY_PATH: ${CODEX_BINARY_PATH:-/usr/local/bin/codex}
+      CODEX_AUTH_SOURCE_DIR: ${CODEX_AUTH_SOURCE_DIR:-/root/.codex}
+      CODEX_MODEL: ${CODEX_MODEL:-}
+      CODEX_TIMEOUT_SECONDS: ${CODEX_TIMEOUT_SECONDS:-180}
+      CODEX_MAX_ATTEMPTS: ${CODEX_MAX_ATTEMPTS:-2}
+      CODEX_QUEUE_TICK_SECONDS: ${CODEX_QUEUE_TICK_SECONDS:-30}
+      CODEX_SEARCH_ENABLED: ${CODEX_SEARCH_ENABLED:-true}
     volumes:
       - ./data:/data
       # Keep backend in sync with local code (prevents stale images during dev).
@@ -39,6 +47,7 @@ services:
       - ./backend/alembic:/app/alembic
       # Ensure pytest config is available inside the container (avoids pytest-asyncio warnings).
       - ./pytest.ini:/app/pytest.ini:ro
+      - ${HOME}/.codex:/root/.codex:ro
     command: >-
       sh -lc "if [ \"${BACKEND_DEV_RELOAD:-false}\" = \"true\" ]; then
       exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload;
@@ -130,31 +139,6 @@ services:
     depends_on:
       - backend
 
-  frontend-v2:
-    image: node:22-alpine
-    restart: unless-stopped
-    working_dir: /app
-    environment:
-      CHOKIDAR_USEPOLLING: "true"
-      FRONTEND_V2_DEV_SERVER: ${FRONTEND_V2_DEV_SERVER:-false}
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:${BACKEND_PORT:-18000}/api/v1}
-      VITE_BASE_PATH: ${FRONTEND_V2_BASE_PATH:-/company-v2/}
-    volumes:
-      - ./frontend-v2:/app
-      - frontend_v2_node_modules:/app/node_modules
-    command: >-
-      sh -lc "npm ci &&
-      if [ \"${FRONTEND_V2_DEV_SERVER:-false}\" = \"true\" ]; then
-      exec npm run dev -- --host 0.0.0.0 --port 5174 --strictPort;
-      else
-      npm run build &&
-      exec npm run preview -- --host 0.0.0.0 --port 5174 --strictPort;
-      fi"
-    ports:
-      - "15174:5174"
-    depends_on:
-      - backend
-
   backup:
     build:
       context: .
@@ -181,4 +165,3 @@ services:
 volumes:
   postgres_data:
   frontend_node_modules:
-  frontend_v2_node_modules:

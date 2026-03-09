@@ -12,7 +12,7 @@ import { PageHeader } from "../components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { useApi } from "../lib/api";
 
-type AgentPlatform = "KLEINANZEIGEN" | "EBAY_DE" | "WILLHABEN" | "EBAY_KLEINANZEIGEN";
+type AgentPlatform = "KLEINANZEIGEN" | "EBAY_DE";
 
 type AgentQuery = {
   id: string;
@@ -52,7 +52,7 @@ type AgentDraft = {
   queries: QueryDraft[];
 };
 
-const PLATFORM_OPTIONS: AgentPlatform[] = ["KLEINANZEIGEN", "EBAY_DE", "WILLHABEN", "EBAY_KLEINANZEIGEN"];
+const PLATFORM_OPTIONS: AgentPlatform[] = ["KLEINANZEIGEN", "EBAY_DE"];
 
 function emptyQueryDraft(): QueryDraft {
   return {
@@ -178,7 +178,7 @@ export function SourcingAgentsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Search Agents" description="Plattform- und Keyword-Profile mit eigenem Intervall verwalten." />
+      <PageHeader title="Search Agents" description="Kleinanzeigen- und eBay-Suchprofile verwalten, die Listings automatisch in die Codex-Evaluierungsqueue schicken." />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">

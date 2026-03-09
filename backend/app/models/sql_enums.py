@@ -21,6 +21,7 @@ from app.core.enums import (
     PurchaseType,
     ReturnAction,
     SourcingPlatform,
+    SourcingEvaluationStatus,
     SourcingStatus,
     TargetPriceMode,
 )
@@ -52,3 +53,4 @@ marketplace_match_strategy_enum = Enum(MarketplaceMatchStrategy, name="marketpla
 target_price_mode_enum = Enum(TargetPriceMode, name="target_price_mode")
 sourcing_status_enum = Enum(SourcingStatus, name="sourcing_status")
 sourcing_platform_enum = Enum(SourcingPlatform, name="sourcing_platform")
+sourcing_evaluation_status_enum = Enum(SourcingEvaluationStatus, name="sourcing_evaluation_status")

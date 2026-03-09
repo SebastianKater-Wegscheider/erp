@@ -1,217 +1,354 @@
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime, timedelta
+import json
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.orm import selectinload
 
-from app.core.enums import PurchaseKind, SourcingPlatform, SourcingStatus
-from app.models.amazon_scrape import AmazonProductMetricsLatest
-from app.models.master_product import MasterProduct, master_product_sku_from_id
-from app.models.purchase import Purchase
-from app.models.sourcing import SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
-from app.schemas.sourcing import SourcingManualMatchCreateIn
-from app.services.sourcing import (
-    _ResolvedSettings,
-    _compute_max_purchase_price_cents,
-    _parse_kleinanzeigen_posted_at,
-    build_bidbag_handoff,
-    cleanse_stale_sourcing_items,
-    convert_item_to_purchase,
-    execute_sourcing_run,
-    load_resolved_settings,
-    prune_old_sourcing_items,
-    recalculate_item_from_matches,
-    update_settings_values,
+from app.core.config import get_settings
+from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
+from app.models.sourcing import SourcingItem, SourcingRun
+from app.services.sourcing import _parse_kleinanzeigen_posted_at, execute_sourcing_run
+from app.services.sourcing_codex import (
+    PROMPT_VERSION,
+    _build_codex_command,
+    _workspace_for_item,
+    evaluate_item_by_id,
+    stage_workspace,
 )
 
 
-@pytest.mark.asyncio
-async def test_recalculate_item_marks_high_bsr_as_low_value(db_session: AsyncSession) -> None:
-    mp_id = uuid.uuid4()
-    mp = MasterProduct(
-        id=mp_id,
-        sku=master_product_sku_from_id(mp_id),
-        kind="GAME",
-        title="Test Product",
-        platform="PS2",
-        region="EU",
-        variant="",
-        asin="B000123456",
+def _write_stub_codex(path: Path, payload: str) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env python3",
+                "import sys",
+                "from pathlib import Path",
+                "",
+                "args = sys.argv[1:]",
+                "out = None",
+                "for idx, value in enumerate(args):",
+                "    if value == '--output-last-message':",
+                "        out = Path(args[idx + 1])",
+                "        break",
+                "if out is None:",
+                "    raise SystemExit('missing --output-last-message')",
+                f"out.write_text({payload!r}, encoding='utf-8')",
+                "sys.exit(0)",
+            ]
+        ),
+        encoding="utf-8",
     )
-    db_session.add(mp)
+    path.chmod(0o755)
 
-    item = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="abc-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/abc-1",
-        title="Retro Sammlung",
-        price_cents=1_000,
-        status=SourcingStatus.NEW,
-    )
-    db_session.add(item)
-    await db_session.flush()
 
-    db_session.add(
-        SourcingMatch(
-            sourcing_item_id=item.id,
-            master_product_id=mp.id,
-            confidence_score=90,
-            match_method="title_fuzzy",
-            snapshot_bsr=80_000,
-            snapshot_fba_payout_cents=1_500,
-        )
-    )
-    await db_session.flush()
-
-    await recalculate_item_from_matches(session=db_session, item=item, confirmed_only=False)
-    await db_session.commit()
-
-    refreshed = await db_session.get(SourcingItem, item.id)
-    assert refreshed is not None
-    assert refreshed.status == SourcingStatus.LOW_VALUE
-    assert refreshed.estimated_profit_cents == 0
+def _write_fake_codex_auth(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "auth.json").write_text('{"provider":"chatgpt"}', encoding="utf-8")
 
 
 @pytest.mark.asyncio
-async def test_convert_item_to_purchase_idempotency(db_session: AsyncSession) -> None:
-    mp_id = uuid.uuid4()
-    mp = MasterProduct(
-        id=mp_id,
-        sku=master_product_sku_from_id(mp_id),
-        kind="GAME",
-        title="Mario 64",
-        platform="N64",
-        region="EU",
-        variant="",
-        asin="B000FC2BTQ",
-    )
-    db_session.add(mp)
-
-    item = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="conv-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/conv-1",
-        title="N64 Bundle",
-        price_cents=8_000,
-        status=SourcingStatus.READY,
-    )
-    db_session.add(item)
-    await db_session.flush()
-
-    match = SourcingMatch(
-        sourcing_item_id=item.id,
-        master_product_id=mp.id,
-        confidence_score=92,
-        match_method="title_fuzzy",
-        snapshot_bsr=4_000,
-        snapshot_fba_payout_cents=1_900,
-        user_confirmed=True,
-    )
-    db_session.add(match)
-    await db_session.flush()
-
-    cfg = await load_resolved_settings(db_session)
-    await db_session.refresh(item)
-    item = (
-        await db_session.execute(
-            select(SourcingItem)
-            .where(SourcingItem.id == item.id)
-            .options(selectinload(SourcingItem.matches))
-        )
-    ).scalar_one()
-
-    out = await convert_item_to_purchase(
-        session=db_session,
-        actor="tester",
-        item=item,
-        cfg=cfg,
-        confirmed_match_ids=[match.id],
-    )
-    await db_session.commit()
-
-    created_purchase = await db_session.get(Purchase, out.purchase_id)
-    assert created_purchase is not None
-    assert created_purchase.kind == PurchaseKind.PRIVATE_DIFF
-
-    assert item.status == SourcingStatus.CONVERTED
-    assert item.converted_purchase_id == created_purchase.id
-
-    with pytest.raises(ValueError):
-        await convert_item_to_purchase(
-            session=db_session,
-            actor="tester",
-            item=item,
-            cfg=cfg,
-            confirmed_match_ids=[match.id],
-        )
-
-
-@pytest.mark.asyncio
-async def test_execute_sourcing_run_skips_when_recent_and_not_forced(
+async def test_execute_sourcing_run_enqueues_new_items_after_detail_enrichment(
     session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("app.services.sourcing.SessionLocal", session_factory)
 
+    async def _fake_scrape_fetch(*, app_settings, platform, search_terms, options=None, max_pages=None):  # noqa: ARG001
+        return {
+            "blocked": False,
+            "error_type": None,
+            "error_message": None,
+            "listings": [
+                {
+                    "external_id": "listing-1",
+                    "title": "Gamecube Konvolut",
+                    "description": "Kurzbeschreibung",
+                    "price_cents": 9500,
+                    "url": "https://www.kleinanzeigen.de/s-anzeige/listing-1",
+                    "location_city": "Wien",
+                    "seller_type": "private",
+                    "posted_at_text": "Heute, 07:53",
+                }
+            ],
+        }
+
+    async def _fake_listing_detail(*, app_settings, platform, url):  # noqa: ARG001
+        return {
+            "blocked": False,
+            "listing": {
+                "description_full": "Ausführliche Beschreibung mit allen relevanten Details",
+                "image_urls": ["https://img.example/1.jpg"],
+                "seller_type": "private",
+                "price_cents": 9300,
+            },
+        }
+
+    monkeypatch.setattr("app.services.sourcing._scraper_fetch", _fake_scrape_fetch)
+    monkeypatch.setattr("app.services.sourcing._scraper_fetch_listing_detail", _fake_listing_detail)
+
+    result = await execute_sourcing_run(
+        force=True,
+        search_terms=["gamecube"],
+        trigger="test",
+        platform=SourcingPlatform.KLEINANZEIGEN,
+    )
+
+    assert result.status == "completed"
+    assert result.items_new == 1
+    assert result.items_queued == 1
+
     async with session_factory() as session:
-        run = SourcingRun(
+        item = (await session.execute(select(SourcingItem))).scalar_one()
+        assert item.description == "Ausführliche Beschreibung mit allen relevanten Details"
+        assert item.price_cents == 9300
+        assert item.evaluation_status == SourcingEvaluationStatus.PENDING
+        assert item.evaluation_queued_at is not None
+        assert item.evaluation_prompt_version == PROMPT_VERSION
+        assert item.status == SourcingStatus.NEW
+
+
+@pytest.mark.asyncio
+async def test_stage_workspace_writes_summary_and_full_payloads(
+    db_session: AsyncSession,
+) -> None:
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="workspace-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/workspace-1",
+        title="Nintendo Gamecube Paket",
+        description="Kurztext",
+        price_cents=12000,
+        raw_data={"shipping_possible": True, "direct_buy": False},
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    workspace = await stage_workspace(session=db_session, item=item, settings=get_settings())
+
+    summary = json.loads(workspace.summary_path.read_text(encoding="utf-8"))
+    full = json.loads(workspace.full_path.read_text(encoding="utf-8"))
+
+    assert summary["listing"]["title"] == "Nintendo Gamecube Paket"
+    assert summary["task"]["rules"][0] == "Do not fetch the marketplace listing URL."
+    assert full["listing"]["raw_data"]["shipping_possible"] is True
+    assert workspace.prompt_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_evaluate_item_by_id_persists_structured_codex_result(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    stub = tmp_path / "codex-success"
+    auth_dir = tmp_path / "codex-auth"
+    _write_stub_codex(
+        stub,
+        json.dumps(
+            {
+                "recommendation": "BUY",
+                "summary": "Strong margin after cached Amazon comparison.",
+                "expected_profit_cents": 4200,
+                "expected_roi_bp": 3800,
+                "max_buy_price_cents": 10800,
+                "confidence": 84,
+                "amazon_source_used": "db_cache",
+                "matched_products": [
+                    {
+                        "master_product_id": None,
+                        "sku": "MP-TEST",
+                        "title": "Gamecube Bundle",
+                        "asin": "B000123456",
+                        "confidence": 82,
+                        "basis": "title + cached amazon data",
+                    }
+                ],
+                "risks": ["Condition may vary"],
+                "reasoning_notes": ["Cached Amazon metrics were fresh enough."],
+            }
+        ),
+    )
+    _write_fake_codex_auth(auth_dir)
+
+    monkeypatch.setenv("CODEX_ENABLED", "true")
+    monkeypatch.setenv("CODEX_BINARY_PATH", str(stub))
+    monkeypatch.setenv("CODEX_AUTH_SOURCE_DIR", str(auth_dir))
+    get_settings.cache_clear()
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="eval-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/eval-1",
+        title="Gamecube Bundle",
+        description="Bundle",
+        price_cents=6500,
+        raw_data={"shipping_possible": True},
+        evaluation_status=SourcingEvaluationStatus.PENDING,
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    await evaluate_item_by_id(session=db_session, item_id=item.id, settings=get_settings())
+    await db_session.commit()
+
+    refreshed = await db_session.get(SourcingItem, item.id)
+    assert refreshed is not None
+    assert refreshed.evaluation_status == SourcingEvaluationStatus.COMPLETED
+    assert refreshed.recommendation == "BUY"
+    assert refreshed.expected_profit_cents == 4200
+    assert refreshed.max_buy_price_cents == 10800
+    assert refreshed.evaluation_summary == "Strong margin after cached Amazon comparison."
+    assert refreshed.evaluation_result_json is not None
+    assert (
+        get_settings().app_storage_dir
+        / "sourcing-evals"
+        / str(item.id)
+        / ".codex-home"
+        / ".codex"
+        / "auth.json"
+    ).exists()
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_evaluate_item_by_id_marks_failed_on_invalid_codex_json(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    stub = tmp_path / "codex-invalid"
+    auth_dir = tmp_path / "codex-auth"
+    _write_stub_codex(stub, "{not valid json")
+    _write_fake_codex_auth(auth_dir)
+
+    monkeypatch.setenv("CODEX_ENABLED", "true")
+    monkeypatch.setenv("CODEX_BINARY_PATH", str(stub))
+    monkeypatch.setenv("CODEX_AUTH_SOURCE_DIR", str(auth_dir))
+    get_settings.cache_clear()
+
+    item = SourcingItem(
+        platform=SourcingPlatform.EBAY_DE,
+        external_id="eval-fail-1",
+        url="https://www.ebay.de/itm/1234567890",
+        title="Nintendo Konsole",
+        price_cents=10000,
+        evaluation_status=SourcingEvaluationStatus.PENDING,
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    with pytest.raises(RuntimeError, match="Invalid Codex response"):
+        await evaluate_item_by_id(session=db_session, item_id=item.id, settings=get_settings())
+    await db_session.commit()
+
+    refreshed = await db_session.get(SourcingItem, item.id)
+    assert refreshed is not None
+    assert refreshed.evaluation_status == SourcingEvaluationStatus.FAILED
+    assert refreshed.status == SourcingStatus.ERROR
+    assert refreshed.evaluation_last_error is not None
+    get_settings.cache_clear()
+
+
+def test_build_codex_command_uses_feature_override_instead_of_search_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODEX_SEARCH_ENABLED", "true")
+    get_settings.cache_clear()
+
+    command = _build_codex_command(
+        get_settings(),
+        _workspace_for_item(get_settings(), "command-test"),
+    )
+
+    assert "--search" not in command
+    assert "features.search_tool=true" in command
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_requeue_endpoint_marks_item_pending_again(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.sourcing import requeue_sourcing_evaluation
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="requeue-1",
+        url="https://www.kleinanzeigen.de/s-anzeige/requeue-1",
+        title="Bundle",
+        price_cents=5000,
+        evaluation_status=SourcingEvaluationStatus.FAILED,
+        evaluation_last_error="old error",
+        status=SourcingStatus.ERROR,
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    out = await requeue_sourcing_evaluation(item.id, session=db_session, _actor="tester")
+
+    assert out.item_id == item.id
+    refreshed = await db_session.get(SourcingItem, item.id)
+    assert refreshed is not None
+    assert refreshed.evaluation_status == SourcingEvaluationStatus.PENDING
+    assert refreshed.evaluation_last_error is None
+    assert refreshed.status == SourcingStatus.NEW
+
+
+@pytest.mark.asyncio
+async def test_sourcing_health_and_stats_use_evaluation_counts(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.sourcing import sourcing_health, sourcing_stats
+
+    db_session.add(
+        SourcingRun(
             trigger="scheduler",
             platform=SourcingPlatform.KLEINANZEIGEN,
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
             ok=True,
         )
-        session.add(run)
-        await session.commit()
-
-    result = await execute_sourcing_run(force=False, search_terms=["nintendo"], trigger="manual")
-    assert result.status == "skipped"
-    assert result.run_id == run.id
-
-
-@pytest.mark.asyncio
-async def test_update_settings_supports_value_json_and_unique_identity(db_session: AsyncSession) -> None:
-    async with db_session.begin():
-        await update_settings_values(
-            session=db_session,
-            values={
-                "search_terms": {
-                    "value_json": ["videospiele konvolut", "retro spiele sammlung"],
-                }
-            },
-        )
-
-    row = await db_session.get(SourcingSetting, "search_terms")
-    assert row is not None
-    assert row.value_json == ["videospiele konvolut", "retro spiele sammlung"]
-
-    item1 = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="uniq-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/uniq-1",
-        title="Bundle A",
-        price_cents=1_000,
     )
-    item2 = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="uniq-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/uniq-2",
-        title="Bundle B",
-        price_cents=2_000,
+    db_session.add_all(
+        [
+            SourcingItem(
+                platform=SourcingPlatform.KLEINANZEIGEN,
+                external_id="stats-1",
+                url="https://www.kleinanzeigen.de/s-anzeige/stats-1",
+                title="Bundle 1",
+                price_cents=1000,
+                evaluation_status=SourcingEvaluationStatus.PENDING,
+            ),
+            SourcingItem(
+                platform=SourcingPlatform.KLEINANZEIGEN,
+                external_id="stats-2",
+                url="https://www.kleinanzeigen.de/s-anzeige/stats-2",
+                title="Bundle 2",
+                price_cents=2000,
+                evaluation_status=SourcingEvaluationStatus.COMPLETED,
+                recommendation="BUY",
+            ),
+            SourcingItem(
+                platform=SourcingPlatform.EBAY_DE,
+                external_id="stats-3",
+                url="https://www.ebay.de/itm/stats-3",
+                title="Bundle 3",
+                price_cents=3000,
+                evaluation_status=SourcingEvaluationStatus.FAILED,
+                status=SourcingStatus.ERROR,
+            ),
+        ]
     )
-
-    db_session.add(item1)
     await db_session.commit()
 
-    db_session.add(item2)
-    with pytest.raises(IntegrityError):
-        await db_session.commit()
+    health = await sourcing_health(session=db_session)
+    stats = await sourcing_stats(session=db_session)
+
+    assert health.items_pending_evaluation == 1
+    assert health.items_failed_evaluation == 1
+    assert stats.items_by_evaluation_status["PENDING"] == 1
+    assert stats.items_by_evaluation_status["FAILED"] == 1
+    assert stats.items_by_recommendation["BUY"] == 1
 
 
 def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
@@ -232,551 +369,3 @@ def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
     absolute_no_time = _parse_kleinanzeigen_posted_at("13.02.2026", now=now)
     assert absolute_no_time is not None
     assert absolute_no_time == datetime(2026, 2, 12, 23, 0, tzinfo=UTC)
-
-
-@pytest.mark.asyncio
-async def test_execute_sourcing_run_updates_scraped_at_for_existing_items(
-    session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    old = datetime.now(UTC) - timedelta(days=30)
-    async with session_factory() as session:
-        item = SourcingItem(
-            platform=SourcingPlatform.KLEINANZEIGEN,
-            external_id="existing-1",
-            url="https://www.kleinanzeigen.de/s-anzeige/existing-1",
-            title="Nintendo Konvolut",
-            price_cents=1_000,
-            status=SourcingStatus.READY,
-            scraped_at=old,
-        )
-        session.add(item)
-        await session.commit()
-
-    async def _fake_scrape_fetch(*, app_settings, platform, search_terms, options=None, max_pages=None) -> dict:
-        return {
-            "blocked": False,
-            "error_type": None,
-            "error_message": None,
-            "listings": [
-                {
-                    "external_id": "existing-1",
-                    "title": "Nintendo Konvolut",
-                    "url": "https://www.kleinanzeigen.de/s-anzeige/existing-1-updated",
-                    "price_cents": 1_000,
-                    "image_urls": [],
-                }
-            ],
-        }
-
-    monkeypatch.setattr("app.services.sourcing.SessionLocal", session_factory)
-    monkeypatch.setattr("app.services.sourcing._scraper_fetch", _fake_scrape_fetch)
-
-    result = await execute_sourcing_run(force=True, search_terms=["nintendo"], trigger="test")
-    assert result.status in {"completed", "blocked", "degraded", "error"}
-
-    async with session_factory() as session:
-        refreshed = (
-            await session.execute(
-                select(SourcingItem).where(
-                    SourcingItem.platform == SourcingPlatform.KLEINANZEIGEN,
-                    SourcingItem.external_id == "existing-1",
-                )
-            )
-        ).scalar_one()
-        assert refreshed.url.endswith("existing-1-updated")
-        refreshed_scraped_at = refreshed.scraped_at.replace(tzinfo=UTC) if refreshed.scraped_at.tzinfo is None else refreshed.scraped_at
-        assert refreshed_scraped_at > old
-
-
-@pytest.mark.asyncio
-async def test_cleanse_stale_sourcing_items_discards_unavailable_and_keeps_ok(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    old = datetime.now(UTC) - timedelta(days=60)
-    gone = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="gone-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/gone",
-        title="Gone Listing",
-        price_cents=1_000,
-        status=SourcingStatus.READY,
-        scraped_at=old,
-    )
-    ok = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="ok-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/ok",
-        title="OK Listing",
-        price_cents=1_000,
-        status=SourcingStatus.NEW,
-        scraped_at=old,
-    )
-    db_session.add_all([gone, ok])
-    await db_session.commit()
-
-    async def _fake_detail_fetch(*, app_settings, platform, url: str) -> dict:
-        if url.endswith("/gone"):
-            return {
-                "blocked": False,
-                "error_type": "not_found",
-                "error_message": "404 Not Found",
-                "listing": {},
-            }
-        return {
-            "blocked": False,
-            "error_type": None,
-            "error_message": None,
-            "listing": {"title": "OK"},
-        }
-
-    monkeypatch.setattr("app.services.sourcing._scraper_fetch_listing_detail", _fake_detail_fetch)
-
-    out = await cleanse_stale_sourcing_items(session=db_session, actor="tester", older_than_days=14, limit=25)
-    assert out.checked == 2
-    assert out.discarded == 1
-    assert out.kept == 1
-    assert out.errors == 0
-    assert out.blocked is False
-
-    gone_refreshed = (await db_session.execute(select(SourcingItem).where(SourcingItem.external_id == "gone-1"))).scalar_one()
-    assert gone_refreshed.status == SourcingStatus.DISCARDED
-    assert gone_refreshed.status_reason and "Auto-cleanse" in gone_refreshed.status_reason
-    assert gone_refreshed.scraped_at == old
-
-    ok_refreshed = (await db_session.execute(select(SourcingItem).where(SourcingItem.external_id == "ok-1"))).scalar_one()
-    assert ok_refreshed.status == SourcingStatus.NEW
-    ok_scraped_at = ok_refreshed.scraped_at.replace(tzinfo=UTC) if ok_refreshed.scraped_at.tzinfo is None else ok_refreshed.scraped_at
-    assert ok_scraped_at > old
-
-
-@pytest.mark.asyncio
-async def test_execute_sourcing_run_enriches_detail_payload(
-    session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async with session_factory() as session:
-        mp_id = uuid.uuid4()
-        session.add(
-            MasterProduct(
-                id=mp_id,
-                sku=master_product_sku_from_id(mp_id),
-                kind="GAME",
-                title="Nintendo Switch Konsole",
-                platform="SWITCH",
-                region="EU",
-                variant="",
-                asin="B08NINTENDO",
-            )
-        )
-        await session.flush()
-        session.add(
-            AmazonProductMetricsLatest(
-                master_product_id=mp_id,
-                last_attempt_at=datetime.now(UTC),
-                last_success_at=datetime.now(UTC),
-                rank_overall=1500,
-                price_used_good_cents=10000,
-                price_used_acceptable_cents=9800,
-            )
-        )
-        await session.commit()
-
-    async def _fake_scrape_fetch(*, app_settings, platform, search_terms, options=None, max_pages=None):  # noqa: ARG001
-        return {
-            "blocked": False,
-            "error_type": None,
-            "error_message": None,
-            "listings": [
-                {
-                    "external_id": "detail-1",
-                    "title": "Nintendo Switch Konsole",
-                    "description": "Kurztext",
-                    "price_cents": 1000,
-                    "url": "https://www.kleinanzeigen.de/s-anzeige/nintendo-switch-konsole/123-279-1",
-                    "image_urls": ["https://img.kleinanzeigen.de/a.jpg"],
-                    "primary_image_url": "https://img.kleinanzeigen.de/a.jpg",
-                    "location_zip": "10115",
-                    "location_city": "Berlin",
-                    "seller_type": "private",
-                    "posted_at_text": "Heute, 07:53",
-                }
-            ],
-        }
-
-    async def _fake_detail_fetch(*, app_settings, platform, url):  # noqa: ARG001
-        return {
-            "blocked": False,
-            "error_type": None,
-            "error_message": None,
-            "listing": {
-                "description_full": "Lange Beschreibung mit Lieferumfang und Zustand.",
-                "posted_at_text": "Heute, 07:53",
-                "image_urls": [
-                    "https://img.kleinanzeigen.de/a.jpg",
-                    "https://img.kleinanzeigen.de/b.jpg",
-                ],
-                "image_count": 2,
-                "shipping_possible": True,
-                "direct_buy": False,
-                "view_count": 321,
-                "seller_name": "Max Mustermann",
-            },
-        }
-
-    monkeypatch.setattr("app.services.sourcing.SessionLocal", session_factory)
-    monkeypatch.setattr("app.services.sourcing._scraper_fetch", _fake_scrape_fetch)
-    monkeypatch.setattr("app.services.sourcing._scraper_fetch_listing_detail", _fake_detail_fetch)
-
-    result = await execute_sourcing_run(force=True, search_terms=["nintendo"], trigger="test")
-    assert result.items_new == 1
-
-    async with session_factory() as session:
-        item = (
-            await session.execute(
-                select(SourcingItem).where(SourcingItem.external_id == "detail-1")
-            )
-        ).scalar_one()
-        assert item.status == SourcingStatus.READY
-        assert item.description == "Lange Beschreibung mit Lieferumfang und Zustand."
-        assert item.posted_at is not None
-        assert item.image_urls is not None and len(item.image_urls) == 2
-        assert isinstance(item.raw_data, dict)
-        assert item.raw_data.get("view_count") == 321
-        assert item.raw_data.get("seller_name") == "Max Mustermann"
-
-
-def test_compute_max_purchase_price_respects_profit_and_roi_constraints() -> None:
-    cfg = _ResolvedSettings(
-        bsr_max_threshold=50_000,
-        price_min_cents=500,
-        price_max_cents=30_000,
-        confidence_min_score=80,
-        profit_min_cents=3_000,
-        roi_min_bp=5_000,
-        scrape_interval_seconds=1800,
-        handling_cost_per_item_cents=150,
-        shipping_cost_cents=690,
-        ebay_bid_buffer_cents=200,
-        ebay_empty_results_degraded_after_runs=3,
-        retention_days=180,
-        retention_max_delete_per_tick=500,
-        bidbag_deeplink_template=None,
-        search_terms=["nintendo"],
-    )
-
-    value = _compute_max_purchase_price_cents(revenue_cents=20_000, cfg=cfg, sellable_count=2)
-    # Fixed costs: 690 + 300 + 200 = 1190
-    # profit cap: 20000 - 1190 - 3000 = 15810
-    # roi cap: 20000 / 1.5 - 1190 = 12143.33...
-    assert value == 12_143
-
-    floor_value = _compute_max_purchase_price_cents(revenue_cents=1_000, cfg=cfg, sellable_count=1)
-    assert floor_value == 0
-
-
-@pytest.mark.asyncio
-async def test_bidbag_handoff_builds_payload_and_template(db_session: AsyncSession) -> None:
-    item = SourcingItem(
-        platform=SourcingPlatform.EBAY_DE,
-        external_id="ebay-123",
-        url="https://www.ebay.de/itm/123",
-        title="Nintendo Auction",
-        price_cents=8_000,
-        auction_current_price_cents=8_000,
-        auction_end_at=datetime(2026, 2, 18, 10, 0, tzinfo=UTC),
-        max_purchase_price_cents=10_500,
-        status=SourcingStatus.READY,
-    )
-    db_session.add(item)
-    db_session.add(
-        SourcingSetting(
-            key="bidbag_deeplink_template",
-            value_text="https://bidbag.de/new?url={listing_url}&max={max_bid_eur}&eid={external_id}",
-        )
-    )
-    await db_session.commit()
-
-    handoff = await build_bidbag_handoff(session=db_session, item=item)
-    await db_session.commit()
-
-    assert handoff.item_id == item.id
-    assert handoff.payload["max_bid_cents"] == 10_500
-    assert handoff.payload["max_bid_eur"] == "105.00"
-    assert handoff.deep_link_url is not None
-    assert "eid=ebay-123" in handoff.deep_link_url
-    assert handoff.sent_at.tzinfo is not None
-
-
-@pytest.mark.asyncio
-async def test_execute_sourcing_run_marks_ebay_empty_runs_degraded_after_threshold(
-    session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async with session_factory() as session:
-        session.add(
-            SourcingSetting(
-                key="ebay_empty_results_degraded_after_runs",
-                value_int=3,
-            )
-        )
-        await session.commit()
-
-    async def _fake_scrape_fetch(*, app_settings, platform, search_terms, options=None, max_pages=None):  # noqa: ARG001
-        return {
-            "blocked": False,
-            "error_type": None,
-            "error_message": None,
-            "listings": [],
-        }
-
-    monkeypatch.setattr("app.services.sourcing.SessionLocal", session_factory)
-    monkeypatch.setattr("app.services.sourcing._scraper_fetch", _fake_scrape_fetch)
-
-    first = await execute_sourcing_run(
-        force=True,
-        search_terms=["nintendo"],
-        trigger="test",
-        platform=SourcingPlatform.EBAY_DE,
-    )
-    second = await execute_sourcing_run(
-        force=True,
-        search_terms=["nintendo"],
-        trigger="test",
-        platform=SourcingPlatform.EBAY_DE,
-    )
-    third = await execute_sourcing_run(
-        force=True,
-        search_terms=["nintendo"],
-        trigger="test",
-        platform=SourcingPlatform.EBAY_DE,
-    )
-
-    assert first.status == "completed"
-    assert second.status == "completed"
-    assert third.status == "degraded"
-
-    async with session_factory() as session:
-        latest = (
-            await session.execute(
-                select(SourcingRun)
-                .where(SourcingRun.id == third.run_id)
-            )
-        ).scalar_one()
-        assert latest.ok is False
-        assert latest.error_type == "empty_results_degraded"
-
-
-@pytest.mark.asyncio
-async def test_prune_old_sourcing_items_respects_status_age_and_batch_limit(db_session: AsyncSession) -> None:
-    now = datetime.now(UTC)
-    db_session.add_all(
-        [
-            SourcingSetting(key="sourcing_retention_days", value_int=30),
-            SourcingSetting(key="sourcing_retention_max_delete_per_tick", value_int=2),
-        ]
-    )
-    db_session.add_all(
-        [
-            SourcingItem(
-                platform=SourcingPlatform.EBAY_DE,
-                external_id="old-low-1",
-                url="https://www.ebay.de/itm/old-low-1",
-                title="Old Low 1",
-                price_cents=1_000,
-                status=SourcingStatus.LOW_VALUE,
-                scraped_at=now - timedelta(days=60),
-            ),
-            SourcingItem(
-                platform=SourcingPlatform.EBAY_DE,
-                external_id="old-low-2",
-                url="https://www.ebay.de/itm/old-low-2",
-                title="Old Low 2",
-                price_cents=1_000,
-                status=SourcingStatus.DISCARDED,
-                scraped_at=now - timedelta(days=61),
-            ),
-            SourcingItem(
-                platform=SourcingPlatform.EBAY_DE,
-                external_id="old-low-3",
-                url="https://www.ebay.de/itm/old-low-3",
-                title="Old Low 3",
-                price_cents=1_000,
-                status=SourcingStatus.ERROR,
-                scraped_at=now - timedelta(days=62),
-            ),
-            SourcingItem(
-                platform=SourcingPlatform.EBAY_DE,
-                external_id="old-ready",
-                url="https://www.ebay.de/itm/old-ready",
-                title="Old Ready",
-                price_cents=1_000,
-                status=SourcingStatus.READY,
-                scraped_at=now - timedelta(days=90),
-            ),
-            SourcingItem(
-                platform=SourcingPlatform.EBAY_DE,
-                external_id="recent-low",
-                url="https://www.ebay.de/itm/recent-low",
-                title="Recent Low",
-                price_cents=1_000,
-                status=SourcingStatus.LOW_VALUE,
-                scraped_at=now - timedelta(days=5),
-            ),
-        ]
-    )
-    await db_session.commit()
-
-    deleted_first = await prune_old_sourcing_items(session=db_session)
-    await db_session.commit()
-    assert deleted_first == 2
-
-    deleted_second = await prune_old_sourcing_items(session=db_session)
-    await db_session.commit()
-    assert deleted_second == 1
-
-    remaining_ids = {
-        row[0]
-        for row in (
-            await db_session.execute(select(SourcingItem.external_id))
-        ).all()
-    }
-    assert "old-ready" in remaining_ids
-    assert "recent-low" in remaining_ids
-    assert "old-low-1" not in remaining_ids
-    assert "old-low-2" not in remaining_ids
-    assert "old-low-3" not in remaining_ids
-
-
-@pytest.mark.asyncio
-async def test_list_manual_match_candidates_excludes_existing_matches(db_session: AsyncSession) -> None:
-    from app.api.v1.endpoints.sourcing import list_manual_match_candidates
-
-    item = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="manual-candidates-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/manual-candidates-1",
-        title="Gamecube Bundle",
-        price_cents=1_000,
-        status=SourcingStatus.NEW,
-    )
-    db_session.add(item)
-
-    excluded_id = uuid.uuid4()
-    excluded = MasterProduct(
-        id=excluded_id,
-        sku=master_product_sku_from_id(excluded_id),
-        kind="GAME",
-        title="Gamecube Zelda",
-        platform="GAMECUBE",
-        region="EU",
-        variant="",
-        asin="B000EXCLUDED",
-    )
-    candidate_id = uuid.uuid4()
-    candidate = MasterProduct(
-        id=candidate_id,
-        sku=master_product_sku_from_id(candidate_id),
-        kind="GAME",
-        title="Gamecube Metroid Prime",
-        platform="GAMECUBE",
-        region="EU",
-        variant="Player's Choice",
-        asin="B000CANDIDATE",
-    )
-    db_session.add_all([excluded, candidate])
-    await db_session.flush()
-
-    db_session.add(
-        SourcingMatch(
-            sourcing_item_id=item.id,
-            master_product_id=excluded.id,
-            confidence_score=82,
-            match_method="title_fuzzy",
-            user_confirmed=True,
-        )
-    )
-    db_session.add(
-        AmazonProductMetricsLatest(
-            master_product_id=candidate.id,
-            last_attempt_at=datetime.now(UTC),
-            last_success_at=datetime.now(UTC),
-            rank_overall=1_450,
-            price_used_good_cents=5_900,
-            price_new_cents=8_900,
-        )
-    )
-    await db_session.commit()
-
-    out = await list_manual_match_candidates(item.id, q="gamecube", limit=10, session=db_session)
-
-    assert len(out) == 1
-    assert out[0].id == candidate.id
-    assert out[0].sku == candidate.sku
-    assert out[0].platform == "GAMECUBE"
-    assert out[0].rank_overall == 1_450
-    assert out[0].price_used_good_cents == 5_900
-
-
-@pytest.mark.asyncio
-async def test_create_manual_sourcing_match_upserts_and_recalculates(db_session: AsyncSession) -> None:
-    from app.api.v1.endpoints.sourcing import create_manual_sourcing_match
-
-    item = SourcingItem(
-        platform=SourcingPlatform.KLEINANZEIGEN,
-        external_id="manual-match-1",
-        url="https://www.kleinanzeigen.de/s-anzeige/manual-match-1",
-        title="Gamecube Lot",
-        price_cents=1_000,
-        status=SourcingStatus.NEW,
-    )
-    db_session.add(item)
-
-    mp_id = uuid.uuid4()
-    product = MasterProduct(
-        id=mp_id,
-        sku=master_product_sku_from_id(mp_id),
-        kind="GAME",
-        title="Gamecube F-Zero GX",
-        platform="GAMECUBE",
-        region="EU",
-        variant="",
-        asin="B000FZERO",
-    )
-    db_session.add(product)
-    await db_session.flush()
-    db_session.add(
-        AmazonProductMetricsLatest(
-            master_product_id=product.id,
-            last_attempt_at=datetime.now(UTC),
-            last_success_at=datetime.now(UTC),
-            rank_overall=2_500,
-            price_used_good_cents=8_000,
-            price_new_cents=12_000,
-        )
-    )
-    await db_session.commit()
-
-    payload = SourcingManualMatchCreateIn(master_product_id=product.id, user_confirmed=True)
-    first = await create_manual_sourcing_match(item_id=item.id, data=payload, session=db_session)
-    second = await create_manual_sourcing_match(item_id=item.id, data=payload, session=db_session)
-
-    matches = (
-        await db_session.execute(
-            select(SourcingMatch)
-            .where(SourcingMatch.sourcing_item_id == item.id)
-            .order_by(SourcingMatch.created_at.asc())
-        )
-    ).scalars().all()
-    refreshed = await db_session.get(SourcingItem, item.id)
-
-    assert refreshed is not None
-    assert len(matches) == 1
-    assert matches[0].match_method == "manual"
-    assert matches[0].user_confirmed is True
-    assert matches[0].snapshot_bsr == 2_500
-    assert matches[0].snapshot_fba_payout_cents is not None
-    assert first.match_id == matches[0].id
-    assert second.match_id == matches[0].id
-    assert refreshed.status == SourcingStatus.READY

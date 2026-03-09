@@ -5,18 +5,16 @@ from contextlib import asynccontextmanager
 from datetime import UTC, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
 from app.core.config import get_settings
 from app.core.db import get_session
-from app.core.enums import SourcingPlatform, SourcingStatus
 from app.core.security import require_basic_auth
-from app.models.amazon_scrape import AmazonProductMetricsLatest
-from app.models.master_product import MasterProduct
-from app.models.sourcing import SourcingAgent, SourcingAgentQuery, SourcingItem, SourcingMatch, SourcingRun, SourcingSetting
+from app.models.sourcing import SourcingAgent, SourcingAgentQuery, SourcingItem, SourcingRun, SourcingSetting
 from app.schemas.sourcing import (
     SourcingAgentCreateIn,
     SourcingAgentOut,
@@ -24,66 +22,38 @@ from app.schemas.sourcing import (
     SourcingAgentQueryOut,
     SourcingAgentRunOut,
     SourcingAgentRunQueryOut,
-    SourcingBidbagHandoffOut,
     SourcingCleanseIn,
     SourcingCleanseOut,
-    SourcingConversionPreviewIn,
-    SourcingConversionPreviewOut,
-    SourcingConvertIn,
-    SourcingConvertOut,
     SourcingDiscardIn,
+    SourcingEvaluateOut,
+    SourcingEvaluationMatchedProductOut,
+    SourcingEvaluationResultOut,
     SourcingHealthOut,
     SourcingItemDetailOut,
     SourcingItemListOut,
     SourcingItemListResponse,
-    SourcingMatchMasterProductOut,
-    SourcingManualMatchCandidateOut,
-    SourcingManualMatchCreateIn,
-    SourcingMatchOut,
-    SourcingMatchPatchIn,
-    SourcingMatchPatchOut,
     SourcingScrapeTriggerIn,
     SourcingScrapeTriggerOut,
     SourcingSettingOut,
     SourcingSettingsUpdateIn,
     SourcingStatsOut,
 )
-from app.services.target_pricing import fba_payout_cents
 from app.services.sourcing import (
-    build_bidbag_handoff,
     cleanse_stale_sourcing_items,
-    build_conversion_preview,
-    convert_item_to_purchase,
     discard_item,
     execute_sourcing_run,
-    load_resolved_settings,
-    recalculate_item_from_matches,
-    utcnow,
     update_settings_values,
+    utcnow,
 )
+from app.services.sourcing_codex import ensure_supported_platform, queue_item_for_evaluation
 
 
 router = APIRouter()
 
 
-def _manual_used_price_cents(metrics: AmazonProductMetricsLatest | None) -> int | None:
-    if metrics is None:
-        return None
-    for value in (
-        metrics.price_used_good_cents,
-        metrics.price_used_very_good_cents,
-        metrics.price_used_like_new_cents,
-        metrics.price_used_acceptable_cents,
-    ):
-        if isinstance(value, int):
-            return int(value)
-    return None
-
-
 @asynccontextmanager
 async def _begin_tx(session: AsyncSession):
     if session.in_transaction():
-        # Reads can autobegin a transaction; nested writes need an explicit outer commit.
         async with session.begin_nested():
             yield
         await session.commit()
@@ -92,11 +62,104 @@ async def _begin_tx(session: AsyncSession):
             yield
 
 
+def _evaluation_out(item: SourcingItem) -> SourcingEvaluationResultOut | None:
+    payload = item.evaluation_result_json if isinstance(item.evaluation_result_json, dict) else None
+    if payload is None:
+        return None
+    matched = []
+    raw_matches = payload.get("matched_products")
+    if isinstance(raw_matches, list):
+        for entry in raw_matches:
+            if not isinstance(entry, dict):
+                continue
+            matched.append(
+                SourcingEvaluationMatchedProductOut(
+                    master_product_id=entry.get("master_product_id"),
+                    sku=entry.get("sku"),
+                    title=entry.get("title"),
+                    asin=entry.get("asin"),
+                    confidence=entry.get("confidence"),
+                    basis=entry.get("basis"),
+                )
+            )
+    return SourcingEvaluationResultOut(
+        recommendation=payload.get("recommendation"),
+        summary=payload.get("summary"),
+        expected_profit_cents=payload.get("expected_profit_cents"),
+        expected_roi_bp=payload.get("expected_roi_bp"),
+        max_buy_price_cents=payload.get("max_buy_price_cents"),
+        confidence=payload.get("confidence"),
+        amazon_source_used=payload.get("amazon_source_used"),
+        matched_products=matched,
+        risks=[str(v) for v in payload.get("risks", []) if isinstance(v, str)],
+        reasoning_notes=[str(v) for v in payload.get("reasoning_notes", []) if isinstance(v, str)],
+    )
+
+
+def _item_list_out(item: SourcingItem) -> SourcingItemListOut:
+    return SourcingItemListOut(
+        id=item.id,
+        platform=item.platform,
+        agent_id=item.agent_id,
+        agent_query_id=item.agent_query_id,
+        title=item.title,
+        price_cents=item.price_cents,
+        location_city=item.location_city,
+        primary_image_url=item.primary_image_url,
+        status=item.status,
+        evaluation_status=item.evaluation_status,
+        recommendation=item.recommendation,
+        evaluation_summary=item.evaluation_summary,
+        expected_profit_cents=item.expected_profit_cents,
+        expected_roi_bp=item.expected_roi_bp,
+        max_buy_price_cents=item.max_buy_price_cents,
+        evaluation_finished_at=item.evaluation_finished_at,
+        evaluation_last_error=item.evaluation_last_error,
+        scraped_at=item.scraped_at,
+        posted_at=item.posted_at,
+        url=item.url,
+    )
+
+
+def _agent_out(row: SourcingAgent) -> SourcingAgentOut:
+    return SourcingAgentOut(
+        id=row.id,
+        name=row.name,
+        enabled=row.enabled,
+        interval_seconds=row.interval_seconds,
+        last_run_at=row.last_run_at,
+        next_run_at=row.next_run_at,
+        last_error_type=row.last_error_type,
+        last_error_message=row.last_error_message,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        queries=[
+            SourcingAgentQueryOut(
+                id=query.id,
+                platform=query.platform,
+                keyword=query.keyword,
+                enabled=query.enabled,
+                max_pages=query.max_pages,
+                detail_enrichment_enabled=query.detail_enrichment_enabled,
+                options_json=query.options_json,
+                created_at=query.created_at,
+                updated_at=query.updated_at,
+            )
+            for query in sorted(row.queries, key=lambda q: (q.created_at, q.keyword))
+        ],
+    )
+
+
 @router.post("/jobs/scrape", response_model=SourcingScrapeTriggerOut)
 async def trigger_sourcing_scrape(data: SourcingScrapeTriggerIn) -> SourcingScrapeTriggerOut:
     settings = get_settings()
     if not settings.sourcing_enabled:
         raise HTTPException(status_code=409, detail="Sourcing is disabled")
+    if data.platform is not None:
+        try:
+            ensure_supported_platform(data.platform)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     result = await execute_sourcing_run(
         force=data.force,
@@ -115,7 +178,7 @@ async def trigger_sourcing_scrape(data: SourcingScrapeTriggerIn) -> SourcingScra
         finished_at=result.finished_at,
         items_scraped=result.items_scraped,
         items_new=result.items_new,
-        items_ready=result.items_ready,
+        items_queued=result.items_queued,
     )
 
 
@@ -128,6 +191,11 @@ async def cleanse_sourcing_items(
     settings = get_settings()
     if not settings.sourcing_enabled:
         raise HTTPException(status_code=409, detail="Sourcing is disabled")
+    if data.platform is not None:
+        try:
+            ensure_supported_platform(data.platform)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     out = await cleanse_stale_sourcing_items(
         session=session,
@@ -152,7 +220,12 @@ async def sourcing_health(session: AsyncSession = Depends(get_session)) -> Sourc
     last_run = (await session.execute(select(SourcingRun).order_by(SourcingRun.started_at.desc()).limit(1))).scalar_one_or_none()
     pending = (
         await session.scalar(
-            select(func.count(SourcingItem.id)).where(SourcingItem.status.in_([SourcingStatus.NEW, SourcingStatus.ANALYZING]))
+            select(func.count(SourcingItem.id)).where(SourcingItem.evaluation_status == SourcingEvaluationStatus.PENDING)
+        )
+    ) or 0
+    failed = (
+        await session.scalar(
+            select(func.count(SourcingItem.id)).where(SourcingItem.evaluation_status == SourcingEvaluationStatus.FAILED)
         )
     ) or 0
 
@@ -161,7 +234,8 @@ async def sourcing_health(session: AsyncSession = Depends(get_session)) -> Sourc
             status="degraded",
             last_scrape_at=None,
             scraper_status="idle",
-            items_pending_analysis=int(pending),
+            items_pending_evaluation=int(pending),
+            items_failed_evaluation=int(failed),
             last_error_type=None,
             last_error_message=None,
         )
@@ -183,7 +257,8 @@ async def sourcing_health(session: AsyncSession = Depends(get_session)) -> Sourc
         status=status,
         last_scrape_at=finished_at,
         scraper_status=scraper_status,
-        items_pending_analysis=int(pending),
+        items_pending_evaluation=int(pending),
+        items_failed_evaluation=int(failed),
         last_error_type=last_run.error_type,
         last_error_message=last_run.error_message,
     )
@@ -192,7 +267,6 @@ async def sourcing_health(session: AsyncSession = Depends(get_session)) -> Sourc
 @router.get("/stats", response_model=SourcingStatsOut)
 async def sourcing_stats(session: AsyncSession = Depends(get_session)) -> SourcingStatsOut:
     total = (await session.scalar(select(func.count(SourcingItem.id)))) or 0
-
     by_status_rows = (
         await session.execute(
             select(SourcingItem.status, func.count(SourcingItem.id))
@@ -200,33 +274,36 @@ async def sourcing_stats(session: AsyncSession = Depends(get_session)) -> Sourci
             .order_by(SourcingItem.status.asc())
         )
     ).all()
-
-    avg_profit = (
-        await session.scalar(
-            select(func.coalesce(func.avg(SourcingItem.estimated_profit_cents), 0)).where(SourcingItem.status == SourcingStatus.READY)
+    by_eval_rows = (
+        await session.execute(
+            select(SourcingItem.evaluation_status, func.count(SourcingItem.id))
+            .group_by(SourcingItem.evaluation_status)
+            .order_by(SourcingItem.evaluation_status.asc())
         )
-    ) or 0
-
-    converted = (
-        await session.scalar(select(func.count(SourcingItem.id)).where(SourcingItem.status == SourcingStatus.CONVERTED))
-    ) or 0
-
-    conversion_rate_bp = int((int(converted) / int(total)) * 10_000) if int(total) > 0 else 0
+    ).all()
+    by_rec_rows = (
+        await session.execute(
+            select(SourcingItem.recommendation, func.count(SourcingItem.id))
+            .group_by(SourcingItem.recommendation)
+            .order_by(SourcingItem.recommendation.asc().nullslast())
+        )
+    ).all()
 
     return SourcingStatsOut(
         total_items_scraped=int(total),
         items_by_status={str(status.value): int(count) for status, count in by_status_rows},
-        avg_profit_cents=int(avg_profit),
-        conversion_rate_bp=conversion_rate_bp,
+        items_by_evaluation_status={str(status.value): int(count) for status, count in by_eval_rows},
+        items_by_recommendation={str(recommendation or "UNSET"): int(count) for recommendation, count in by_rec_rows},
     )
 
 
 @router.get("/items", response_model=SourcingItemListResponse)
 async def list_sourcing_items(
     status: SourcingStatus | None = None,
+    evaluation_status: SourcingEvaluationStatus | None = None,
+    recommendation: str | None = Query(default=None, max_length=32),
     platform: SourcingPlatform | None = None,
     agent_id: uuid.UUID | None = None,
-    min_profit_cents: int | None = Query(default=None, ge=0),
     sort_by: str = Query(default="scraped_at"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -238,95 +315,43 @@ async def list_sourcing_items(
     if status is not None:
         stmt = stmt.where(SourcingItem.status == status)
         count_stmt = count_stmt.where(SourcingItem.status == status)
+    if evaluation_status is not None:
+        stmt = stmt.where(SourcingItem.evaluation_status == evaluation_status)
+        count_stmt = count_stmt.where(SourcingItem.evaluation_status == evaluation_status)
+    if recommendation is not None and recommendation.strip():
+        stmt = stmt.where(SourcingItem.recommendation == recommendation.strip().upper())
+        count_stmt = count_stmt.where(SourcingItem.recommendation == recommendation.strip().upper())
     if platform is not None:
         stmt = stmt.where(SourcingItem.platform == platform)
         count_stmt = count_stmt.where(SourcingItem.platform == platform)
     if agent_id is not None:
         stmt = stmt.where(SourcingItem.agent_id == agent_id)
         count_stmt = count_stmt.where(SourcingItem.agent_id == agent_id)
-    if min_profit_cents is not None:
-        stmt = stmt.where(SourcingItem.estimated_profit_cents >= min_profit_cents)
-        count_stmt = count_stmt.where(SourcingItem.estimated_profit_cents >= min_profit_cents)
 
-    if sort_by == "profit":
-        stmt = stmt.order_by(SourcingItem.estimated_profit_cents.desc().nullslast(), SourcingItem.scraped_at.desc())
-    elif sort_by == "roi":
-        stmt = stmt.order_by(SourcingItem.estimated_roi_bp.desc().nullslast(), SourcingItem.scraped_at.desc())
-    elif sort_by == "posted_at":
+    if sort_by == "posted_at":
         stmt = stmt.order_by(SourcingItem.posted_at.desc().nullslast(), SourcingItem.scraped_at.desc())
+    elif sort_by == "evaluation_finished_at":
+        stmt = stmt.order_by(SourcingItem.evaluation_finished_at.desc().nullslast(), SourcingItem.scraped_at.desc())
+    elif sort_by == "expected_profit":
+        stmt = stmt.order_by(SourcingItem.expected_profit_cents.desc().nullslast(), SourcingItem.scraped_at.desc())
     else:
         stmt = stmt.order_by(SourcingItem.scraped_at.desc())
 
     total = (await session.scalar(count_stmt)) or 0
     items = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
-
-    out: list[SourcingItemListOut] = []
-    for item in items:
-        match_count = (
-            await session.scalar(select(func.count(SourcingMatch.id)).where(SourcingMatch.sourcing_item_id == item.id))
-        ) or 0
-        out.append(
-            SourcingItemListOut(
-                id=item.id,
-                platform=item.platform,
-                agent_id=item.agent_id,
-                agent_query_id=item.agent_query_id,
-                title=item.title,
-                price_cents=item.price_cents,
-                location_city=item.location_city,
-                primary_image_url=item.primary_image_url,
-                estimated_profit_cents=item.estimated_profit_cents,
-                estimated_roi_bp=item.estimated_roi_bp,
-                auction_end_at=item.auction_end_at,
-                auction_current_price_cents=item.auction_current_price_cents,
-                auction_bid_count=item.auction_bid_count,
-                max_purchase_price_cents=item.max_purchase_price_cents,
-                bidbag_sent_at=item.bidbag_sent_at,
-                status=item.status,
-                scraped_at=item.scraped_at,
-                posted_at=item.posted_at,
-                url=item.url,
-                match_count=int(match_count),
-            )
-        )
-
-    return SourcingItemListResponse(items=out, total=int(total), limit=limit, offset=offset)
+    return SourcingItemListResponse(
+        items=[_item_list_out(item) for item in items],
+        total=int(total),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/items/{item_id}", response_model=SourcingItemDetailOut)
 async def get_sourcing_item(item_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> SourcingItemDetailOut:
-    item = (
-        await session.execute(
-            select(SourcingItem)
-            .where(SourcingItem.id == item_id)
-            .options(selectinload(SourcingItem.matches).selectinload(SourcingMatch.master_product))
-        )
-    ).scalar_one_or_none()
+    item = await session.get(SourcingItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Not found")
-
-    matches = [
-        SourcingMatchOut(
-            id=match.id,
-            master_product=SourcingMatchMasterProductOut(
-                id=match.master_product.id,
-                title=match.master_product.title,
-                platform=match.master_product.platform,
-                asin=match.master_product.asin,
-            ),
-            confidence_score=match.confidence_score,
-            match_method=match.match_method,
-            matched_substring=match.matched_substring,
-            snapshot_bsr=match.snapshot_bsr,
-            snapshot_new_price_cents=match.snapshot_new_price_cents,
-            snapshot_used_price_cents=match.snapshot_used_price_cents,
-            snapshot_fba_payout_cents=match.snapshot_fba_payout_cents,
-            user_confirmed=match.user_confirmed,
-            user_rejected=match.user_rejected,
-            user_adjusted_condition=match.user_adjusted_condition,
-        )
-        for match in item.matches
-    ]
 
     return SourcingItemDetailOut(
         id=item.id,
@@ -336,289 +361,56 @@ async def get_sourcing_item(item_id: uuid.UUID, session: AsyncSession = Depends(
         title=item.title,
         description=item.description,
         price_cents=item.price_cents,
-        image_urls=[str(v) for v in (item.image_urls or [])],
+        image_urls=[str(v) for v in (item.image_urls or []) if str(v).strip()],
         location_zip=item.location_zip,
         location_city=item.location_city,
+        seller_type=item.seller_type,
         status=item.status,
         status_reason=item.status_reason,
-        estimated_revenue_cents=item.estimated_revenue_cents,
-        estimated_profit_cents=item.estimated_profit_cents,
-        estimated_roi_bp=item.estimated_roi_bp,
-        auction_end_at=item.auction_end_at,
-        auction_current_price_cents=item.auction_current_price_cents,
-        auction_bid_count=item.auction_bid_count,
-        max_purchase_price_cents=item.max_purchase_price_cents,
-        bidbag_sent_at=item.bidbag_sent_at,
-        bidbag_last_payload=item.bidbag_last_payload if isinstance(item.bidbag_last_payload, dict) else None,
+        evaluation_status=item.evaluation_status,
+        evaluation_queued_at=item.evaluation_queued_at,
+        evaluation_started_at=item.evaluation_started_at,
+        evaluation_finished_at=item.evaluation_finished_at,
+        evaluation_attempt_count=item.evaluation_attempt_count,
+        evaluation_last_error=item.evaluation_last_error,
+        evaluation_summary=item.evaluation_summary,
+        evaluation_prompt_version=item.evaluation_prompt_version,
+        recommendation=item.recommendation,
+        expected_profit_cents=item.expected_profit_cents,
+        expected_roi_bp=item.expected_roi_bp,
+        max_buy_price_cents=item.max_buy_price_cents,
+        evaluation_confidence=item.evaluation_confidence,
+        amazon_source_used=item.amazon_source_used,
+        evaluation=_evaluation_out(item),
+        raw_data=item.raw_data if isinstance(item.raw_data, dict) else None,
         scraped_at=item.scraped_at,
         posted_at=item.posted_at,
-        analyzed_at=item.analyzed_at,
         url=item.url,
-        matches=matches,
     )
 
 
-@router.patch("/items/{item_id}/matches/{match_id}", response_model=SourcingMatchPatchOut)
-async def patch_sourcing_match(
+@router.post("/items/{item_id}/evaluate", response_model=SourcingEvaluateOut)
+async def requeue_sourcing_evaluation(
     item_id: uuid.UUID,
-    match_id: uuid.UUID,
-    data: SourcingMatchPatchIn,
     session: AsyncSession = Depends(get_session),
-) -> SourcingMatchPatchOut:
-    match = await session.get(SourcingMatch, match_id)
-    if match is None or match.sourcing_item_id != item_id:
-        raise HTTPException(status_code=404, detail="Match not found")
-
+    _actor: str = Depends(require_basic_auth),
+) -> SourcingEvaluateOut:
     item = await session.get(SourcingItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-
-    changes = data.model_dump(exclude_unset=True)
-    if "user_confirmed" in changes:
-        match.user_confirmed = bool(changes["user_confirmed"])
-        if match.user_confirmed:
-            match.user_rejected = False
-    if "user_rejected" in changes:
-        match.user_rejected = bool(changes["user_rejected"])
-        if match.user_rejected:
-            match.user_confirmed = False
-    if "user_adjusted_condition" in changes:
-        match.user_adjusted_condition = changes["user_adjusted_condition"]
-
-    await session.flush()
-
-    item_matches = (
-        await session.execute(select(SourcingMatch).where(SourcingMatch.sourcing_item_id == item.id))
-    ).scalars().all()
-    confirmed_only = any(m.user_confirmed and not m.user_rejected for m in item_matches)
-
-    await recalculate_item_from_matches(session=session, item=item, confirmed_only=confirmed_only)
-    await session.commit()
-
-    return SourcingMatchPatchOut(
-        item_id=item.id,
-        match_id=match.id,
-        status=item.status,
-        estimated_revenue_cents=item.estimated_revenue_cents,
-        estimated_profit_cents=item.estimated_profit_cents,
-        estimated_roi_bp=item.estimated_roi_bp,
-    )
-
-
-@router.get("/items/{item_id}/manual-candidates", response_model=list[SourcingManualMatchCandidateOut])
-async def list_manual_match_candidates(
-    item_id: uuid.UUID,
-    q: str = Query(default="", max_length=200),
-    limit: int = Query(default=20, ge=1, le=80),
-    session: AsyncSession = Depends(get_session),
-) -> list[SourcingManualMatchCandidateOut]:
-    item = await session.get(SourcingItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-
-    query = q.strip()
-    if not query:
-        return []
-
-    existing_match_ids = (
-        await session.execute(
-            select(SourcingMatch.master_product_id).where(SourcingMatch.sourcing_item_id == item_id)
-        )
-    ).scalars().all()
-    existing_match_set = set(existing_match_ids)
-    scan_limit = min(limit + max(len(existing_match_set), 10), 250)
-
-    pattern = f"%{query}%"
-    stmt = (
-        select(MasterProduct, AmazonProductMetricsLatest)
-        .outerjoin(
-            AmazonProductMetricsLatest,
-            AmazonProductMetricsLatest.master_product_id == MasterProduct.id,
-        )
-        .where(
-            or_(
-                MasterProduct.title.ilike(pattern),
-                MasterProduct.platform.ilike(pattern),
-                MasterProduct.sku.ilike(pattern),
-                MasterProduct.asin.ilike(pattern),
-                MasterProduct.ean.ilike(pattern),
-            )
-        )
-        .order_by(MasterProduct.title.asc(), MasterProduct.platform.asc(), MasterProduct.variant.asc())
-        .limit(scan_limit)
-    )
-
-    rows = (await session.execute(stmt)).all()
-    out: list[SourcingManualMatchCandidateOut] = []
-    for product, metrics in rows:
-        if product.id in existing_match_set:
-            continue
-        out.append(
-            SourcingManualMatchCandidateOut(
-                id=product.id,
-                sku=product.sku,
-                title=product.title,
-                platform=product.platform,
-                region=product.region,
-                variant=product.variant,
-                asin=product.asin,
-                rank_overall=metrics.rank_overall if metrics else None,
-                price_used_good_cents=metrics.price_used_good_cents if metrics else None,
-                price_new_cents=metrics.price_new_cents if metrics else None,
-            )
-        )
-        if len(out) >= limit:
-            break
-
-    return out
-
-
-@router.post("/items/{item_id}/matches/manual", response_model=SourcingMatchPatchOut)
-async def create_manual_sourcing_match(
-    item_id: uuid.UUID,
-    data: SourcingManualMatchCreateIn,
-    session: AsyncSession = Depends(get_session),
-) -> SourcingMatchPatchOut:
-    item = await session.get(SourcingItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-
-    master_product = await session.get(MasterProduct, data.master_product_id)
-    if master_product is None:
-        raise HTTPException(status_code=404, detail="Master product not found")
-
-    settings = get_settings()
-    metrics = await session.get(AmazonProductMetricsLatest, master_product.id)
-    used_price_cents = _manual_used_price_cents(metrics)
-    new_price_cents = metrics.price_new_cents if metrics else None
-    market_price_cents = (
-        used_price_cents
-        if isinstance(used_price_cents, int)
-        else int(new_price_cents * 0.7) if isinstance(new_price_cents, int) else None
-    )
-    payout_cents = (
-        fba_payout_cents(
-            market_price_cents=market_price_cents,
-            referral_fee_bp=settings.amazon_fba_referral_fee_bp,
-            fulfillment_fee_cents=settings.amazon_fba_fulfillment_fee_cents,
-            inbound_shipping_cents=settings.amazon_fba_inbound_shipping_cents,
-        )
-        if isinstance(market_price_cents, int)
-        else None
-    )
-
-    match = (
-        await session.execute(
-            select(SourcingMatch).where(
-                SourcingMatch.sourcing_item_id == item_id,
-                SourcingMatch.master_product_id == master_product.id,
-            )
-        )
-    ).scalar_one_or_none()
-    if match is None:
-        match = SourcingMatch(
-            sourcing_item_id=item_id,
-            master_product_id=master_product.id,
-            confidence_score=100,
-            match_method="manual",
-        )
-        session.add(match)
-
-    match.confidence_score = 100
-    match.match_method = "manual"
-    match.matched_substring = None
-    match.snapshot_bsr = metrics.rank_overall if metrics else None
-    match.snapshot_new_price_cents = new_price_cents
-    match.snapshot_used_price_cents = used_price_cents
-    match.snapshot_fba_payout_cents = payout_cents
-    match.user_confirmed = bool(data.user_confirmed)
-    match.user_rejected = False
-    match.user_adjusted_condition = data.user_adjusted_condition
-    match.snapshot_at = utcnow()
-
-    await session.flush()
-
-    item_matches = (
-        await session.execute(select(SourcingMatch).where(SourcingMatch.sourcing_item_id == item.id))
-    ).scalars().all()
-    confirmed_only = any(m.user_confirmed and not m.user_rejected for m in item_matches)
-    await recalculate_item_from_matches(session=session, item=item, confirmed_only=confirmed_only)
-    await session.commit()
-
-    return SourcingMatchPatchOut(
-        item_id=item.id,
-        match_id=match.id,
-        status=item.status,
-        estimated_revenue_cents=item.estimated_revenue_cents,
-        estimated_profit_cents=item.estimated_profit_cents,
-        estimated_roi_bp=item.estimated_roi_bp,
-    )
-
-
-@router.post("/items/{item_id}/conversion-preview", response_model=SourcingConversionPreviewOut)
-async def conversion_preview(
-    item_id: uuid.UUID,
-    data: SourcingConversionPreviewIn,
-    session: AsyncSession = Depends(get_session),
-) -> SourcingConversionPreviewOut:
-    item = (
-        await session.execute(
-            select(SourcingItem)
-            .where(SourcingItem.id == item_id)
-            .options(selectinload(SourcingItem.matches))
-        )
-    ).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Not found")
-
-    cfg = await load_resolved_settings(session)
     try:
-        return await build_conversion_preview(
-            session=session,
-            item=item,
-            cfg=cfg,
-            confirmed_match_ids=data.confirmed_match_ids,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
+        ensure_supported_platform(item.platform)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    async with _begin_tx(session):
+        queue_item_for_evaluation(item)
 
-@router.post("/items/{item_id}/convert", response_model=SourcingConvertOut)
-async def convert_item(
-    item_id: uuid.UUID,
-    data: SourcingConvertIn,
-    session: AsyncSession = Depends(get_session),
-    actor: str = Depends(require_basic_auth),
-) -> SourcingConvertOut:
-    app_settings = get_settings()
-    if not app_settings.sourcing_conversion_enabled:
-        raise HTTPException(status_code=409, detail="Sourcing conversion is disabled")
-
-    item = (
-        await session.execute(
-            select(SourcingItem)
-            .where(SourcingItem.id == item_id)
-            .options(selectinload(SourcingItem.matches))
-        )
-    ).scalar_one_or_none()
-    if item is None:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    cfg = await load_resolved_settings(session, app_settings)
-
-    try:
-        async with _begin_tx(session):
-            out = await convert_item_to_purchase(
-                session=session,
-                actor=actor,
-                item=item,
-                cfg=cfg,
-                confirmed_match_ids=data.confirmed_match_ids,
-            )
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-
-    return out
+    return SourcingEvaluateOut(
+        item_id=item.id,
+        evaluation_status=item.evaluation_status,
+        evaluation_queued_at=item.evaluation_queued_at or utcnow(),
+    )
 
 
 @router.post("/items/{item_id}/discard", status_code=200)
@@ -636,23 +428,6 @@ async def discard_sourcing_item(
         await discard_item(session=session, actor=actor, item=item, reason=data.reason)
 
 
-@router.post("/items/{item_id}/bidbag-handoff", response_model=SourcingBidbagHandoffOut)
-async def bidbag_handoff(
-    item_id: uuid.UUID,
-    session: AsyncSession = Depends(get_session),
-    _actor: str = Depends(require_basic_auth),
-) -> SourcingBidbagHandoffOut:
-    item = await session.get(SourcingItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    try:
-        async with _begin_tx(session):
-            return await build_bidbag_handoff(session=session, item=item)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-
 @router.get("/agents", response_model=list[SourcingAgentOut])
 async def list_sourcing_agents(session: AsyncSession = Depends(get_session)) -> list[SourcingAgentOut]:
     rows = (
@@ -662,35 +437,7 @@ async def list_sourcing_agents(session: AsyncSession = Depends(get_session)) -> 
             .order_by(SourcingAgent.created_at.desc())
         )
     ).scalars().all()
-    return [
-        SourcingAgentOut(
-            id=row.id,
-            name=row.name,
-            enabled=row.enabled,
-            interval_seconds=row.interval_seconds,
-            last_run_at=row.last_run_at,
-            next_run_at=row.next_run_at,
-            last_error_type=row.last_error_type,
-            last_error_message=row.last_error_message,
-            created_at=row.created_at,
-            updated_at=row.updated_at,
-            queries=[
-                SourcingAgentQueryOut(
-                    id=query.id,
-                    platform=query.platform,
-                    keyword=query.keyword,
-                    enabled=query.enabled,
-                    max_pages=query.max_pages,
-                    detail_enrichment_enabled=query.detail_enrichment_enabled,
-                    options_json=query.options_json,
-                    created_at=query.created_at,
-                    updated_at=query.updated_at,
-                )
-                for query in sorted(row.queries, key=lambda q: (q.created_at, q.keyword))
-            ],
-        )
-        for row in rows
-    ]
+    return [_agent_out(row) for row in rows]
 
 
 @router.post("/agents", response_model=SourcingAgentOut)
@@ -699,6 +446,12 @@ async def create_sourcing_agent(
     session: AsyncSession = Depends(get_session),
     _actor: str = Depends(require_basic_auth),
 ) -> SourcingAgentOut:
+    for query in data.queries:
+        try:
+            ensure_supported_platform(query.platform)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     try:
         async with _begin_tx(session):
             next_run_at = utcnow() if data.enabled else None
@@ -733,32 +486,7 @@ async def create_sourcing_agent(
             .options(selectinload(SourcingAgent.queries))
         )
     ).scalar_one()
-    return SourcingAgentOut(
-        id=row.id,
-        name=row.name,
-        enabled=row.enabled,
-        interval_seconds=row.interval_seconds,
-        last_run_at=row.last_run_at,
-        next_run_at=row.next_run_at,
-        last_error_type=row.last_error_type,
-        last_error_message=row.last_error_message,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-        queries=[
-            SourcingAgentQueryOut(
-                id=query.id,
-                platform=query.platform,
-                keyword=query.keyword,
-                enabled=query.enabled,
-                max_pages=query.max_pages,
-                detail_enrichment_enabled=query.detail_enrichment_enabled,
-                options_json=query.options_json,
-                created_at=query.created_at,
-                updated_at=query.updated_at,
-            )
-            for query in sorted(row.queries, key=lambda q: (q.created_at, q.keyword))
-        ],
-    )
+    return _agent_out(row)
 
 
 @router.patch("/agents/{agent_id}", response_model=SourcingAgentOut)
@@ -768,6 +496,13 @@ async def patch_sourcing_agent(
     session: AsyncSession = Depends(get_session),
     _actor: str = Depends(require_basic_auth),
 ) -> SourcingAgentOut:
+    if data.queries is not None:
+        for query in data.queries:
+            try:
+                ensure_supported_platform(query.platform)
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     row = (
         await session.execute(
             select(SourcingAgent)
@@ -816,32 +551,7 @@ async def patch_sourcing_agent(
             .options(selectinload(SourcingAgent.queries))
         )
     ).scalar_one()
-    return SourcingAgentOut(
-        id=refreshed.id,
-        name=refreshed.name,
-        enabled=refreshed.enabled,
-        interval_seconds=refreshed.interval_seconds,
-        last_run_at=refreshed.last_run_at,
-        next_run_at=refreshed.next_run_at,
-        last_error_type=refreshed.last_error_type,
-        last_error_message=refreshed.last_error_message,
-        created_at=refreshed.created_at,
-        updated_at=refreshed.updated_at,
-        queries=[
-            SourcingAgentQueryOut(
-                id=query.id,
-                platform=query.platform,
-                keyword=query.keyword,
-                enabled=query.enabled,
-                max_pages=query.max_pages,
-                detail_enrichment_enabled=query.detail_enrichment_enabled,
-                options_json=query.options_json,
-                created_at=query.created_at,
-                updated_at=query.updated_at,
-            )
-            for query in sorted(refreshed.queries, key=lambda q: (q.created_at, q.keyword))
-        ],
-    )
+    return _agent_out(refreshed)
 
 
 @router.delete("/agents/{agent_id}", status_code=200)
@@ -877,6 +587,10 @@ async def run_sourcing_agent_now(
     results: list[SourcingAgentRunQueryOut] = []
     app_settings = get_settings()
     for query in [q for q in agent.queries if q.enabled]:
+        try:
+            ensure_supported_platform(query.platform)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         run_result = await execute_sourcing_run(
             force=True,
             search_terms=[query.keyword],
@@ -896,7 +610,7 @@ async def run_sourcing_agent_now(
                 status=run_result.status,
                 items_scraped=run_result.items_scraped,
                 items_new=run_result.items_new,
-                items_ready=run_result.items_ready,
+                items_queued=run_result.items_queued,
             )
         )
 
