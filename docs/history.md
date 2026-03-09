@@ -1,5 +1,26 @@
 # History
 
+## 2026-03-09 - Skill-first sourcing review via Codex desktop
+
+### Business perspective
+- The sourcing frontend adds UI weight to an ERP product that should stay centered on inventory, purchases, sales, and accounting.
+- The operator already prefers reviewing sourcing opportunities in Codex desktop, where free-form reasoning and follow-up questions are a better fit than another in-app queue UI.
+- The lean target is therefore: backend keeps scraping and storing listing data; Codex desktop becomes the review interface.
+
+### Technical decision
+- Do not give Codex desktop direct database access.
+- Expose a narrow sourcing-review API from the backend that packages:
+  - latest listings and their full stored detail
+  - ERP product catalog snapshot
+  - cached Amazon price / BSR metrics
+  - optional scrape trigger
+- Build a local Codex skill that calls those APIs and prepares a review packet for the model.
+
+### Why this shape
+- Backend remains the single trusted broker for auth, schema shape, and operational logic.
+- The Codex skill can stay stable even if internal tables or frontend contracts change.
+- This keeps the future frontend cleanup easy: removing sourcing UI later does not affect the operator workflow.
+
 ## 2026-03-09 - Sourcing pivot: ERP as scrape inbox, Codex as evaluator, frontend-v2 abandoned
 
 ### Ausgangslage

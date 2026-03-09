@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
+from app.core.enums import MasterProductKind, SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
 
 
 class SourcingScrapeTriggerIn(BaseModel):
@@ -278,3 +278,52 @@ class SourcingAgentRunOut(BaseModel):
     agent_id: UUID
     run_started_at: datetime
     results: list[SourcingAgentRunQueryOut] = Field(default_factory=list)
+
+
+class SourcingReviewCatalogAmazonOut(BaseModel):
+    last_success_at: datetime | None = None
+    rank_overall: int | None = None
+    rank_specific: int | None = None
+    price_new_cents: int | None = None
+    price_used_like_new_cents: int | None = None
+    price_used_very_good_cents: int | None = None
+    price_used_good_cents: int | None = None
+    price_used_acceptable_cents: int | None = None
+    buybox_total_cents: int | None = None
+    offers_count_total: int | None = None
+    offers_count_used_priced_total: int | None = None
+
+
+class SourcingReviewCatalogEntryOut(BaseModel):
+    id: UUID
+    sku: str
+    kind: MasterProductKind
+    title: str
+    platform: str
+    region: str
+    variant: str
+    asin: str | None = None
+    ean: str | None = None
+    in_stock_count: int = 0
+    amazon_cached: SourcingReviewCatalogAmazonOut
+
+
+class SourcingReviewRunOut(BaseModel):
+    id: UUID
+    platform: SourcingPlatform
+    started_at: datetime
+    finished_at: datetime | None = None
+    ok: bool
+    blocked: bool
+    error_type: str | None = None
+    error_message: str | None = None
+    items_scraped: int = 0
+    items_new: int = 0
+
+
+class SourcingReviewPacketOut(BaseModel):
+    generated_at: datetime
+    platform: SourcingPlatform
+    latest_run: SourcingReviewRunOut | None = None
+    items: list[SourcingItemDetailOut] = Field(default_factory=list)
+    catalog: list[SourcingReviewCatalogEntryOut] = Field(default_factory=list)

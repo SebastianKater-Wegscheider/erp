@@ -10,10 +10,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
+from app.core.enums import InventoryStatus, SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.security import require_basic_auth
+from app.models.amazon_scrape import AmazonProductMetricsLatest
+from app.models.inventory_item import InventoryItem
+from app.models.master_product import MasterProduct
 from app.models.sourcing import SourcingAgent, SourcingAgentQuery, SourcingItem, SourcingRun, SourcingSetting
 from app.schemas.sourcing import (
     SourcingAgentCreateIn,
@@ -29,6 +32,10 @@ from app.schemas.sourcing import (
     SourcingEvaluationMatchedProductOut,
     SourcingEvaluationResultOut,
     SourcingHealthOut,
+    SourcingReviewCatalogAmazonOut,
+    SourcingReviewCatalogEntryOut,
+    SourcingReviewPacketOut,
+    SourcingReviewRunOut,
     SourcingItemDetailOut,
     SourcingItemListOut,
     SourcingItemListResponse,
@@ -49,6 +56,13 @@ from app.services.sourcing_codex import ensure_supported_platform, queue_item_fo
 
 
 router = APIRouter()
+_REVIEW_IN_STOCK_STATUSES = (
+    InventoryStatus.DRAFT,
+    InventoryStatus.AVAILABLE,
+    InventoryStatus.FBA_INBOUND,
+    InventoryStatus.FBA_WAREHOUSE,
+    InventoryStatus.RESERVED,
+)
 
 
 @asynccontextmanager
@@ -119,6 +133,102 @@ def _item_list_out(item: SourcingItem) -> SourcingItemListOut:
         posted_at=item.posted_at,
         url=item.url,
     )
+
+
+def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
+    return SourcingItemDetailOut(
+        id=item.id,
+        platform=item.platform,
+        agent_id=item.agent_id,
+        agent_query_id=item.agent_query_id,
+        title=item.title,
+        description=item.description,
+        price_cents=item.price_cents,
+        image_urls=[str(v) for v in (item.image_urls or []) if str(v).strip()],
+        location_zip=item.location_zip,
+        location_city=item.location_city,
+        seller_type=item.seller_type,
+        status=item.status,
+        status_reason=item.status_reason,
+        evaluation_status=item.evaluation_status,
+        evaluation_queued_at=item.evaluation_queued_at,
+        evaluation_started_at=item.evaluation_started_at,
+        evaluation_finished_at=item.evaluation_finished_at,
+        evaluation_attempt_count=item.evaluation_attempt_count,
+        evaluation_last_error=item.evaluation_last_error,
+        evaluation_summary=item.evaluation_summary,
+        evaluation_prompt_version=item.evaluation_prompt_version,
+        recommendation=item.recommendation,
+        expected_profit_cents=item.expected_profit_cents,
+        expected_roi_bp=item.expected_roi_bp,
+        max_buy_price_cents=item.max_buy_price_cents,
+        evaluation_confidence=item.evaluation_confidence,
+        amazon_source_used=item.amazon_source_used,
+        evaluation=_evaluation_out(item),
+        raw_data=item.raw_data if isinstance(item.raw_data, dict) else None,
+        scraped_at=item.scraped_at,
+        posted_at=item.posted_at,
+        url=item.url,
+    )
+
+
+def _catalog_amazon_out(metrics: AmazonProductMetricsLatest | None) -> SourcingReviewCatalogAmazonOut:
+    return SourcingReviewCatalogAmazonOut(
+        last_success_at=metrics.last_success_at if metrics else None,
+        rank_overall=metrics.rank_overall if metrics else None,
+        rank_specific=metrics.rank_specific if metrics else None,
+        price_new_cents=metrics.price_new_cents if metrics else None,
+        price_used_like_new_cents=metrics.price_used_like_new_cents if metrics else None,
+        price_used_very_good_cents=metrics.price_used_very_good_cents if metrics else None,
+        price_used_good_cents=metrics.price_used_good_cents if metrics else None,
+        price_used_acceptable_cents=metrics.price_used_acceptable_cents if metrics else None,
+        buybox_total_cents=metrics.buybox_total_cents if metrics else None,
+        offers_count_total=metrics.offers_count_total if metrics else None,
+        offers_count_used_priced_total=metrics.offers_count_used_priced_total if metrics else None,
+    )
+
+
+async def _review_catalog(
+    *,
+    session: AsyncSession,
+    in_stock_only: bool,
+) -> list[SourcingReviewCatalogEntryOut]:
+    stock_counts = (
+        select(
+            InventoryItem.master_product_id.label("master_product_id"),
+            func.count(InventoryItem.id).label("in_stock_count"),
+        )
+        .where(InventoryItem.status.in_(_REVIEW_IN_STOCK_STATUSES))
+        .group_by(InventoryItem.master_product_id)
+        .subquery()
+    )
+
+    stmt = (
+        select(MasterProduct, AmazonProductMetricsLatest, stock_counts.c.in_stock_count)
+        .outerjoin(AmazonProductMetricsLatest, AmazonProductMetricsLatest.master_product_id == MasterProduct.id)
+        .outerjoin(stock_counts, stock_counts.c.master_product_id == MasterProduct.id)
+        .order_by(MasterProduct.kind, MasterProduct.title, MasterProduct.platform, MasterProduct.region, MasterProduct.variant)
+    )
+    if in_stock_only:
+        stmt = stmt.where(func.coalesce(stock_counts.c.in_stock_count, 0) > 0)
+
+    rows = (await session.execute(stmt)).all()
+    return [
+        SourcingReviewCatalogEntryOut(
+            id=mp.id,
+            sku=mp.sku,
+            kind=mp.kind,
+            title=mp.title,
+            platform=mp.platform,
+            region=mp.region,
+            variant=mp.variant,
+            asin=mp.asin,
+            ean=mp.ean,
+            in_stock_count=int(in_stock_count or 0),
+            amazon_cached=_catalog_amazon_out(metrics),
+        )
+        for mp, metrics, in_stock_count in rows
+    ]
 
 
 def _agent_out(row: SourcingAgent) -> SourcingAgentOut:
@@ -353,39 +463,56 @@ async def get_sourcing_item(item_id: uuid.UUID, session: AsyncSession = Depends(
     if item is None:
         raise HTTPException(status_code=404, detail="Not found")
 
-    return SourcingItemDetailOut(
-        id=item.id,
-        platform=item.platform,
-        agent_id=item.agent_id,
-        agent_query_id=item.agent_query_id,
-        title=item.title,
-        description=item.description,
-        price_cents=item.price_cents,
-        image_urls=[str(v) for v in (item.image_urls or []) if str(v).strip()],
-        location_zip=item.location_zip,
-        location_city=item.location_city,
-        seller_type=item.seller_type,
-        status=item.status,
-        status_reason=item.status_reason,
-        evaluation_status=item.evaluation_status,
-        evaluation_queued_at=item.evaluation_queued_at,
-        evaluation_started_at=item.evaluation_started_at,
-        evaluation_finished_at=item.evaluation_finished_at,
-        evaluation_attempt_count=item.evaluation_attempt_count,
-        evaluation_last_error=item.evaluation_last_error,
-        evaluation_summary=item.evaluation_summary,
-        evaluation_prompt_version=item.evaluation_prompt_version,
-        recommendation=item.recommendation,
-        expected_profit_cents=item.expected_profit_cents,
-        expected_roi_bp=item.expected_roi_bp,
-        max_buy_price_cents=item.max_buy_price_cents,
-        evaluation_confidence=item.evaluation_confidence,
-        amazon_source_used=item.amazon_source_used,
-        evaluation=_evaluation_out(item),
-        raw_data=item.raw_data if isinstance(item.raw_data, dict) else None,
-        scraped_at=item.scraped_at,
-        posted_at=item.posted_at,
-        url=item.url,
+    return _item_detail_out(item)
+
+
+@router.get("/review/latest-packet", response_model=SourcingReviewPacketOut)
+async def sourcing_review_latest_packet(
+    platform: SourcingPlatform = Query(default=SourcingPlatform.KLEINANZEIGEN),
+    limit: int = Query(default=10, ge=1, le=50),
+    in_stock_only: bool = Query(default=False),
+    session: AsyncSession = Depends(get_session),
+) -> SourcingReviewPacketOut:
+    ensure_supported_platform(platform)
+    latest_run = (
+        await session.execute(
+            select(SourcingRun)
+            .where(SourcingRun.platform == platform)
+            .order_by(SourcingRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    stmt = select(SourcingItem).where(SourcingItem.platform == platform)
+    if latest_run is not None:
+        stmt = stmt.where(SourcingItem.last_run_id == latest_run.id)
+    items = (
+        await session.execute(
+            stmt.order_by(SourcingItem.scraped_at.desc(), SourcingItem.posted_at.desc().nullslast()).limit(limit)
+        )
+    ).scalars().all()
+
+    return SourcingReviewPacketOut(
+        generated_at=utcnow(),
+        platform=platform,
+        latest_run=(
+            SourcingReviewRunOut(
+                id=latest_run.id,
+                platform=latest_run.platform,
+                started_at=latest_run.started_at,
+                finished_at=latest_run.finished_at,
+                ok=bool(latest_run.ok),
+                blocked=bool(latest_run.blocked),
+                error_type=latest_run.error_type,
+                error_message=latest_run.error_message,
+                items_scraped=latest_run.items_scraped,
+                items_new=latest_run.items_new,
+            )
+            if latest_run is not None
+            else None
+        ),
+        items=[_item_detail_out(item) for item in items],
+        catalog=await _review_catalog(session=session, in_stock_only=in_stock_only),
     )
 
 

@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import get_settings
-from app.core.enums import SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
+from app.core.enums import InventoryCondition, InventoryStatus, PurchaseType, SourcingEvaluationStatus, SourcingPlatform, SourcingStatus
 from app.models.amazon_scrape import AmazonProductMetricsLatest
+from app.models.inventory_item import InventoryItem
 from app.models.master_product import MasterProduct
 from app.models.sourcing import SourcingItem, SourcingRun
 from app.services.sourcing import _parse_kleinanzeigen_posted_at, execute_sourcing_run
@@ -509,6 +510,99 @@ async def test_sourcing_health_and_stats_use_evaluation_counts(db_session: Async
     assert stats.items_by_evaluation_status["PENDING"] == 1
     assert stats.items_by_evaluation_status["FAILED"] == 1
     assert stats.items_by_recommendation["BUY"] == 1
+
+
+@pytest.mark.asyncio
+async def test_sourcing_review_latest_packet_returns_items_and_catalog(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.sourcing import sourcing_review_latest_packet
+
+    run = SourcingRun(
+        trigger="manual",
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        ok=True,
+        items_scraped=12,
+        items_new=8,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    product = MasterProduct(
+        title="Super Mario Sunshine",
+        platform="Nintendo GameCube",
+        region="PAL",
+        variant="",
+        asin="B000123456",
+    )
+    db_session.add(product)
+    await db_session.flush()
+    db_session.add(
+        AmazonProductMetricsLatest(
+            master_product_id=product.id,
+            last_attempt_at=datetime.now(UTC),
+            last_success_at=datetime.now(UTC),
+            rank_overall=4321,
+            price_used_good_cents=3399,
+            buybox_total_cents=4599,
+            offers_count_total=6,
+            offers_count_used_priced_total=4,
+        )
+    )
+    db_session.add(
+        InventoryItem(
+            master_product_id=product.id,
+            condition=InventoryCondition.GOOD,
+            purchase_type=PurchaseType.DIFF,
+            purchase_price_cents=1500,
+            allocated_costs_cents=0,
+            status=InventoryStatus.AVAILABLE,
+        )
+    )
+    db_session.add(
+        SourcingItem(
+            platform=SourcingPlatform.KLEINANZEIGEN,
+            external_id="review-item-1",
+            url="https://www.kleinanzeigen.de/s-anzeige/review-item-1",
+            title="Mario Sunshine Bundle",
+            description="Beschreibung",
+            price_cents=2500,
+            raw_data={"shipping_possible": True},
+            last_run_id=run.id,
+            evaluation_status=SourcingEvaluationStatus.COMPLETED,
+            recommendation="WATCH",
+            evaluation_result_json={
+                "recommendation": "WATCH",
+                "summary": "Interesting but needs manual check.",
+                "expected_profit_cents": 1200,
+                "expected_roi_bp": 4000,
+                "max_buy_price_cents": 3100,
+                "confidence": 70,
+                "amazon_source_used": "cached",
+                "matched_products": [],
+                "risks": [],
+                "reasoning_notes": [],
+            },
+            evaluation_summary="Interesting but needs manual check.",
+        )
+    )
+    await db_session.commit()
+
+    packet = await sourcing_review_latest_packet(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        limit=10,
+        in_stock_only=False,
+        session=db_session,
+    )
+
+    assert packet.latest_run is not None
+    assert packet.latest_run.id == run.id
+    assert len(packet.items) == 1
+    assert packet.items[0].title == "Mario Sunshine Bundle"
+    assert len(packet.catalog) == 1
+    assert packet.catalog[0].title == "Super Mario Sunshine"
+    assert packet.catalog[0].in_stock_count == 1
+    assert packet.catalog[0].amazon_cached.buybox_total_cents == 4599
 
 
 def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
