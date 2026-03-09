@@ -287,6 +287,7 @@ def _prompt_text(summary: dict[str, Any], full: dict[str, Any]) -> str:
             "Do not use live web search in this first pass.",
             "Do not assume the ERP catalog has already been filtered down to likely matches.",
             "Estimate profit, ROI, and max buy price in cents/basis points.",
+            "Set amazon_source_used to a short label such as cached, live, mixed, or none.",
             "Return JSON only matching schema.json.",
             "",
             "summary.json:",
@@ -488,7 +489,7 @@ def _apply_evaluation_result(item: SourcingItem, result: CodexEvaluationResult, 
     item.expected_roi_bp = result.expected_roi_bp
     item.max_buy_price_cents = result.max_buy_price_cents
     item.evaluation_confidence = result.confidence
-    item.amazon_source_used = result.amazon_source_used
+    item.amazon_source_used = _normalize_amazon_source_used(result.amazon_source_used)
     if item.status not in {SourcingStatus.DISCARDED, SourcingStatus.CONVERTED}:
         item.status = SourcingStatus.NEW
         item.status_reason = f"Codex recommendation: {result.recommendation or 'n/a'}"
@@ -510,6 +511,29 @@ def _apply_evaluation_failure(item: SourcingItem, error_message: str) -> None:
     if item.status not in {SourcingStatus.DISCARDED, SourcingStatus.CONVERTED}:
         item.status = SourcingStatus.ERROR
         item.status_reason = error_message
+
+
+def _normalize_amazon_source_used(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered in {"none", "n/a", "na", "unknown"}:
+        return "none"
+    has_live = any(token in lowered for token in ("live", "web", "search"))
+    has_cached = any(
+        token in lowered
+        for token in ("cache", "cached", "erp", "db", "catalog", "buybox", "price_", "rank_", "amazon_")
+    )
+    if has_live and has_cached:
+        return "mixed"
+    if has_live:
+        return "live"
+    if has_cached:
+        return "cached"
+    return text[:32]
 
 
 async def claim_next_pending_item(session: AsyncSession, settings: Settings | None = None) -> Any | None:

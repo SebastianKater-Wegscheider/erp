@@ -206,7 +206,7 @@ async def test_evaluate_item_by_id_persists_structured_codex_result(
                 "expected_roi_bp": 3800,
                 "max_buy_price_cents": 10800,
                 "confidence": 84,
-                "amazon_source_used": "db_cache",
+                "amazon_source_used": "erp_context.known_product_catalog[].amazon_cached",
                 "matched_products": [
                     {
                         "master_product_id": None,
@@ -252,6 +252,7 @@ async def test_evaluate_item_by_id_persists_structured_codex_result(
     assert refreshed.expected_profit_cents == 4200
     assert refreshed.max_buy_price_cents == 10800
     assert refreshed.evaluation_summary == "Strong margin after cached Amazon comparison."
+    assert refreshed.amazon_source_used == "cached"
     assert refreshed.evaluation_result_json is not None
     assert (
         get_settings().app_storage_dir
