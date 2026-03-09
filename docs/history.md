@@ -1,5 +1,19 @@
 # History
 
+## 2026-03-09 - Review packet must guarantee full listing context for Codex
+
+### Business perspective
+- A Codex-based sourcing workflow is only useful if the model sees the same material a human would use: full description text, all known image URLs, seller/location metadata, auction fields, and raw scraper payload.
+- Returning only search-result excerpts for already-known listings creates false negatives and pushes ambiguity onto the model unnecessarily.
+
+### Technical decision
+- The sourcing review packet should not just dump whatever listing snapshot happens to be stored.
+- On review-packet fetch, the backend should refresh missing detail enrichment for the selected listings before returning them, then expose the important listing fields explicitly in the response model.
+
+### Why this shape
+- Codex gets a reliable packet in one API call instead of having to guess whether `description` is only a teaser.
+- The packet stays backend-mediated and token-efficient, but no longer hides critical listing evidence in stale or partial storage state.
+
 ## 2026-03-09 - Skill-first sourcing review via Codex desktop
 
 ### Business perspective

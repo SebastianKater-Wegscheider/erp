@@ -46,6 +46,8 @@ from app.schemas.sourcing import (
     SourcingStatsOut,
 )
 from app.services.sourcing import (
+    _merge_detail_payload_into_item,
+    _scraper_fetch_listing_detail,
     cleanse_stale_sourcing_items,
     discard_item,
     execute_sourcing_run,
@@ -143,15 +145,20 @@ def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
     return SourcingItemDetailOut(
         id=item.id,
         platform=item.platform,
+        external_id=item.external_id,
         agent_id=item.agent_id,
         agent_query_id=item.agent_query_id,
         title=item.title,
         description=item.description,
         price_cents=item.price_cents,
         image_urls=[str(v) for v in (item.image_urls or []) if str(v).strip()],
+        primary_image_url=item.primary_image_url,
         location_zip=item.location_zip,
         location_city=item.location_city,
         seller_type=item.seller_type,
+        auction_end_at=item.auction_end_at,
+        auction_current_price_cents=item.auction_current_price_cents,
+        auction_bid_count=item.auction_bid_count,
         status=item.status,
         status_reason=item.status_reason,
         evaluation_status=item.evaluation_status,
@@ -174,6 +181,48 @@ def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
         posted_at=item.posted_at,
         url=item.url,
     )
+
+
+def _item_has_detail_enrichment(item: SourcingItem) -> bool:
+    raw = item.raw_data if isinstance(item.raw_data, dict) else {}
+    detail_enriched_at = str(raw.get("detail_enriched_at") or "").strip()
+    if detail_enriched_at:
+        return True
+    description_full = str(raw.get("description_full") or "").strip()
+    return bool(description_full)
+
+
+async def _ensure_review_item_detail(
+    *,
+    session: AsyncSession,
+    items: list[SourcingItem],
+) -> None:
+    if not items:
+        return
+
+    settings = get_settings()
+    changed = False
+    for item in items:
+        if _item_has_detail_enrichment(item):
+            continue
+        if not str(item.url or "").strip():
+            continue
+        try:
+            detail_payload = await _scraper_fetch_listing_detail(
+                app_settings=settings,
+                platform=item.platform,
+                url=item.url,
+            )
+        except Exception:
+            continue
+        detail = detail_payload.get("listing") if isinstance(detail_payload.get("listing"), dict) else detail_payload
+        if not isinstance(detail, dict) or not detail:
+            continue
+        _merge_detail_payload_into_item(item=item, detail=detail)
+        changed = True
+
+    if changed:
+        await session.commit()
 
 
 def _catalog_amazon_out(metrics: AmazonProductMetricsLatest | None) -> SourcingReviewCatalogAmazonOut:
@@ -475,6 +524,7 @@ async def sourcing_review_latest_packet(
     platform: SourcingPlatform = Query(default=SourcingPlatform.KLEINANZEIGEN),
     limit: int = Query(default=10, ge=1, le=50),
     in_stock_only: bool = Query(default=False),
+    ensure_detail: bool = Query(default=True),
     session: AsyncSession = Depends(get_session),
 ) -> SourcingReviewPacketOut:
     ensure_supported_platform(platform)
@@ -495,6 +545,8 @@ async def sourcing_review_latest_packet(
             stmt.order_by(SourcingItem.scraped_at.desc(), SourcingItem.posted_at.desc().nullslast()).limit(limit)
         )
     ).scalars().all()
+    if ensure_detail:
+        await _ensure_review_item_detail(session=session, items=items)
 
     return SourcingReviewPacketOut(
         generated_at=utcnow(),

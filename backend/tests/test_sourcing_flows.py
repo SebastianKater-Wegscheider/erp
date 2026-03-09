@@ -599,6 +599,8 @@ async def test_sourcing_review_latest_packet_returns_items_and_catalog(db_sessio
     assert packet.latest_run.id == run.id
     assert len(packet.items) == 1
     assert packet.items[0].title == "Mario Sunshine Bundle"
+    assert packet.items[0].external_id == "review-item-1"
+    assert packet.items[0].raw_data == {"shipping_possible": True}
     assert len(packet.catalog) == 1
     assert packet.catalog[0].title == "Super Mario Sunshine"
     assert packet.catalog[0].in_stock_count == 1
@@ -670,6 +672,79 @@ async def test_sourcing_review_packet_hides_stale_evaluation_for_non_completed_i
     assert out.evaluation_confidence is None
     assert out.amazon_source_used is None
     assert out.evaluation is None
+
+
+@pytest.mark.asyncio
+async def test_sourcing_review_packet_refreshes_missing_detail_context(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1.endpoints.sourcing import sourcing_review_latest_packet
+
+    run = SourcingRun(
+        trigger="manual",
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        ok=True,
+        items_scraped=1,
+        items_new=0,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="review-item-detail",
+        url="https://www.kleinanzeigen.de/s-anzeige/review-item-detail",
+        title="Detail Candidate",
+        description="Kurzbeschreibung...",
+        price_cents=4500,
+        image_urls=["https://img.example/thumb.jpg"],
+        primary_image_url="https://img.example/thumb.jpg",
+        raw_data={"description": "Kurzbeschreibung..."},
+        last_run_id=run.id,
+        evaluation_status=SourcingEvaluationStatus.PENDING,
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    async def _fake_listing_detail(*, app_settings, platform, url):  # noqa: ARG001
+        return {
+            "listing": {
+                "description_full": "Volle Beschreibung mit Zustand, Lieferumfang und Besonderheiten.",
+                "image_urls": [
+                    "https://img.example/1.jpg",
+                    "https://img.example/2.jpg",
+                ],
+                "seller_type": "private",
+                "price_cents": 4300,
+            }
+        }
+
+    monkeypatch.setattr("app.api.v1.endpoints.sourcing._scraper_fetch_listing_detail", _fake_listing_detail)
+
+    packet = await sourcing_review_latest_packet(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        limit=10,
+        in_stock_only=False,
+        ensure_detail=True,
+        session=db_session,
+    )
+
+    assert len(packet.items) == 1
+    out = packet.items[0]
+    assert out.description == "Volle Beschreibung mit Zustand, Lieferumfang und Besonderheiten."
+    assert out.image_urls == [
+        "https://img.example/1.jpg",
+        "https://img.example/2.jpg",
+    ]
+    assert out.primary_image_url == "https://img.example/1.jpg"
+    assert out.price_cents == 4300
+    assert out.seller_type == "private"
+    assert out.raw_data is not None
+    assert out.raw_data["description_full"] == "Volle Beschreibung mit Zustand, Lieferumfang und Besonderheiten."
+    assert out.raw_data["detail_enriched_at"]
 
 
 def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:

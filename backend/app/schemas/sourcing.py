@@ -119,15 +119,20 @@ class SourcingItemDetailOut(BaseModel):
 
     id: UUID
     platform: SourcingPlatform
+    external_id: str
     agent_id: UUID | None
     agent_query_id: UUID | None
     title: str
     description: str | None
     price_cents: int
     image_urls: list[str] = Field(default_factory=list)
+    primary_image_url: str | None = None
     location_zip: str | None
     location_city: str | None
     seller_type: str | None
+    auction_end_at: datetime | None = None
+    auction_current_price_cents: int | None = None
+    auction_bid_count: int | None = None
     status: SourcingStatus
     status_reason: str | None
     evaluation_status: SourcingEvaluationStatus
