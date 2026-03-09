@@ -818,6 +818,72 @@ async def test_sourcing_review_packet_refreshes_incomplete_prior_detail_enrichme
     assert out.raw_data["description_full"] == "Volle Beschreibung aus nachgezogener Detailabfrage."
 
 
+@pytest.mark.asyncio
+async def test_sourcing_review_packet_dedupes_image_variants_in_output(db_session: AsyncSession) -> None:
+    from app.api.v1.endpoints.sourcing import sourcing_review_latest_packet
+
+    run = SourcingRun(
+        trigger="manual",
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        ok=True,
+        items_scraped=1,
+        items_new=0,
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    item = SourcingItem(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        external_id="review-item-images",
+        url="https://www.kleinanzeigen.de/s-anzeige/review-item-images",
+        title="Image Variant Bundle",
+        description="Beschreibung vollständig",
+        price_cents=1234,
+        image_urls=[
+            "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.AUTO",
+            "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.JPG",
+            "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_35.AUTO",
+            "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_57.AUTO",
+        ],
+        raw_data={
+            "posted_at_text": "02.08.2025",
+            "description_full": "Beschreibung vollständig",
+            "image_urls": [
+                "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.AUTO",
+                "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.JPG",
+                "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_35.AUTO",
+                "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_57.AUTO",
+            ],
+        },
+        last_run_id=run.id,
+        evaluation_status=SourcingEvaluationStatus.PENDING,
+    )
+    db_session.add(item)
+    await db_session.commit()
+
+    packet = await sourcing_review_latest_packet(
+        platform=SourcingPlatform.KLEINANZEIGEN,
+        limit=10,
+        in_stock_only=False,
+        ensure_detail=False,
+        session=db_session,
+    )
+
+    out = packet.items[0]
+    assert out.image_urls == [
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.JPG",
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_57.AUTO",
+    ]
+    assert out.primary_image_url == "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.JPG"
+    assert out.raw_data is not None
+    assert out.raw_data["image_urls"] == [
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/04/asset-a?rule=$_59.JPG",
+        "https://img.kleinanzeigen.de/api/v1/prod-ads/images/05/asset-b?rule=$_57.AUTO",
+    ]
+
+
 def test_parse_kleinanzeigen_posted_at_relative_and_absolute_formats() -> None:
     now = datetime(2026, 2, 17, 8, 0, tzinfo=UTC)
 

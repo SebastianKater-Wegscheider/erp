@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, timedelta
+from urllib.parse import parse_qs
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -140,8 +142,48 @@ def _item_list_out(item: SourcingItem) -> SourcingItemListOut:
     )
 
 
+def _review_image_asset_key(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}"
+
+
+def _review_image_variant_score(url: str) -> tuple[int, int]:
+    rule = (parse_qs(urlsplit(url).query).get("rule", [""])[0] or "").upper()
+    format_score = 2 if ".JPG" in rule else 1 if ".AUTO" in rule else 0
+    size = 0
+    for token in ("$_59", "$_57", "$_35", "$_2", "$_1"):
+        if token in rule:
+            size = int(token[2:])
+            break
+    return (format_score, size)
+
+
+def _dedupe_review_image_urls(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    best_by_asset: dict[str, str] = {}
+    for value in values:
+        cleaned = str(value).strip()
+        if not cleaned:
+            continue
+        key = _review_image_asset_key(cleaned)
+        current = best_by_asset.get(key)
+        if current is None or _review_image_variant_score(cleaned) > _review_image_variant_score(current):
+            best_by_asset[key] = cleaned
+    return list(best_by_asset.values())
+
+
 def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
     evaluation_is_current = item.evaluation_status == SourcingEvaluationStatus.COMPLETED
+    image_urls = _dedupe_review_image_urls([str(v) for v in (item.image_urls or []) if str(v).strip()])
+    primary_image_url = image_urls[0] if image_urls else item.primary_image_url
+    raw_data = item.raw_data if isinstance(item.raw_data, dict) else None
+    if raw_data is not None:
+        raw_data = dict(raw_data)
+        if isinstance(raw_data.get("image_urls"), list):
+            raw_data["image_urls"] = _dedupe_review_image_urls(
+                [str(v) for v in raw_data.get("image_urls", []) if str(v).strip()]
+            )
     return SourcingItemDetailOut(
         id=item.id,
         platform=item.platform,
@@ -151,8 +193,8 @@ def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
         title=item.title,
         description=item.description,
         price_cents=item.price_cents,
-        image_urls=[str(v) for v in (item.image_urls or []) if str(v).strip()],
-        primary_image_url=item.primary_image_url,
+        image_urls=image_urls,
+        primary_image_url=primary_image_url,
         location_zip=item.location_zip,
         location_city=item.location_city,
         seller_type=item.seller_type,
@@ -176,7 +218,7 @@ def _item_detail_out(item: SourcingItem) -> SourcingItemDetailOut:
         evaluation_confidence=item.evaluation_confidence if evaluation_is_current else None,
         amazon_source_used=item.amazon_source_used if evaluation_is_current else None,
         evaluation=_evaluation_out(item),
-        raw_data=item.raw_data if isinstance(item.raw_data, dict) else None,
+        raw_data=raw_data,
         scraped_at=item.scraped_at,
         posted_at=item.posted_at,
         url=item.url,
